@@ -45,7 +45,7 @@ fi
 # --- fuente de SMW ---------------------------------------------------------
 [ -d "$SRC" ] || git clone -q --depth 1 https://github.com/galaxyhaxz/smw-src "$SRC"
 
-python3 -m pip install -q numpy pillow scipy 2>/dev/null
+python3 -m pip install -q numpy pillow scipy unicorn machine68k 2>/dev/null
 
 # --- WLA-DX del 2016-07-29 (misma fecha que bin/wla-65816.exe de smw-src) --
 # con un parche: DL (3 bytes) dentro de .ENUM, como la WLA modificada.

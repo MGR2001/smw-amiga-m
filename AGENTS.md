@@ -942,6 +942,42 @@ Los sprites del OCS usan COLOR17-19, 21-23, 25-27 y 29-31, que con 5 planos son
 también colores del playfield. Poner a Mario en sprites de hardware **no suma
 colores**: salen del mismo presupuesto de 31 por línea (D9).
 
+**P33 — `wm_BlockXPos` guarda la Y y `wm_BlockYPos` la X.**
+Los nombres del desensamblado están cambiados (`CODE_00F44D` pone la X de
+Mario + desplazamiento en `wm_BlockYPos`). Lo mismo con `wm_BounceSprXLo`
+(guarda la Y) y `wm_BounceSprYLo` (la X). En el port se transcribe tal cual,
+con un comentario donde importa; "arreglar" los nombres rompe la
+correspondencia con el ROM.
+
+**P34 — Golpear un bloque cambia el MAPA después, en la fase de sprites.**
+`CODE_028752` crea un "sprite de rebote" (4 ranuras, `wm_BounceSpr*`) y es
+`CODE_02902D`, después de Mario, quien pone el bloque en sólido invisible
+(`$152`) y, al terminar, el bloque final. Un bloque giratorio (`$11E`) queda
+en `$048` (**atravesable**) durante 255 frames. Sin portar esto, Mario choca
+con bloques que en el juego ya se pueden atravesar (fue la mayor fuente de
+fallos de la 8b). Además, en los golpes de costado el rebote cambia la
+`SpeedX` de Mario.
+
+**P35 — Los gráficos de Mario se calculan ANTES que su física.**
+`CODE_00A295`: cámara (`F6DB`) → `E2BD` (gráficos, con la posición del frame
+anterior y la cámara nueva; calcula `MarioScrPosX/Y`) → `C47E` (física; la
+colisión usa esas `MarioScrPosX/Y`) → sprites. Verificar los gráficos con el
+estado del mismo frame da un frame de desfase.
+
+**P36 — vbcc `-sd`: los datos tienen que estar a menos de 32 KB de `a4`.**
+Cada dato se direcciona `simbolo(a4)` con desplazamiento de 16 bits y
+`a4 = binstart`. `logicbench_build.sh` parte cada `.s` de vbcc en datos y
+código e incluye primero todos los datos; el código y el mapa quedan
+detrás y el arnés los llama con `binstart + desplazamiento` (un `bsr`
+tampoco llega a más de 32 KB). Además, las etiquetas locales de vbcc
+(`l12`...) se repiten entre ficheros: el build les pone un prefijo.
+
+**P37 — vbcc incorpora en línea las funciones `static`.**
+Con `-O=991` no dejan símbolo: un perfil por símbolo global atribuye sus
+ciclos al global anterior. Para perfilar, `PROF=1 sh
+tools/logicbench_build.sh` arma una variante sin inline y sin `static`
+(`work/prof/`). **No** sirve para medir la 8d.
+
 **P8 — El slow RAM de la A501 no está disponible si el software lo desactiva.**
 Algunas rutinas de arranque desactivan `/EXRAM`. Verifica que `$C00000`
 responde antes de usarlo.
@@ -1353,57 +1389,75 @@ es lo que muestra la referencia. Detalle en P28.
 
 ---
 
-## Dónde quedó el trabajo (2026-09-24) — leer primero
+## Dónde quedó el trabajo (2026-09-24, tarde) — leer primero
 
-**Etapa 8 en curso.** 8a (física de Mario: velocidad horizontal, gravedad y
-saltos) está portada en `player/mario.c` y verificada contra el oráculo con
-`tools/marioverify.c`:
+**Etapa 8: el frame entero del jugador está portado y verificado contra el
+oráculo**, en el PC y en el binario 68000 real. Todo corre en Claude cloud
+(ver más abajo).
 
-- 6547 pares de frames verificados; ninguno toca código sin portar y 322 se
-  saltan porque no corre la física normal.
-- En el aire coinciden todos los campos en 2989 de 3497 frames; en el suelo,
-  en 2962 de 3050.
-- Los fallos que quedan son de partes todavía sin portar:
+| parte | fichero | rutinas del ROM | verificación |
+|---|---|---|---|
+| 8a física | `player/mario.c` | `D5F2`, `D062`, `D7E4` | `marioverify` (modo 8a) |
+| 8b colisión con la capa 1 | `player/mcoll.c` | `CD24`: `DC2D`, `E92B` (sondas, pendientes, bloques), `F595`; `GenerateTile`; bloques que rebotan `CODE_028752` / `CODE_02902D` | `marioverify ... full` |
+| frame del jugador + animación | `player/manim.c` | `C500` (temporizadores), `ResetAni`, scroll L/R `CDDD`, `CEB1` | `marioverify ... full` |
+| gráficos de Mario | `player/mgfx.c` | `E2BD`, `E45D`, `F636` | `marioverify ... gfx` |
 
-| causa | frames | parte que lo resuelve |
-|---|---|---|
-| giro (animación `CODE_00CEB1`) | 499 | portar `CODE_00CEB1` (opcional) |
-| pared o techo | 21 | 8b |
-| pendiente | 42 | 8c |
-| encima de un sprite | 23 | etapa 9 |
-| otros: 10 rebotes al pisar (`$D0`) y 1 golpe a un bloque (`$10`) | 11 | — |
+Resultados (`work/oracle_yi1.txt`, 6547 pares de frames de Yoshi's Island 1):
 
-**Paso siguiente, 8d (sin hacer):** medir en la Amiga el coste de 8a.
+- **`full`: 6510 / 6547 pares exactos en 24 campos** (posición, subpíxel,
+  velocidades, `$77`, suelo, `$72`, pendientes, dirección, agachado, carrera,
+  giro, `FrameB`, pose, paso, temporizadores de animación, capa). De N+1 solo
+  se toman las **entradas**: joypad, `FrameA` y la cámara (`$1A-$1D`, que
+  todavía no está portada). Los 37 que fallan son **todos contacto con
+  sprites** (etapa 9): 23 sobre un sprite sólido y 14 al pisar o golpear un
+  enemigo (`SpeedY` = `$D0` / `$10`).
+- **`gfx`: 6869 / 6869 frames con la OAM de Mario y `MarioScrPosX/Y`
+  exactas** (13 432 entradas de OAM en 6718 frames con Mario visible).
+- Las pendientes de la partida (42 frames que antes fallaban) ya salen
+  exactas: buena parte de la **8c** está hecha, pero falta la grabación de
+  las colinas para darla por cerrada.
+- **El binario 68000 de vbcc da exactamente lo mismo que el C del PC**
+  (`tools/m68kverify.py`, Unicorn y Musashi).
 
-- `sh tools/logicbench_build.sh` genera `work/logicbench.adf`: vbcc con
-  `-sc -sd -const-in-data` y todas las secciones fundidas en `CODE`. El
-  binario ocupa 28.5 KB y cabe en el alcance de `a4` (32 KB). Ya se revisó
-  el listado: no hay ninguna referencia absoluta.
-- Ventanas: W1 = copiar el estado; W2 = estado "corriendo" (frame 5410) + 8a;
-  W3 = estado "salto" (frame 10983) + 8a.
-- Los estados se generan con
-  `marioverify work/oracle_yi1.bin dump FRAME work/cc/state_run.bin` (o
-  `state_jump.bin` para el frame 10983).
-- Para correrlo y leerlo:
-  `.\tools\shot.ps1 -Exact -Adf work\logicbench.adf -Out work\logicbench.png -Wait 80`
-  y después `python tools/logicbench_read.py`. Coste de 8a = W2−W1 y W3−W1.
-  Hay que anotarlo en §9.
-- `tools/logicbench_read.py` no se corrió nunca contra una captura, pero se
-  revisó contra el arnés: `show_results` y `measure` son idénticos a los de
-  `bench2.s` y las palabras caen donde las lee (w1 = ticks por frame,
-  w3/w5/w7/w9 = medias de W0-W3 con BLTPRI apagado).
-- `logicbench.s` abre `section "CODE",code` al principio: con vasm 2.0 el
-  arnés en la sección por defecto chocaba con la de vbcc ("sections must not
-  overlap"). El binario sigue midiendo 28 796 B.
+Coste estimado del frame del jugador (`E2BD` + `mario_player` +
+`blocks_update`) en un 68000 **sin esperas de DMA** (Musashi): **26 674
+ciclos de media = 18,8 % de un frame PAL; peor frame 30 236 = 21,3 %**. Con
+el DMA de 6 planos será más. Dónde se va (`tools/m68kprof.py`): las sondas
+de colisión (`f44d` + `f461` + `f545`, 5,5 por frame) ≈ 28 %, las 4 entradas
+de OAM (`e45d`) ≈ 12 %, `E2BD` ≈ 9 %, los bucles de temporizadores de
+`mario_player` ≈ 8 %. Es código "emulador" (valores de 16 bits armados byte
+a byte en `ram[]` little-endian): hay margen de optimización, y el
+verificador asegura que no se rompe nada.
 
-**Después:**
+**Paso siguiente en la PC local, 8d:** medir el frame del jugador en
+WinUAE cycle-exact.
 
-1. 8b: colisiones con bloques, con la tabla "acts like" del ROM.
-2. 8c: pendientes. Antes, el usuario tiene que grabar una sesión en las
-   colinas: a toda carrera en las dos direcciones, parado en la pendiente,
-   deslizándose y saltando sobre pendientes. Se graba con
-   `tools/oamrec.py --out` a un fichero **distinto** de `oracle_yi1`.
-3. Etapas 5 y 6, ya desbloqueadas porque D8 = (d).
+```bash
+sh tools/logicbench_build.sh           # work/logicbench.adf (57 KB)
+```
+```powershell
+.\tools\shot.ps1 -Exact -Adf work\logicbench.adf -Out work\logicbench.png -Wait 80
+```
+```bash
+python tools/logicbench_read.py        # coste = W2-W1 (corriendo), W3-W1 (salto)
+```
+
+- W2/W3 = `mario_E2BD` + `mario_player` + `blocks_update` con el mapa del
+  nivel, desde los estados de los frames 5410 y 10983 (`marioverify ...
+  fulldump`). Anotar el resultado en §9 y compararlo con la estimación de
+  Musashi de arriba (la diferencia es el DMA).
+- `logicbench_read.py` no se corrió nunca contra una captura; se revisó
+  contra el arnés (mismo `show_results`/`measure` que `bench2.s`).
+
+**Después (se puede hacer en cloud):**
+
+1. Optimizar el frame del jugador con el verificador como red: sondas,
+   `e45d`, temporizadores.
+2. Cámara (`CODE_00F6DB`) y scroll (etapa 6): con eso el modo `full` ya no
+   necesita la cámara del oráculo.
+3. Etapa 5 (conversor de nivel a formato (d)) y etapa 9 (sprites: son los
+   37 frames que faltan).
+4. 8c: el usuario graba las colinas (ver el grabador más abajo).
 
 **En Claude cloud, primero correr `sh tools/setup_cloud.sh`** (~15 s). Deja
 todo listo para compilar **y verificar**:
@@ -1418,12 +1472,27 @@ todo listo para compilar **y verificar**:
   `.ENUM`, más `tools/smwsrc_wla.py`, que traduce las etiquetas `@` y el
   `.ASC "...\n"` de la WLA modificada. El script comprueba **CRC32
   `B19ED489`** = Super Mario World (U) [!];
-- `player/gen/*`, `work/oracle_yi1.bin`, `work/marioverify` y los estados de
-  `logicbench`.
+- `player/gen/*`, el mapa `work/yi1_map16.bin` (`tools/mkmapbin.py`),
+  `work/oracle_yi1.bin` + `work/oracle_yi1_oam.bin`, `work/marioverify` (y
+  `work/mvtrace`, con traza de las sondas) y los estados de `logicbench`;
+- Unicorn y machine68k (Musashi) para `tools/m68kverify.py` y
+  `tools/m68kprof.py`.
 
-Comprobado el 2026-09-24 en cloud: `marioverify` da exactamente los números de
-arriba (2989/3497 en el aire, 2962/3050 en el suelo) y `logicbench_build.sh`
-arma el ADF.
+Comprobaciones (todas en cloud):
+
+```bash
+work/marioverify work/oracle_yi1.bin            # 8a sola (modo híbrido antiguo)
+work/marioverify work/oracle_yi1.bin full       # frame del jugador: 6510/6547
+work/marioverify work/oracle_yi1.bin gfx        # gráficos de Mario: 6869/6869
+FULL_FRAME=11180 work/mvtrace work/oracle_yi1.bin full   # un frame, con las sondas
+sh tools/logicbench_build.sh                    # (VBCC=~/vbcc) binario 68000 + ADF
+python3 tools/m68kverify.py --engine musashi    # el binario 68000 contra el oráculo + ciclos
+PROF=1 sh tools/logicbench_build.sh && python3 tools/m68kprof.py   # perfil por función
+```
+
+Comprobado el 2026-09-24 en cloud: `marioverify` (modo 8a) da exactamente
+los números del handoff de la PC (2989/3497 en el aire, 2962/3050 en el
+suelo) y `logicbench_build.sh` arma el ADF.
 
 **Qué no está en git y cómo recuperarlo** (regla R9):
 
@@ -1463,7 +1532,7 @@ iba a existir en la Amiga, y ponía la prueba de rendimiento en cuarto lugar.
 | 5 | **Conversor de nivel → Amiga, formato (d)** | Capa 1: 3 planos con la asignación de índices de `dpfsplit.py` (244 variantes de bloque) + tablas del copper por línea del nivel (cargas en el borrado y a mitad de línea con su ventana). Capa 2: bitmap de 3 planos de período 512 px + paleta por línea. `render_dat.py` renderiza el blob en el PC aplicando las tablas y se compara contra `d8d_g48m8_nivel.png` y la referencia con `cmp_ref.py` | — |
 | 6 | Scroll del nivel real en la Amiga | PF1 con `BPLCON1` bits 0-3 + columna nueva; PF2 con bits 4-7 a media velocidad (paralaje); lista del copper por frame (segmentos por línea encadenados, §9 punto 10). Recorre las 20 pantallas a 50 Hz; captura de WinUAE = render del PC en varios puntos; coste medido con el método de `bench2.s` | — |
 | 7 | **Capa 2** | En (d) la hacen las etapas 5 y 6 (PF2 con scroll por hardware). Queda la verificación: recortes apilados contra `SuperMarioWorldMap02.png`, el diff tiene que bajar del 25.5 % | — |
-| 8 | **Mario**, por partes verificadas bit a bit contra el oráculo `work/oracle_yi1.txt` (partida real grabada en `smwrecomp`: joypad + WRAM `$0000-$00FF` y `$13C0-$14FF` por frame): **8a** velocidad horizontal, gravedad y saltos; **8b** colisiones con bloques (tabla "acts like" del ROM); **8c** pendientes de 45° (hace falta grabar las colinas: a toda carrera, en las dos direcciones, parado encima y deslizándose); **8d** coste medido en la Amiga | Cada parte: el estado de Mario del port = el del oráculo en todos los frames de sus tramos | — |
+| 8 | **Mario**, por partes verificadas bit a bit contra el oráculo `work/oracle_yi1.txt` (partida real grabada en `smwrecomp`: joypad + WRAM `$0000-$00FF` y `$13C0-$14FF` + OAM por frame): **8a** velocidad horizontal, gravedad y saltos; **8b** colisiones con bloques (en SMW el "acts like" es el propio índice Map16); **8c** pendientes de 45° (hace falta grabar las colinas: a toda carrera, en las dos direcciones, parado encima y deslizándose); **8d** coste medido en la Amiga | Cada parte: el estado de Mario del port = el del oráculo en todos los frames de sus tramos | **8a, 8b, animación y gráficos HECHOS** (2026-09-24): 6510/6547 pares exactos, los 37 restantes son sprites (etapa 9); OAM 6869/6869. 8c: las pendientes de la partida salen exactas, falta la grabación de las colinas. 8d: ADF listo, sin medir (estimado 18,8 % de frame sin DMA) |
 | 9 | **Sprites del nivel** (D3): Rex, Banzai Bill, Jumping Piranha; después Chuck, Sliding Koopa, bloque volador, Info Box, meta | Aparecen en las posiciones de `spr.lv` y se comportan como en la SNES | — |
 | 10 | HUD | Barra de estado con su propia paleta (copper) | — |
 | 11 | Audio (D5) | Música del nivel + efectos, 4 canales | — |
