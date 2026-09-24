@@ -239,7 +239,8 @@ static void spr_obj_vert(u8 x)
     }
     if (t < 0x6E)
         goto l_B8;
-    if (t >= 0xD8) { spr_unsup(); return; } /* CODE_019386 */
+    if (t >= 0xD8)
+        goto l_386;
     {   /* pendiente: CODE_00FA19 */
         u8 s8 = T8(R16(wm_SlopeSteepness) + (u8)(t - 0x6E)), h;
         u16 idx = (u16)((s8 << 4) | (R8(m10) & 0x0F));
@@ -248,7 +249,8 @@ static void spr_obj_vert(u8 x)
         h = T8(DATA_00E632 + idx);
         if (h == 0x10)
             return;
-        if (h > 0x10) { spr_unsup(); return; }     /* CODE_019386 */
+        if (h > 0x10)
+            goto l_386;
         if (R8(m0) < 0x0C && R8(m0) < h)
             return;
         W8(wm_SprMoveDownPixels, h);
@@ -263,6 +265,20 @@ static void spr_obj_vert(u8 x)
             return;
         }
     }
+    goto l_B8;
+l_386:                                      /* CODE_019386: sube 1 px y repite */
+    if ((R8(m12) & 0x0F) >= 5)
+        return;
+    a = SPR(wm_SpriteStatus, x);
+    if (a == 0x02 || a == 0x05 || a == 0x0B)
+        return;
+    {
+        u16 v = (u16)((SPR(wm_SpriteYLo, x) | SPR(wm_SpriteYHi, x) << 8) - 1);
+        SETSPR(wm_SpriteYLo, x, (u8)v);
+        SETSPR(wm_SpriteYHi, x, v >> 8);
+    }
+    spr_obj_vert(x);
+    return;
 l_B8:                                       /* _0193B8 */
     if (!(SPR(wm_Tweaker1686, x) & 0x04)) {
         a = SPR(wm_SpriteStatus, x);

@@ -699,12 +699,24 @@ static int run_game(const char *sprpath, const char *mappath)
             rexf++;
             for (c = 0; c < 10; c++) if (ram[scmp[c] + k] != orc(i, scmp[c] + k)) okr = 0;
             rexok += okr;
+            if (!okr && getenv("GAME_SHOW")) {
+                printf("  rex frame %u ranura %d:", frame_of(i), k);
+                for (c = 0; c < 10; c++) if (ram[scmp[c] + k] != orc(i, scmp[c] + k))
+                    printf(" [%04X] %02X/%02X", scmp[c], ram[scmp[c] + k], orc(i, scmp[c] + k));
+                printf("\n");
+            }
             if (!okr) {
                 for (c = 0; c < 10; c++) take(i, scmp[c] + k);
                 if (orc(i, wm_SpriteSpeedX + k)) ram[wm_SpriteDir + k] = (orc(i, wm_SpriteSpeedX + k) & 0x80) ? 1 : 0;
                 if (orc(i, wm_SpriteStatus + k) != 8) follow[k] = 0;
             }
         }
+        if (!getenv("GAME_NOADOPT"))              /* Rex que ya existian: los corre el port */
+            for (k = 0; k < 12; k++)
+                if (!follow[k] && ram[wm_SpriteNum + k] == 0xAB && ram[wm_SpriteStatus + k] == 8) {
+                    follow[k] = 1;
+                    ram[wm_SpriteDir + k] = (ram[wm_SpriteSpeedX + k] & 0x80) ? 1 : 0;
+                }
         if (mario_unsupported) bad = NFF;
         for (k = 0; k < NFF && bad < 0; k++) {
             int a = ffields[k].adr;
