@@ -688,7 +688,8 @@ static int run_game(const char *sprpath, const char *mappath)
         blocks_update();
         sprite_load_level();
         for (k = 0; k < 12; k++)
-            if (((spr_spawned >> k) & 1) && ram[wm_SpriteNum + k] == 0xAB) follow[k] = 1;
+            if (((spr_spawned >> k) & 1) && (ram[wm_SpriteNum + k] == 0xAB || ram[wm_SpriteNum + k] == 0xB9))
+                follow[k] = 1;
         frames++;
         for (k = 0; k < 12; k++) {
             int okr = 1;

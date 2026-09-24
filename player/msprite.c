@@ -418,11 +418,24 @@ static int spr_mario_contact(u8 x)
 
 /* MarioSprInteractRt, hasta el contacto (el Rex tiene Tweaker167A bit 7:
    la reaccion la hace el propio sprite) */
+static int process_interact(u8 x);
 static int mario_spr_interact(u8 x)
 {
     if (!(SPR(wm_Tweaker167A, x) & 0x20)
         && (((x ^ R8(wm_FrameA)) & 1) | SPR(wm_OffscreenHorz, x)))
         return 0;
+    if (!process_interact(x))
+        return 0;
+    if (!NEG(SPR(wm_Tweaker167A, x))) {
+        spr_unsup();                        /* DefaultInteractR: otros sprites */
+        return 0;
+    }
+    return 1;
+}
+
+/* ProcessInteract: distancia gruesa + cajas (1 = contacto) */
+static int process_interact(u8 x)
+{
     (void)sub_horiz_pos(x);
     if ((u8)(R8(m15) + 0x50) >= 0xA0)
         return 0;
@@ -436,13 +449,76 @@ static int mario_spr_interact(u8 x)
         return 0;
     if (!(R8(wm_LevelMode) & 0x40) && (R8(wm_IsBehindScenery) ^ SPR(wm_SprBehindScrn, x)))
         return 0;
-    if (!spr_mario_contact(x))
-        return 0;
-    if (!NEG(SPR(wm_Tweaker167A, x))) {
-        spr_unsup();                        /* DefaultInteractR: otros sprites */
-        return 0;
+    return spr_mario_contact(x);
+}
+
+/* CODE_01B457 (InvisBlkMainRt): el sprite como bloque solido para Mario */
+static const s8 blk_push_lo[6] = { 14, -15, 16, -32, 31, -15 };  /* DATA_01B4F9 */
+static const u8 blk_push_hi[6] = { 0, 0xFF, 0, 0xFF, 0, 0xFF };  /* DATA_01B4FF */
+static void invis_blk(u8 x)
+{
+    u8 m0v, a, y, n;
+    if (!process_interact(x))
+        return;
+    m0v = (u8)(SPR(wm_SpriteYLo, x) - R8(wm_Bg1VOfs));
+    if (NEG((u8)((u8)(R8(wm_MarioScrPosY) + 0x18) - m0v))) {    /* encima */
+        u16 p;
+        if (NEG(R8(wm_MarioSpeedY)) || (R8(wm_MarioObjStatus) & 0x08))
+            return;
+        W8(wm_MarioSpeedY, 0x10);
+        W8(wm_IsOnSolidSpr, 1);
+        p = (u16)((SPR(wm_SpriteYLo, x) | SPR(wm_SpriteYHi, x) << 8)
+                  - (R8(wm_OnYoshi) ? 0x2F : 0x1F));
+        W16(wm_MarioYPos, p);
+        if (!(R8(wm_MarioObjStatus) & 0x03))
+            W16(wm_MarioXPos, R16(wm_MarioXPos) + (u16)(s16)(s8)SPR(wm_SpriteMiscTbl4, x));
+        return;
     }
-    return 1;
+    /* CODE_01B4B4 */
+    if (SPR(wm_Tweaker190F, x) & 1)
+        return;
+    a = (R8(wm_IsDucking) || !R8(wm_MarioPowerUp)) ? 0x08 : 0x00;
+    if (R8(wm_OnYoshi))
+        a = (u8)(a + 0x08);                 /* ADC #$08, carry 0 */
+    if ((u8)(a + R8(wm_MarioScrPosY)) >= m0v) {  /* desde abajo */
+        if (!NEG(R8(wm_MarioSpeedY)))
+            return;
+        W8(wm_MarioSpeedY, 0x10);
+        if (SPR(wm_SpriteNum, x) >= 0x83) {
+            SETSPR(wm_SpriteDecTbl4, x, 0x0F);
+            if (!SPR(wm_SpriteState, x)) {
+                SETSPR(wm_SpriteState, x, 1);
+                SETSPR(wm_SpriteDecTbl3, x, 0x10);
+            }
+        }
+        W8(wm_SoundCh1, 0x01);
+        return;
+    }
+    /* CODE_01B505: de costado */
+    y = sub_horiz_pos(x);
+    n = SPR(wm_SpriteNum, x);
+    if (n == 0xA9)
+        y += 2;
+    else if (n == 0x9C || n == 0xBB || n == 0x60 || n == 0x49)
+        y += 4;
+    W16(wm_MarioXPos, (u16)((SPR(wm_SpriteXLo, x) | SPR(wm_SpriteXHi, x) << 8)
+                            + (u16)(s16)blk_push_lo[y]));
+    (void)blk_push_hi;
+    W8(wm_MarioSpeedX, 0);
+}
+
+/* InfoBox (sprite_3-1.s) */
+static void info_box(u8 x)
+{
+    invis_blk(x);
+    sub_offscreen3(x);
+    if (SPR(wm_SpriteDecTbl3, x) == 1) {    /* termina el rebote: abre el mensaje */
+        SETSPR(wm_SpriteDecTbl3, x, 0);
+        SETSPR(wm_SpriteState, x, 0);
+        W8(wm_MsgBoxTrig, (u8)(((SPR(wm_SpriteXLo, x) >> 4) & 1) + 1));
+        mario_events |= MEV_SPRITE;
+    }
+    get_draw_info(x);                       /* GenericSprGfxRt2: flags para el frame siguiente */
 }
 
 /* SubSprSprInteract: la ranura y (la que corre) contra las de abajo.
@@ -591,6 +667,12 @@ void sprite_run(u8 x)
     }
     if (!st) {                              /* EraseSprite */
         SETSPR(wm_SprIndexInLvl, x, 0xFF);
+        return;
+    }
+    if (SPR(wm_SpriteNum, x) == 0xB9) {     /* caja de mensaje: sin init propio */
+        if (st == 0x01) { SETSPR(wm_SpriteStatus, x, 0x08); return; }
+        if (st == 0x08) { info_box(x); return; }
+        spr_unsup();
         return;
     }
     if (SPR(wm_SpriteNum, x) != 0xAB) { spr_unsup(); return; }
