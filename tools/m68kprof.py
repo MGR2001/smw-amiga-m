@@ -91,11 +91,15 @@ def main():
         cpu.write(RAM + 0x13C0, ri[256:])
         cpu.write(RAM + 0x13, rj[0x13:0x14])
         cpu.write(RAM + 0x15, rj[0x15:0x19])
+        cpu.write(RAM + 0x1A, rj[0x1A:0x1E])
         cpu.write(RAM + 0x1931, b"\x07")
+        cpu.write(RAM + 0x0200, bytes([0, 0xF0, 0, 0]) * 128)
         if i % a.every:
-            cpu.call(V.BASE + syms["_mario_player"], V.BASE)     # sin perfilar
+            cpu.call(V.BASE + syms["_mario_E2BD"], V.BASE)       # sin perfilar
+            cpu.call(V.BASE + syms["_mario_player"], V.BASE)
             cpu.call(V.BASE + syms["_blocks_update"], V.BASE)
             continue
+        run("_mario_E2BD")
         run("_mario_player")
         run("_blocks_update")
         frames += 1

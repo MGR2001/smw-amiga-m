@@ -135,7 +135,7 @@ def main():
 
     code = open(a.bin, "rb").read()
     syms = symbols(a.lst)
-    for s in ("_ram", "_map16_lo", "_map16_hi", "_mario_player", "_blocks_update",
+    for s in ("_ram", "_map16_lo", "_map16_hi", "_mario_player", "_blocks_update", "_mario_E2BD",
               "_mario_unsupported", "map16"):
         if s not in syms:
             sys.exit("falta el simbolo %s en %s" % (s, a.lst))
@@ -185,8 +185,11 @@ def main():
         cpu.write(RAM + 0x13C0, ri[3])
         cpu.write(RAM + 0x13, bytes([rj[2][0x13]]))
         cpu.write(RAM + 0x15, rj[2][0x15:0x19])
+        cpu.write(RAM + 0x1A, rj[2][0x1A:0x1E])     # camara de N+1 (etapa 6)
         cpu.write(RAM + 0x1931, b"\x07")
-        cost = call("_mario_player")
+        cpu.write(RAM + 0x0200, bytes([0, 0xF0, 0, 0]) * 128)   # wm_ClearOam (x/tile/prop sin importar)
+        cost = call("_mario_E2BD")
+        cost += call("_mario_player")
         if struct.unpack(">i", cpu.read(BASE + syms["_mario_unsupported"], 4))[0] == 0:
             cost += call("_blocks_update")
         if struct.unpack(">i", cpu.read(BASE + syms["_mario_unsupported"], 4))[0]:
@@ -220,7 +223,7 @@ def main():
         c = sorted(x[0] for x in counts)
         mean = sum(c) / len(c)
         worst = max(counts)
-        print("%s por frame (mario_player + blocks_update): media %.0f, mediana %d, "
+        print("%s por frame (mario_E2BD + mario_player + blocks_update): media %.0f, mediana %d, "
               "p99 %d, max %d (frame %d)"
               % (unit, mean, c[len(c) // 2], c[int(len(c) * 0.99)], worst[0], worst[1]))
         if a.engine == "musashi":

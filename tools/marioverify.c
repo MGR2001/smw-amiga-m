@@ -14,10 +14,11 @@
  * Los frames donde aterriza, choca un techo o pisa un enemigo fallan por
  * construccion hasta la 8b; se cuentan aparte (columna "suelo/aire").
  *
- *   gcc -O2 -Iplayer -o work/marioverify tools/marioverify.c player/mario.c player/mcoll.c player/manim.c player/gen/smwrom00.c
+ *   gcc -O2 -Iplayer -o work/marioverify tools/marioverify.c player/mario.c player/mcoll.c player/manim.c player/mgfx.c player/gen/smwrom00.c
  *   work/marioverify work/oracle_yi1.bin
  *   work/marioverify work/oracle_yi1.bin full [work/yi1_map16.bin [CAMPO]]   (8b)
  *   work/marioverify work/oracle_yi1.bin fulldump FRAME salida.bin   (estado para logicbench)
+ *   work/marioverify work/oracle_yi1.bin gfx [work/oracle_yi1_oam.bin]   (graficos de Mario)
  *   FULL_FRAME=N work/mvtrace ... full   (un solo frame; mvtrace = -DMCOLL_TRACE)
  */
 #include <stdio.h>
@@ -141,6 +142,9 @@ static int run_full(const char *mappath, const char *only, int verbose)
         load(i);
         take(j, 0x13);                      /* FrameA: lo sube el bucle del juego */
         for (k = 0x15; k <= 0x18; k++) take(j, k);
+        /* camara de N+1 ($1A-$1D): CODE_00F6DB corre antes que Mario y
+           todavia no esta portada (etapa 6); es una entrada mas */
+        for (k = 0; k < 4; k++) take(j, wm_Bg1HOfs + k);
         ram[0x1931] = 0x07;                 /* wm_LvHeadTileset (no se graba) */
         if (fdump_frame && frame_of(j) == fdump_frame) {
             /* estado de N + entradas de N+1, para player/logicbench.s:
@@ -151,7 +155,10 @@ static int run_full(const char *mappath, const char *only, int verbose)
             fclose(o);
             printf("estado del frame %u -> %s\n", fdump_frame, fdump_path);
         }
-        mario_player();
+        for (k = 0; k < 128; k++) ram[0x0201 + 4 * k] = 0xF0;   /* wm_ClearOam */
+        mario_unsupported = 0;
+        mario_E2BD();                       /* orden de CODE_00A295 */
+        if (!mario_unsupported) mario_player();
         if (!mario_unsupported) blocks_update();
         if (mario_unsupported) { unsup++; why[mario_unsupported & 15]++; continue; }
 
@@ -204,6 +211,72 @@ static int run_full(const char *mappath, const char *only, int verbose)
     return 0;
 }
 
+/* ------------------------------------------------------------------ */
+/* Modo "gfx": los gráficos de Mario (CODE_00E2BD, player/mgfx.c).  En el
+   frame N+1 el juego dibuja a Mario ANTES de moverlo: con el estado de N y
+   la camara de N+1.  Se compara la OAM que escribe el port (entradas
+   visibles, en orden de slot) con la grabada al final de N+1
+   (work/oracle_yi1_oam.bin): tienen que aparecer seguidas y exactas
+   (x, y, tile, atributos, tamaño).  Tambien MarioScrPosX/Y. */
+#define OREC 645
+static int run_gfx(const char *oampath)
+{
+    unsigned char *odb;
+    long i, n = 0, okoam = 0, okscr = 0, shown = 0, drawn = 0, tiles = 0;
+    FILE *f = fopen(oampath, "rb");
+    if (!f) { perror(oampath); return 2; }
+    odb = malloc(nrec * OREC);
+    if (fread(odb, OREC, nrec, f) != (size_t)nrec) { fprintf(stderr, "%s: lectura corta\n", oampath); return 2; }
+    fclose(f);
+    for (i = 0; i + 1 < nrec; i++) {
+        long j = i + 1;
+        unsigned char port[128 * 5], *rec = odb + j * OREC + 5;
+        int np = 0, nr = odb[j * OREC + 4], s, k, found = 0, scr;
+        if (frame_of(j) != frame_of(i) + 1) continue;
+        if (db[i * REC + 4] != 0x29 || db[j * REC + 4] != 0x29) continue;
+        if (orc(i, wm_MarioPowerUp) == 2) continue;          /* capa: sin portar */
+        load(i);
+        take(j, 0x13);
+        for (k = 0; k < 4; k++) take(j, wm_Bg1HOfs + k);  /* $1A-$1D: camara de N+1 */
+        for (s = 0; s < 128; s++) ram[0x0201 + 4 * s] = 0xF0;   /* wm_ClearOam */
+        mario_unsupported = 0;
+        mario_E2BD();
+        if (mario_unsupported) continue;
+        n++;
+        for (s = 0; s < 128; s++) {
+            unsigned char *o = ram + 0x0200 + 4 * s;
+            if (o[1] == 0xF0) continue;
+            port[np * 5] = o[0]; port[np * 5 + 1] = o[1]; port[np * 5 + 2] = o[2];
+            port[np * 5 + 3] = o[3]; port[np * 5 + 4] = ram[0x0420 + s];
+            np++;
+        }
+        for (k = 0; k + np <= nr && !found; k++)
+            if (!memcmp(rec + 5 * k, port, 5 * np)) found = 1;
+        if (np == 0) found = 1;                 /* no dibuja: nada que buscar */
+        else { drawn++; tiles += np; }
+        scr = ram[wm_MarioScrPosX] == orc(j, wm_MarioScrPosX)
+              && ram[wm_MarioScrPosX + 1] == orc(j, wm_MarioScrPosX + 1)
+              && ram[wm_MarioScrPosY] == orc(j, wm_MarioScrPosY)
+              && ram[wm_MarioScrPosY + 1] == orc(j, wm_MarioScrPosY + 1);
+        okoam += found; okscr += scr;
+        if ((!found || !scr) && shown < 30) {
+            shown++;
+            printf("  frame %u: scr port %02X%02X,%02X%02X oraculo %02X%02X,%02X%02X | port",
+                   frame_of(j), ram[wm_MarioScrPosX + 1], ram[wm_MarioScrPosX],
+                   ram[wm_MarioScrPosY + 1], ram[wm_MarioScrPosY],
+                   orc(j, wm_MarioScrPosX + 1), orc(j, wm_MarioScrPosX),
+                   orc(j, wm_MarioScrPosY + 1), orc(j, wm_MarioScrPosY));
+            for (k = 0; k < np; k++) printf(" %02x%02x%02x%02x%02x", port[5*k], port[5*k+1], port[5*k+2], port[5*k+3], port[5*k+4]);
+            printf(" | oraculo");
+            for (k = 0; k < nr && k < 8; k++) printf(" %02x%02x%02x%02x%02x", rec[5*k], rec[5*k+1], rec[5*k+2], rec[5*k+3], rec[5*k+4]);
+            printf("\n");
+        }
+    }
+    printf("\n[gfx] frames: %ld (con Mario dibujado: %ld, %ld entradas de OAM)\n"
+           "      OAM de Mario exacta: %ld  MarioScrPosX/Y exacta: %ld\n", n, drawn, tiles, okoam, okscr);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     const char *path = argc > 1 ? argv[1] : "work/oracle_yi1.bin";
@@ -228,6 +301,8 @@ int main(int argc, char **argv)
     if (only && !strcmp(only, "full"))
         return run_full(argc > 3 ? argv[3] : "work/yi1_map16.bin",
                         argc > 4 ? argv[4] : NULL, 1);
+    if (only && !strcmp(only, "gfx"))
+        return run_gfx(argc > 3 ? argv[3] : "work/oracle_yi1_oam.bin");
     if (only && !strcmp(only, "fulldump") && argc > 4) {
         fdump_frame = (unsigned)atoi(argv[3]);
         fdump_path = argv[4];

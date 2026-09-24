@@ -63,4 +63,7 @@ void blocks_update(void);   /* CODE_02902D: bloques que rebotan (fase de sprites
 void mario_player(void);
 void mario_CEB1(void);
 
+/* mgfx.c: CODE_00E2BD, graficos de Mario (OAM, MarioScrPosX/Y, DMA) */
+void mario_E2BD(void);
+
 #endif

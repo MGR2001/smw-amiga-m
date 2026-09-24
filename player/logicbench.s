@@ -7,8 +7,8 @@
 ;   W0  nada (coste de la propia medida)
 ;   W1  copiar a ram[] el estado de un frame (576 bytes): se descuenta
 ;   W2  copiar el estado "corriendo en el suelo" (frame 5410) + el frame
-;       entero del jugador: mario_player (colision 8b, fisica 8a,
-;       animacion CEB1) + blocks_update (bloques que rebotan)
+;       entero del jugador: mario_E2BD (graficos) + mario_player
+;       (colision 8b, fisica 8a, animacion CEB1) + blocks_update
 ;   W3  lo mismo con el estado "empieza un salto" (frame 10983)
 ;
 ; El C (mario.c, smwrom00.c) lo compila vbcc con -sc -sd -const-in-data:
@@ -395,6 +395,9 @@ callframe:
         add.l   #MAPHALF,a0
         move.l  a0,_map16_hi(a4)
         move.l  a4,a0
+        add.l   #_mario_E2BD-binstart,a0    ; graficos (antes que la fisica)
+        jsr     (a0)
+        move.l  a4,a0
         add.l   #_mario_player-binstart,a0
         jsr     (a0)
         move.l  a4,a0
@@ -531,10 +534,12 @@ vars:   ds.b    V_SIZE
         include "work/cc/mario.data.s"
         include "work/cc/mcoll.data.s"
         include "work/cc/manim.data.s"
+        include "work/cc/mgfx.data.s"
         cnop    0,4
         include "work/cc/mario.code.s"
         include "work/cc/mcoll.code.s"
         include "work/cc/manim.code.s"
+        include "work/cc/mgfx.code.s"
         include "work/cc/smwrom00.code.s"
         even
 MAPHALF     equ 20*$1B0                     ; 20 pantallas de Yoshi's Island 1

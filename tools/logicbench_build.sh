@@ -27,7 +27,7 @@ if [ -n "$PROF" ]; then
     OUT=work/prof; CC=work/prof/cc; EXTRA=-inline-size=0
 fi
 mkdir -p $CC
-for f in mario mcoll manim gen/smwrom00; do
+for f in mario mcoll manim mgfx gen/smwrom00; do
     b=$(basename $f)
     src=player/$f.c
     if [ -n "$PROF" ]; then
