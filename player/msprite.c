@@ -507,6 +507,41 @@ static void invis_blk(u8 x)
     W8(wm_MarioSpeedX, 0);
 }
 
+/* FlyingBlock (sprite_1-1.s), el $83: vuela hacia la izquierda en onda */
+static void spr_spr_interact(u8 y);
+
+static void flying_block(u8 x)
+{
+    get_draw_info(x);                       /* SubSprGfx2Entry1: flags */
+    SETSPR(wm_SpriteMiscTbl4, x, 0);
+    if (!SPR(wm_SpriteState, x) && !R8(wm_SpritesLocked)) {
+        if (!(R8(wm_FrameA) & 1)) {
+            u8 y = SPR(wm_SpriteMiscTbl7, x) & 1, v;
+            v = (u8)(SPR(wm_SpriteSpeedY, x) + tx_01AD68[y]);
+            SETSPR(wm_SpriteSpeedY, x, v);
+            if (v == tx_01AD6A[y])
+                SETSPR(wm_SpriteMiscTbl7, x, SPR(wm_SpriteMiscTbl7, x) + 1);
+        }
+        spr_pos_axis(x, 0);
+        if (SPR(wm_SpriteNum, x) != 0x83) { spr_unsup(); return; }
+        SETSPR(wm_SpriteSpeedX, x, 0xF4);
+        spr_pos_axis(x, 0x0C);
+        SETSPR(wm_SpriteMiscTbl4, x, R8(wm_SprPixelMove));
+        SETSPR(wm_SpriteMiscTbl6, x, SPR(wm_SpriteMiscTbl6, x) + 1);
+    }
+    spr_spr_interact(x);
+    invis_blk(x);
+    sub_offscreen3(x);
+    if (SPR(wm_SpriteDecTbl3, x) == 0x08 && SPR(wm_SpriteState, x) != 0x02) {
+        SETSPR(wm_SpriteState, x, SPR(wm_SpriteState, x) + 1);
+        SETSPR(wm_SpriteDecTbl6, x, 0x50);
+        W16(wm_BlockYPos, (u16)(SPR(wm_SpriteXLo, x) | SPR(wm_SpriteXHi, x) << 8));
+        W16(wm_BlockXPos, (u16)(SPR(wm_SpriteYLo, x) | SPR(wm_SpriteYHi, x) << 8));
+        SETSPR(wm_SprIndexInLvl, x, 0xFF);
+        mario_events |= MEV_BOUNCE;         /* _02887D: suelta el objeto (pendiente) */
+    }
+}
+
 /* InfoBox (sprite_3-1.s) */
 static void info_box(u8 x)
 {
@@ -667,6 +702,17 @@ void sprite_run(u8 x)
     }
     if (!st) {                              /* EraseSprite */
         SETSPR(wm_SprIndexInLvl, x, 0xFF);
+        return;
+    }
+    if (SPR(wm_SpriteNum, x) == 0x83) {     /* bloque ? volador */
+        if (st == 0x01) {                   /* InitFlyingBlock */
+            SETSPR(wm_SpriteStatus, x, 0x08);
+            SETSPR(wm_SpriteMiscTbl3, x, (SPR(wm_SpriteXLo, x) >> 4) & 0x03);
+            SETSPR(wm_SpriteDir, x, SPR(wm_SpriteDir, x) + 1);
+            return;
+        }
+        if (st == 0x08) { flying_block(x); return; }
+        spr_unsup();
         return;
     }
     if (SPR(wm_SpriteNum, x) == 0xB9) {     /* caja de mensaje: sin init propio */

@@ -47,6 +47,8 @@ WANT = [
     ("sprite_3-1.s", "SprClippingHeight", "tx_ClipHeight"),
     ("sprite_3-1.s", "MarioClipDispY", "tx_MarioClipDispY"),
     ("sprite_3-1.s", "MarioClippingHeight", "tx_MarioClipH"),
+    ("sprite_1-1.s", "DATA_01AD68", "tx_01AD68"),
+    ("sprite_1-1.s", "DATA_01AD6A", "tx_01AD6A"),
     ("sprite_tables.s", "Sprite1656Vals", "tx_1656"),
     ("sprite_tables.s", "Sprite1662Vals", "tx_1662"),
     ("sprite_tables.s", "Sprite166EVals", "tx_166E"),
