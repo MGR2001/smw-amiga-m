@@ -33,6 +33,8 @@ V0, STEP, REP = 0x30, 10, 4
 # ("P", n) (n MOVE de relleno a COLOR02..07/09..15, como el borrado)
 TESTS = [("wait h=$%02X" % h, [("W", h), ("M", 0)])
          for h in (0x38, 0x40, 0x48, 0x50, 0x60, 0x80, 0xA0, 0xC0, 0xD8)]
+TESTS_RIGHT = [("wait h=$%02X (borde derecho)" % h, [("W", h), ("M", 0)])
+               for h in (0xC8, 0xCC, 0xD0, 0xD4, 0xDC, 0xE0, 0xE2)]
 TESTS += [
     ("cadena de 6 MOVE tras WAIT $50", [("W", 0x50)] + [("M", k) for k in range(6)]),
     ("WAIT $50 repetido entre MOVE", [("W", 0x50), ("M", 0), ("W", 0x50), ("M", 1), ("W", 0x50), ("M", 2)]),
@@ -46,6 +48,8 @@ TESTS += [
     ("borrado (v-1,$E2) 14 + WAIT $40", [("B", 0), ("P", 14), ("W", 0x40), ("M", 0)]),
     ("borrado (v-1,$D8) 14 MOVE: fin", [("B", 1), ("P", 14), ("M", 0)]),
 ]
+if os.environ.get("COPCAL_RIGHT"):
+    TESTS = TESTS_RIGHT
 
 
 def gen():

@@ -57,7 +57,9 @@ SEG         equ 64+MIDMAX*12+12 ; 220 (tools/mkscroll.py: SEG). Una carga
                                 ; ocupa hasta 12 bytes: 2 rellenos + MOVE
 CL_SIZE     equ CL_LINES+SEG*LINES+4
 HOFS        equ $38             ; h de un WAIT = HOFS + x / 2 (medido, copcal.py)
-LASTX       equ 312             ; ninguna carga despues de esta x
+LASTX       equ 316             ; ninguna carga despues de esta x
+XKNEE       equ 304             ; medido (copcal.py): hasta h = $D0, x = 2 (h - $38);
+HKNEE       equ $d0             ; despues, 1 px por unidad de h ($D4 -> 307, $DC -> 315)
 BLANKH      equ $e2             ; el borrado empieza en esta h de la linea
                                 ; ANTERIOR: 7 + k MOVE terminan antes de x = 0
         ifnd    TXOFS
@@ -490,9 +492,16 @@ build_mid:
         sub.w   d6,d2
         bpl.s   .fp
         moveq   #0,d2
-.fp:    lsr.w   #1,d2
+.fp:    addq.w  #3,d2                       ; la h va de 4 en 4 px: redondear
+        and.w   #$fffc,d2                   ; HACIA ARRIBA (nunca antes de que
+        cmp.w   #XKNEE,d2                   ; termine el tramo anterior)
+        bhi.s   .fk
+        lsr.w   #1,d2                       ; x <= 304: h = $38 + x / 2
         add.w   #HOFS,d2
-        and.w   #$fe,d2
+        bra.s   .fk2
+.fk:    sub.w   #XKNEE-HKNEE,d2             ; x > 304: 1 px por unidad de h
+        addq.w  #1,d2
+.fk2:   and.w   #$fe,d2
         cmp.w   d1,d2
         bhs.s   .fh
         move.w  d1,d2
@@ -506,7 +515,7 @@ build_mid:
         bne.s   .fast
         bra     .next
         ;--- camino completo ---------------------------------------------
-.full:  move.w  2(a6),-(sp)                 ; habia cargas escritas?
+.full:  move.w  2(a6),-(sp)                 ; (reservado)
         move.w  #4,2(a6)
         move.w  (a4),d2                     ; d2 = primera carga viva
         move.w  (a2),d3                     ; d3 = fin de la linea
@@ -551,7 +560,14 @@ build_mid:
         bhs     .ld_done
         move.w  d0,(a6)
         bra     .ld_done
-.in:    move.w  2(a5),d0                    ; principio del nuevo
+.in:    move.w  (a5),d0                     ; el orden es por x planificada,
+        cmp.w   d0,d6                       ; no por fin anterior: saltar las
+        bhi     .next_ld                    ; que ya caducaron (fin < s: las
+        addq.w  #1,d0                       ; pone el borrado) y vu = el primer
+        cmp.w   (a6),d0                     ; fin + 1 de las que quedan
+        bhs.s   .in2
+        move.w  d0,(a6)
+.in2:   move.w  2(a5),d0                    ; principio del nuevo
         cmp.w   d0,d5
         bhi.s   .vis
         sub.w   #319,d0                     ; empieza fuera: se vera cuando
@@ -567,7 +583,7 @@ build_mid:
         bpl.s   .pos
         moveq   #0,d0
 .pos:   sub.w   d1,d0                       ; d0 = espera = liberacion - T
-        ble.s   .mv                         ; ya se puede: solo MOVE
+        ble     .mv                         ; ya se puede: solo MOVE
         cmp.w   #32,d0
         bhi.s   .wait
 .fill:  move.l  #$01fe0000,(a3)+            ; relleno: 16 px
@@ -586,10 +602,17 @@ build_mid:
         bhs.s   .pw2
         move.w  d1,d0
         add.w   #32,d0
-.pw2:   move.w  d0,d1                       ; T = x del MOVE
-        lsr.w   #1,d0
+.pw2:   addq.w  #3,d0                       ; x de 4 en 4 px, hacia arriba
+        and.w   #$fffc,d0
+        move.w  d0,d1                       ; T = x del MOVE
+        cmp.w   #XKNEE,d0
+        bhi.s   .pk
+        lsr.w   #1,d0                       ; x <= 304: h = $38 + x / 2
         add.w   #HOFS,d0
-        and.w   #$fe,d0
+        bra.s   .pk2
+.pk:    sub.w   #XKNEE-HKNEE,d0             ; x > 304: 1 px por unidad de h
+        addq.w  #1,d0
+.pk2:   and.w   #$fe,d0
         cmp.w   #$e2,d0
         bls.s   .h2
         move.w  #$e2,d0
@@ -619,11 +642,10 @@ build_mid:
         bra     .ld
 .ld_done:
         lea     vars(pc),a5
-        move.w  (sp)+,d0                    ; lo que habia escrito antes
-        tst.w   d4
-        bne.s   .jump
-        cmp.w   #4,d0
-        beq.s   .next                       ; sin cargas, igual que antes
+        addq.l  #2,sp                       ; (lo que habia antes: no sirve,
+                                            ; solo cuenta los WAIT y una linea
+                                            ; puede tener cargas sin WAIT) el
+                                            ; salto se escribe siempre
 .jump:  lea     SEG(a0),a5                  ; el siguiente segmento
         move.l  a5,d0
         lea     vars(pc),a5
