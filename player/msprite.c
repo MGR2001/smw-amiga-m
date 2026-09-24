@@ -445,7 +445,72 @@ static int mario_spr_interact(u8 x)
     return 1;
 }
 
-/* RexMainRt (sin SprSprInteract: pendiente) */
+/* SubSprSprInteract: la ranura y (la que corre) contra las de abajo.
+   Portado el caso estado 8 contra estado 8 (CODE_01A56D: se dan vuelta);
+   el resto marca mario_unsupported. */
+static void spr_spr_interact(u8 y)
+{
+    int x;
+    if (!y || !((y ^ R8(wm_FrameA)) & 1))
+        return;
+    for (x = y - 1; x >= 0; x--) {
+        u16 a, b;
+        u8 d, m0v, old;
+        if (SPR(wm_SpriteStatus, x) < 0x08)
+            continue;
+        if ((((SPR(wm_Tweaker1686, x) | SPR(wm_Tweaker1686, y)) & 0x08) | SPR(wm_SpriteDecTbl4, x)
+             | SPR(wm_SpriteDecTbl4, y) | SPR(wm_SpriteEatenTbl, x)
+             | (SPR(wm_SprBehindScrn, x) ^ SPR(wm_SprBehindScrn, y))))
+            continue;
+        W8(wm_CheckSprInter, (u8)x);
+        a = (u16)(SPR(wm_SpriteXLo, x) | SPR(wm_SpriteXHi, x) << 8);
+        b = (u16)(SPR(wm_SpriteXLo, y) | SPR(wm_SpriteXHi, y) << 8);
+        if ((u16)(a - b + 0x10) >= 0x20)
+            continue;
+        a = (u16)((SPR(wm_SpriteYLo, x) | SPR(wm_SpriteYHi, x) << 8)
+                  + ((SPR(wm_Tweaker1662, x) & 0x0F) ? 10 : 2));
+        b = (u16)((SPR(wm_SpriteYLo, y) | SPR(wm_SpriteYHi, y) << 8)
+                  + ((SPR(wm_Tweaker1662, y) & 0x0F) ? 10 : 2));
+        if ((u16)(a - b + 0x0C) >= 0x18)
+            continue;
+        /* CODE_01A4BA */
+        if (SPR(wm_SpriteStatus, y) != 0x08 || SPR(wm_SpriteStatus, x) != 0x08) {
+            spr_unsup();
+            continue;
+        }
+        /* CODE_01A56D */
+        a = (u16)(SPR(wm_SpriteXLo, x) | SPR(wm_SpriteXHi, x) << 8);
+        b = (u16)(SPR(wm_SpriteXLo, y) | SPR(wm_SpriteXHi, y) << 8);
+        m0v = (u8)(a >= b);                /* ROL: el carry de la resta (sin prestamo) */
+        if (!(SPR(wm_Tweaker1686, y) & 0x10)) {
+            old = SPR(wm_SpriteDir, y);
+            SETSPR(wm_SpriteDir, y, m0v);
+            if (old != m0v && !SPR(wm_SpriteDecTbl5, y))
+                SETSPR(wm_SpriteDecTbl5, y, 0x08);
+        }
+        if (!(SPR(wm_Tweaker1686, x) & 0x10)) {
+            d = (u8)(m0v ^ 1);
+            old = SPR(wm_SpriteDir, x);
+            SETSPR(wm_SpriteDir, x, d);
+            if (old != d && !SPR(wm_SpriteDecTbl5, x))
+                SETSPR(wm_SpriteDecTbl5, x, 0x08);
+        }
+    }
+}
+
+/* LoadTweakerBytes (para sprites que no corre el port) */
+void sprite_tweakers(u8 x)
+{
+    u8 n = SPR(wm_SpriteNum, x);
+    SETSPR(wm_Tweaker1656, x, tx_1656[n]);
+    SETSPR(wm_Tweaker1662, x, tx_1662[n]);
+    SETSPR(wm_Tweaker166E, x, tx_166E[n]);
+    SETSPR(wm_Tweaker167A, x, tx_167A[n]);
+    SETSPR(wm_Tweaker1686, x, tx_1686[n]);
+    SETSPR(wm_Tweaker190F, x, tx_190F[n]);
+}
+
+/* RexMainRt */
 static void rex_main(u8 x)
 {
     u8 a, y;
@@ -478,7 +543,7 @@ static void rex_main(u8 x)
         spr_update_pos(x);
     if (SPR(wm_SprObjStatus, x) & 0x03)
         SETSPR(wm_SpriteDir, x, SPR(wm_SpriteDir, x) ^ 1);
-    /* SprSprInteract: pendiente */
+    spr_spr_interact(x);
     if (!mario_spr_interact(x))
         return;
     if (R8(wm_StarPowerTimer)) { spr_unsup(); return; }     /* RexStarKill */

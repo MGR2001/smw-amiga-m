@@ -78,5 +78,6 @@ extern const u8 *spr_level;     /* spr.lv del nivel */
 extern u8 spr_spawned;          /* ranuras creadas por el cargador en este frame */
 void sprite_load_level(void);   /* LoadSprFromLevel */
 void sprite_run(u8 x);          /* CODE_0180D2 + HandleSprite de la ranura x (Rex) */
+void sprite_tweakers(u8 x);     /* LoadTweakerBytes */
 
 #endif

@@ -338,6 +338,8 @@ void level_frame(void)
     mario_unsupported = MARIO_OK;
     camera_F6DB();
     if (!mario_unsupported) mario_E2BD();
+    W16(wm_PlayerXPosLv, R16(wm_MarioXPos));        /* CODE_00A2F3 */
+    W16(wm_PlayerYPosLv, R16(wm_MarioYPos));
     if (!mario_unsupported) mario_player();
     if (mario_unsupported)
         return;

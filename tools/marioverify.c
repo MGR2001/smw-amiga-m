@@ -28,6 +28,8 @@
 #include <string.h>
 #include "mario.h"
 #include "gen/smwram.h"
+#include "gen/smwtab.h"
+#include "smwmac.h"
 
 #define REC 584             /* 8 de cabecera + 256 + 320 */
 
@@ -538,6 +540,7 @@ static int run_sprloop(const char *sprpath, const char *mappath)
                 if (orc(j, wm_SpriteStatus + k) == 0) ram[wm_SprIndexInLvl + k] = 0xFF;
                 if (orc(j, wm_SpriteStatus + k) == 1 && orc(i, wm_SpriteStatus + k) != 1)
                     ram[wm_SpriteStatus + k] = 0;   /* nace en N+1: lo crea el cargador */
+                if (ram[wm_SpriteStatus + k]) sprite_tweakers((u8)k);
                 continue;
             }
             mario_unsupported = 0;
@@ -595,6 +598,142 @@ static int run_sprloop(const char *sprpath, const char *mappath)
     return 0;
 }
 
+/* ------------------------------------------------------------------ */
+/* Modo "game": el frame de nivel entero en lazo cerrado. Mario desde el
+   joypad (como "loop") y, en el mismo frame y en el orden del juego, los
+   sprites (los Rex que nacen a la vista los corre el port; el resto se
+   copia del oraculo, como en "sprloop"). Asi los pisotones de Mario salen
+   de los Rex del port. Resincroniza a Mario en cada diferencia (sin tocar
+   los sprites que sigue el port). */
+static int run_game(const char *sprpath, const char *mappath)
+{
+    static u8 spr[1024], map0[0x8000], map[0x8000], keep[0x2000];
+    static const int scmp[] = { wm_SpriteStatus, wm_SpriteXLo, wm_SpriteXHi, wm_SpriteYLo,
+                                wm_SpriteYHi, wm_SpriteSpeedX, wm_SpriteSpeedY, wm_SpriteState,
+                                wm_SpriteXAcc, wm_SpriteYAcc, wm_SpriteNum };
+    long i, frames = 0, resync = 0, longest = 0, cur = 0, rexf = 0, rexok = 0;
+    long cause[NFF + 2];
+    int k, c, synced = 0, follow[12] = {0}, shown = 0;
+    size_t mlen;
+    FILE *f = fopen(sprpath, "rb");
+    if (!f) { perror(sprpath); return 2; }
+    if (fread(spr, 1, sizeof spr, f) < 4) return 2;
+    fclose(f);
+    f = fopen(mappath, "rb");
+    if (!f) { perror(mappath); return 2; }
+    mlen = fread(map0, 1, sizeof map0, f);
+    fclose(f);
+    spr_level = spr;
+    map16_lo = map;
+    map16_hi = map + mlen / 2;
+    keep_ram = 1;
+    memset(cause, 0, sizeof cause);
+    for (i = 0; i < nrec; i++) {
+        int bad = -1;
+        int newseg = i == 0 || frame_of(i) != frame_of(i - 1) + 1 || db[(i - 1) * REC + 4] != 0x29;
+        if (db[i * REC + 4] != 0x29) { synced = 0; continue; }
+        if (newseg) {
+            int y, idx;
+            unsigned cam = orc(i, wm_Bg1HOfs) | orc(i, wm_Bg1HOfs + 1) << 8;
+            memcpy(map, map0, mlen);
+            memset(ram, 0, sizeof ram);
+            for (k = 0; k < 12; k++) follow[k] = 0;
+            for (y = 1, idx = 0; spr[y] != 0xFF; y += 3, idx++) {
+                unsigned sx = (((spr[y] << 3) & 0x10) | (spr[y + 1] & 0x0F)) << 8 | (spr[y + 1] & 0xF0);
+                if (sx + 0x30 >= cam && sx < cam + 0x120) ram[wm_SprLoadStatus + idx] = 1;
+            }
+            synced = 0;
+        }
+        if (orc(i, wm_MarioAnimation) || orc(i, wm_SpritesLocked)) { synced = 0; continue; }
+        if (!synced) {
+            memcpy(keep, ram, sizeof keep);
+            load(i);
+            for (k = 0; k < 12; k++)            /* los sprites que sigue el port se quedan */
+                if (follow[k]) for (c = 0; c < 11; c++) ram[scmp[c] + k] = keep[scmp[c] + k];
+            ram[0x1931] = 0x07;
+            ram[wm_SpriteMemory] = spr[0] & 0x3F;
+            ram[wm_LowestSolidSprTile] = ram[wm_HighestSolidSprTile] = 0xFF;
+            synced = 1;
+            if (cur > longest) longest = cur;
+            cur = 0;
+            continue;
+        }
+        for (k = 0x15; k <= 0x18; k++) take(i, k);
+        /* level_frame con los sprites en medio */
+        ram[wm_FrameA]++;
+        for (k = 0; k < 128; k++) ram[0x0201 + 4 * k] = 0xF0;
+        mario_unsupported = 0;
+        camera_F6DB();
+        if (!mario_unsupported) mario_E2BD();
+        W16(wm_PlayerXPosLv, R16(wm_MarioXPos));        /* CODE_00A2F3 */
+        W16(wm_PlayerYPosLv, R16(wm_MarioYPos));
+        if (!mario_unsupported) mario_player();
+        if (!mario_unsupported) sprites_begin();
+        for (k = 11; k >= 0; k--) {
+            if (!follow[k]) {
+                for (c = 0; c < 11; c++) take(i, scmp[c] + k);
+                if (orc(i, wm_SpriteStatus + k) == 1 && (i == 0 || orc(i - 1, wm_SpriteStatus + k) != 1))
+                    ram[wm_SpriteStatus + k] = 0;
+                if (ram[wm_SpriteStatus + k]) sprite_tweakers((u8)k);
+                continue;
+            }
+            {
+                int u = mario_unsupported;
+                mario_unsupported = 0;
+                sprite_run((u8)k);
+                if (mario_unsupported) follow[k] = 0;
+                mario_unsupported = u;
+            }
+        }
+        blocks_update();
+        sprite_load_level();
+        for (k = 0; k < 12; k++)
+            if (((spr_spawned >> k) & 1) && ram[wm_SpriteNum + k] == 0xAB) follow[k] = 1;
+        frames++;
+        for (k = 0; k < 12; k++) {
+            int okr = 1;
+            if (!follow[k]) continue;
+            if (!ram[wm_SpriteStatus + k] && !orc(i, wm_SpriteStatus + k)) { follow[k] = 0; continue; }
+            rexf++;
+            for (c = 0; c < 10; c++) if (ram[scmp[c] + k] != orc(i, scmp[c] + k)) okr = 0;
+            rexok += okr;
+            if (!okr) {
+                for (c = 0; c < 10; c++) take(i, scmp[c] + k);
+                if (orc(i, wm_SpriteSpeedX + k)) ram[wm_SpriteDir + k] = (orc(i, wm_SpriteSpeedX + k) & 0x80) ? 1 : 0;
+                if (orc(i, wm_SpriteStatus + k) != 8) follow[k] = 0;
+            }
+        }
+        if (mario_unsupported) bad = NFF;
+        for (k = 0; k < NFF && bad < 0; k++) {
+            int a = ffields[k].adr;
+            if (ram[a] != orc(i, a) || (ffields[k].w == 2 && ram[a + 1] != orc(i, a + 1))) bad = k;
+        }
+        if (bad < 0) { cur++; continue; }
+        cause[bad]++;
+        resync++;
+        if (shown++ < 25)
+            printf("  frame %u: tras %ld frames, difiere %s%s\n", frame_of(i), cur,
+                   bad < NFF ? ffields[bad].name : "(sin portar)",
+                   orc(i, wm_IsOnSolidSpr) ? "  [sobre un sprite]" : "");
+        if (cur > longest) longest = cur;
+        cur = 0;
+        memcpy(keep, ram, sizeof keep);
+        load(i);
+        for (k = 0; k < 12; k++)
+            if (follow[k]) for (c = 0; c < 11; c++) ram[scmp[c] + k] = keep[scmp[c] + k];
+        ram[0x1931] = 0x07;
+    }
+    if (cur > longest) longest = cur;
+    printf("\n[game] frames: %ld  resincronizaciones de Mario: %ld  tramo mas largo: %ld\n",
+           frames, resync, longest);
+    printf("       Rex seguidos: %ld Rex-frames, exactos %ld\n", rexf, rexok);
+    printf("       primer campo distinto:");
+    for (k = 0; k < NFF; k++) if (cause[k]) printf(" %s:%ld", ffields[k].name, cause[k]);
+    if (cause[NFF]) printf(" sin-portar:%ld", cause[NFF]);
+    printf("\n");
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     const char *path = argc > 1 ? argv[1] : "work/oracle_yi1.bin";
@@ -619,6 +758,10 @@ int main(int argc, char **argv)
     if (only && !strcmp(only, "full"))
         return run_full(argc > 3 ? argv[3] : "work/yi1_map16.bin",
                         argc > 4 ? argv[4] : NULL, 1);
+    if (only && !strcmp(only, "game"))
+        return run_game(argc > 3 ? argv[3]
+                        : "../smw-src-master/project/mw_e10/levels/data/world_1/1/spr.lv",
+                        "work/yi1_map16.bin");
     if (only && !strcmp(only, "sprloop"))
         return run_sprloop(argc > 3 ? argv[3]
                            : "../smw-src-master/project/mw_e10/levels/data/world_1/1/spr.lv",
