@@ -44,7 +44,7 @@ static void fe4a(void)
             return;
     }
     for (y = 3; y != 0; y--) {              /* -: LDA wm_SmokeSprite,Y / BEQ */
-        if (R8(wm_SmokeSprite + y) == 0)
+        if (RX8(wm_SmokeSprite, y) == 0)
             goto fe72;
     }
     return;
@@ -53,20 +53,20 @@ fe72:                                       /* CODE_00FE72 */
        en los dos caminos que llegan aca el carry es 1 si hubo CMP, y del
        AND/ORA anteriores (no lo tocan) si no. Solo afecta a la posicion
        del humo, que el oraculo no compara. */
-    W8(wm_SmokeSprite + y, 0x03);
-    W8(wm_SmokeXPos + y, R8(wm_MarioXPos) + 0x04);
+    (RX8(wm_SmokeSprite, y) = (u8)(0x03));
+    (RX8(wm_SmokeXPos, y) = (u8)(R8(wm_MarioXPos) + 0x04));
     a = (u8)(R8(wm_MarioYPos) + 0x1A);
     if (R8(wm_OnYoshi))
         a = (u8)(a + 0x10);
-    W8(wm_SmokeYPos + y, a);
-    W8(wm_SmokeTimer + y, 0x13);
+    (RX8(wm_SmokeYPos, y) = (u8)(a));
+    (RX8(wm_SmokeTimer, y) = (u8)(0x13));
 }
 
 /* CODE_00D968 / _00D96A: medidor de carrera. Devuelve Y (sube en 1 si el
    medidor llego a $70). */
 static u8 d96a(u8 y)
 {
-    u8 a = (u8)(R8(wm_PlayerDashTimer) + T8(DATA_00D5EB + y));
+    u8 a = (u8)(R8(wm_PlayerDashTimer) + T8X(DATA_00D5EB, y));
     if (NEG(a))
         a = 0;
     if (a >= 0x70) {                        /* CMP #$70 / BCC + */
@@ -122,7 +122,7 @@ l_D630:                                     /* CODE_00D630: empieza el salto */
         W8(wm_SoundCh2, 0x01);              /* CODE_00D65E */
     }
     /* _00D663 */
-    W8(wm_MarioSpeedY, T8(DATA_00D2BD + x));
+    W8(wm_MarioSpeedY, T8X(DATA_00D2BD, x));
     a = 0x0B;
     if (R8(wm_PlayerDashTimer) >= 0x70) {
         if (!R8(wm_GlideTimer))
@@ -173,7 +173,7 @@ l_D6B1:                                     /* CODE_00D6B1 */
 l_D6D5_pp:
     W8(m1, a);
     x = (u8)((a << 2) | R8(wm_OnSlopeTypeB));
-    if (R8(wm_MarioSpeedX) && NEG(R8(wm_MarioSpeedX) ^ T8(MarioAccel + 1 + x))
+    if (R8(wm_MarioSpeedX) && NEG(R8(wm_MarioSpeedX) ^ T8X(MarioAccel + 1, x))
         && !R8(wm_SlideImgTimer)) {
         if (!R8(wm_IsSlipperyLevel)) {
             W8(wm_PlayerTurningPose, 0x0D);
@@ -204,12 +204,12 @@ l_D6D5_pp:
     y = (u8)((y << 1) | R8(wm_OnSlopeTypeB) | R8(m1));
 
 l_D742:                                     /* _00D742 */
-    a = (u8)(R8(wm_MarioSpeedX) - T8(DATA_00D535 + y));
-    if (a == 0 || !NEG(a ^ T8(DATA_00D535 + y)))
+    a = (u8)(R8(wm_MarioSpeedX) - T8X(DATA_00D535, y));
+    if (a == 0 || !NEG(a ^ T8X(DATA_00D535, y)))
         goto l_D76B;
-    w = T16(MarioAccel + x);
+    w = T16X(MarioAccel, x);
     if (R8(wm_IsSlipperyLevel) && !R8(wm_IsFlying))
-        w = T16(DATA_00D43D + x);
+        w = T16X(DATA_00D43D, x);
     w = (u16)(w + R16(wm_MarioAccSpeedX));
     W16(wm_MarioAccSpeedX, w);              /* _00D7A0 */
     return;
@@ -224,21 +224,21 @@ l_D76B:                                     /* _00D76B */
     y = a;
     x = (u8)(a >> 1);
     /* _00D772 */
-    if (NEG((u8)(R8(wm_MarioSpeedX) - T8(DATA_00D5C9 + 1 + x))))
+    if (NEG((u8)(R8(wm_MarioSpeedX) - T8X(DATA_00D5C9 + 1, x))))
         y = (u8)(y + 2);
     if ((R8(wm_EndLevelTimer) | R8(wm_IsFlying)) == 0) {
-        w = T16(DATA_00D309 + y);
+        w = T16X(DATA_00D309, y);
         /* BIT wm_IsWaterLevel con A de 16 bits: N = bit 15 = bit 7 del
            byte SIGUIENTE */
         if (!NEG(R8(wm_IsWaterLevel + 1)))
-            w = T16(DATA_00D2CD + y);
+            w = T16X(DATA_00D2CD, y);
     } else {
-        w = T16(DATA_00D2CD + y);
+        w = T16X(DATA_00D2CD, y);
     }
     w = (u16)(w + R16(wm_MarioAccSpeedX));
     W16(wm_MarioAccSpeedX, w);
-    if (!(((u16)(w - T16(DATA_00D5C9 + x)) ^ T16(DATA_00D2CD + y)) & 0x8000))
-        W16(wm_MarioAccSpeedX, T16(DATA_00D5C9 + x));   /* _00D7A0 */
+    if (!(((u16)(w - T16X(DATA_00D5C9, x)) ^ T16X(DATA_00D2CD, y)) & 0x8000))
+        W16(wm_MarioAccSpeedX, T16X(DATA_00D5C9, x));   /* _00D7A0 */
 }
 
 /* ------------------------------------------------------------------ */
@@ -299,11 +299,11 @@ void mario_D7E4(void)
     y = NEG(R8(wm_JoyPadA)) ? 1 : 0;        /* B apretado: gravedad menor */
     a = R8(wm_MarioSpeedY);
     if (!NEG(a)) {
-        if (a >= T8(DATA_00D7AF + y))       /* CMP / BCC: sin signo */
-            a = T8(DATA_00D7AF + y);
+        if (a >= T8X(DATA_00D7AF, y))       /* CMP / BCC: sin signo */
+            a = T8X(DATA_00D7AF, y);
         if (R8(wm_IsFlying) == 0x0B)
             W8(wm_IsFlying, 0x24);
     }
     /* _00D948 */
-    W8(wm_MarioSpeedY, a + T8(DATA_00D7A5 + y));
+    W8(wm_MarioSpeedY, a + T8X(DATA_00D7A5, y));
 }

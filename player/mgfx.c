@@ -29,47 +29,13 @@
 #define OAM_P(y)    (0x0303 + (y))
 #define OAM_SIZE    0x0460          /* wm_OamSize.1 */
 
-/* CODE_00E45D: una entrada de OAM. y = desplazamiento en wm_OamSlot;
-   sx, sy = MarioScrPosX/Y (las acaba de calcular E2BD: se pasan en vez de
-   releerlas de ram[] en cada una de las 4 llamadas). */
-static u8 e45d(u8 y, u16 sx, u16 sy)
-{
-    u8 c, x, a;
-    u16 w;
-    u8 *o = ram + 0x0300 + y;               /* wm_OamSlot.1,Y: X, Y, tile, prop */
-
-    c = R8(wm_HidePlayer) & 1;
-    W8(wm_HidePlayer, R8(wm_HidePlayer) >> 1);
-    if (c)
-        goto l_plus;
-    a = T8X(Mario8x8Tiles, R8(m6));
-    if (NEG(a))
-        goto l_plus;                        /* c = 0 (del LSR) */
-    o[2] = a;
-    x = R8(m5);
-    w = (u16)(sy + T16X(DATA_00DE32, x));
-    if ((u16)(w + 0x10) >= 0x100) { c = 1; goto l_plus; }
-    o[1] = (u8)w;
-    w = (u16)(sx + T16X(DATA_00DD4E, x));
-    if ((u16)(w + 0x80) >= 0x200) { c = 1; goto l_plus; }
-    o[0] = (u8)w;
-    c = (u8)((w >> 8) & 1);                 /* XBA / LSR: bit 8 de la X */
-l_plus:
-    a = R8(m4);
-    W8(m4, a << 1);                         /* ASL m4: tamaño 16x16 */
-    W8(OAM_SIZE + (y >> 2), ((a >> 6) & 2) | c);
-    W8(m5, R8(m5) + 2);
-    W8(m6, R8(m6) + 1);
-    return (u8)(y + 4);
-}
-
 /* CODE_00F636: punteros de DMA a los gráficos del jugador */
-static void f636(void)
+static void f636(u8 m10v, u8 m11v)
 {
     u16 a;
     int c;
 
-    a = R16(m9);
+    a = (u16)(R8(m9) | (m10v << 8));
     c = (a | 0x0800) == a;                  /* CMP / BEQ + / CLC */
     a &= 0xF700;
     a = (u16)((a >> 1) | (c ? 0x8000 : 0));  /* ROR */
@@ -79,7 +45,7 @@ static void f636(void)
     W16(wm_0D85, a);
     W16(wm_0D85 + 10, a + 0x0200);
 
-    a = R16(m10);
+    a = (u16)(m10v | (m11v << 8));
     c = (a | 0x0800) == a;
     a &= 0xF700;
     a = (u16)((a >> 1) | (c ? 0x8000 : 0));
@@ -89,12 +55,12 @@ static void f636(void)
     W16(wm_0D85 + 2, a);
     W16(wm_0D85 + 12, a + 0x0200);
 
-    a = (u16)((R16(m11) & 0xFF00) >> 3);    /* carry = 0 (ultimo bit, siempre 0) */
+    a = (u16)((R8(m12) << 8) >> 3);    /* carry = 0 (ultimo bit, siempre 0) */
     a = (u16)(a + 0x2000);
     W16(wm_0D85 + 4, a);
     W16(wm_0D85 + 14, a + 0x0200);
 
-    a = (u16)((R16(m12) & 0xFF00) >> 3);
+    a = (u16)((R8(m13) << 8) >> 3);
     W16(wm_Tile7FPtr, a + 0x2000);
     W8(wm_PlayerDmaTiles, 0x0A);
 }
@@ -103,7 +69,7 @@ static void f636(void)
 void mario_E2BD(void)
 {
     u8 a, x, y, c;
-    u16 w;
+    u16 w, sx;
 
     if (R8(wm_HidePlayer) != 0xFF && R8(wm_LooseYoshiFlag)) {
         if (!mario_unsupported) mario_unsupported = MARIO_UNSUP_YOSHI;
@@ -139,7 +105,8 @@ l_E31A:
             a ^= 1;
         c = a & 1;                          /* LSR */
     }
-    W16(wm_MarioScrPosX, R16(wm_MarioXPos) - R16(wm_Bg1HOfs) - (c ? 0 : 1));
+    sx = (u16)(R16(wm_MarioXPos) - R16(wm_Bg1HOfs) - (c ? 0 : 1));
+    W16(wm_MarioScrPosX, sx);
     w = (u16)(R8(wm_PlayerImgYPos) + R16(wm_MarioYPos));
     if (R8(wm_MarioPowerUp) >= 1) {
         y = 1;
@@ -164,43 +131,76 @@ l_E31A:
     }
 
     /* CODE_00E385 */
-    W8(m4, x == 0x43 ? 0xE8 : 0xC8);
-    if (x == 0x29 && !R8(wm_MarioPowerUp))
-        x = 0x20;
-    y = (u8)(T8X(DATA_00DCEC, x) | R8(wm_MarioDirection));
-    W8(m5, T8X(DATA_00DD32, y));
-    a = R8(wm_MarioFrame);
-    if (a < 0x3D)
-        a = (u8)(a + T8X(TilesetIndex, R8(wm_MarioPowerUp)));
-    y = a;
-    W8(m6, T8X(TileExpansion, y));
-    W8(m10, T8X(DATA_00E00C, y));
-    W8(m11, T8X(DATA_00E0CC, y));
-    a = R8(wm_SpriteProp);
-    x = R8(wm_IsBehindScenery);
-    if (x)
-        a = T8X(DATA_00E2B9, x);
-    y = T8X(DATA_00E2B2, x);
-    a |= T8X(MarioPalIndex, R8(wm_MarioDirection));
-    W8(OAM_P(y), a);
-    W8(OAM_P(y + 4), a);
-    W8(OAM_P(y + 12), a);
-    W8(OAM_P(y + 16), a);
-    W8((u16)(0x02FB + y), a);               /* wm_ExOamSlot.63.Prop,Y */
-    W8((u16)(0x02FF + y), a);               /* wm_ExOamSlot.64.Prop,Y */
-    if (R8(m4) == 0xE8)
-        a ^= 0x40;
-    W8(OAM_P(y + 8), a);
     {
-        u16 sx = R16(wm_MarioScrPosX), sy = R16(wm_MarioScrPosY);
-        y = e45d(y, sx, sy);
-        y = e45d(y, sx, sy);
-        y = e45d(y, sx, sy);
-        y = e45d(y, sx, sy);
+        /* m4, m5, m6, m10, m11 y HidePlayer en variables: nadie mas los lee
+           durante las 4 entradas de OAM (CODE_00E45D); a la RAM van los
+           valores finales, como en el ROM */
+        u8 m4v, m5v, m6v, m10v, m11v, hp, k, *o;
+        u16 sy = w;
+        m4v = (x == 0x43) ? 0xE8 : 0xC8;
+        if (x == 0x29 && !R8(wm_MarioPowerUp))
+            x = 0x20;
+        y = (u8)(T8X(DATA_00DCEC, x) | R8(wm_MarioDirection));
+        m5v = T8X(DATA_00DD32, y);
+        a = R8(wm_MarioFrame);
+        if (a < 0x3D)
+            a = (u8)(a + T8X(TilesetIndex, R8(wm_MarioPowerUp)));
+        y = a;
+        m6v = T8X(TileExpansion, y);
+        m10v = T8X(DATA_00E00C, y);
+        m11v = T8X(DATA_00E0CC, y);
+        W8(m10, m10v);
+        W8(m11, m11v);
+        a = R8(wm_SpriteProp);
+        x = R8(wm_IsBehindScenery);
+        if (x)
+            a = T8X(DATA_00E2B9, x);
+        y = T8X(DATA_00E2B2, x);
+        a |= T8X(MarioPalIndex, R8(wm_MarioDirection));
+        o = ram + 0x0300 + y;               /* wm_OamSlot.1,Y: X, Y, tile, prop */
+        o[3] = a;
+        o[4 + 3] = a;
+        o[12 + 3] = a;
+        o[16 + 3] = a;
+        W8((u16)(0x02FB + y), a);           /* wm_ExOamSlot.63.Prop,Y */
+        W8((u16)(0x02FF + y), a);           /* wm_ExOamSlot.64.Prop,Y */
+        if (m4v == 0xE8)
+            a ^= 0x40;
+        o[8 + 3] = a;
+        hp = R8(wm_HidePlayer);
+        for (k = 4; k; k--) {               /* CODE_00E45D x 4 */
+            u8 cc;
+            cc = hp & 1;
+            hp >>= 1;
+            if (cc)
+                goto l_plus;
+            a = T8X(Mario8x8Tiles, m6v);
+            if (NEG(a))
+                goto l_plus;                /* c = 0 (del LSR) */
+            o[2] = a;
+            w = (u16)(sy + T16X(DATA_00DE32, m5v));
+            if ((u16)(w + 0x10) >= 0x100) { cc = 1; goto l_plus; }
+            o[1] = (u8)w;
+            w = (u16)(sx + T16X(DATA_00DD4E, m5v));
+            if ((u16)(w + 0x80) >= 0x200) { cc = 1; goto l_plus; }
+            o[0] = (u8)w;
+            cc = (u8)((w >> 8) & 1);        /* XBA / LSR: bit 8 de la X */
+l_plus:
+            RX8(OAM_SIZE, y >> 2) = (u8)(((m4v >> 6) & 2) | cc);
+            m4v <<= 1;                      /* ASL m4: tamaño 16x16 */
+            m5v += 2;
+            m6v++;
+            y += 4;
+            o += 4;
+        }
+        W8(wm_HidePlayer, hp);
+        W8(m4, m4v);
+        W8(m5, m5v);
+        W8(m6, m6v);
+        if (R8(wm_MarioPowerUp) == 0x02) {
+            if (!mario_unsupported) mario_unsupported = MARIO_UNSUP_CAPE;
+            return;
+        }
+        f636(m10v, m11v);
     }
-    if (R8(wm_MarioPowerUp) == 0x02) {
-        if (!mario_unsupported) mario_unsupported = MARIO_UNSUP_CAPE;
-        return;
-    }
-    f636();
 }

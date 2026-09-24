@@ -88,12 +88,12 @@ l_14A2:
         y = x;
         if (R8(wm_IsFlying) && !NEG(R8(wm_MarioSpeedY)))
             y++;
-        W8(wm_CapeImage, T8(DATA_00CEA9 + y));
+        W8(wm_CapeImage, T8X(DATA_00CEA9, y));
         if (R8(wm_MarioPowerUp))
             x++;
-        W8(wm_MarioDirection, T8(DATA_00CEA1 + x));
+        W8(wm_MarioDirection, T8X(DATA_00CEA1, x));
         if (R8(wm_MarioPowerUp) == 0x02) { unsup_anim(MARIO_UNSUP_CAPE); return; }  /* CODE_00D044 */
-        a = T8(DATA_00CE99 + x);
+        a = T8X(DATA_00CE99, x);
         goto l_D01A;
     }
 
@@ -103,7 +103,7 @@ l_14A2:
         if (!NEG(a))
             goto l_D01A;
         y = (u8)((R8(wm_OnSlopeTypeB) >> 2) | R8(wm_MarioDirection));
-        a = T8(DATA_00CE79 + 6 + y);
+        a = T8X(DATA_00CE79 + 6, y);
         goto l_D01A;
     }
     /* CODE_00CF62 */
@@ -132,7 +132,7 @@ l_14A2:
             goto l_CFBC;
         y = R8(wm_CapeGlidePhase);
         if (y)
-            a = T8(DATA_00CE79 - 1 + y);
+            a = T8X(DATA_00CE79 - 1, y);
         if (R8(wm_IsCarrying2))
             a = 0x09;
         goto l_D01A;                        /* en el aire: la pose es $72 */
@@ -219,7 +219,7 @@ static void cddd(void)
     if (R8(wm_LRFrameTimer) < 0x10)
         goto l_CE4C;
     x = a;
-    if (R16(wm_PosToScrollScreen) == T16(DATA_00F6CB + x))
+    if (R16(wm_PosToScrollScreen) == T16X(DATA_00F6CB, x))
         goto l_CE4C;
     W8(wm_PosToScrollScreen, R8(wm_PosToScrollScreen) & 0xFE);
     W8(wm_LRScrollFlag, R8(wm_LRScrollFlag) + 1);
@@ -236,8 +236,8 @@ l_CE4C:
     x = 0;
     W8(wm_LRScrollStop, R8(wm_MarioDirection) << 1);
     w = R16(wm_PosToScrollScreen);
-    if (w != T16(DATA_00F6CB + y)) {
-        w = (u16)(w + T16(DATA_00F6BF + y));
+    if (w != T16X(DATA_00F6CB, y)) {
+        w = (u16)(w + T16X(DATA_00F6BF, y));
         if (w != T16(DATA_00F6B3 + R8(wm_LRScrollStop)))
             goto l_store;
         W8(wm_LRScrollDir, x);
@@ -253,23 +253,26 @@ l_store:
    especiales: un frame del jugador. */
 void mario_player(void)
 {
-    int x;
 
     mario_unsupported = MARIO_OK;
     mario_events = 0;
     if (!R8(wm_SpritesLocked)) {
-        u8 *p;
+        u8 *p = ram + wm_PlayerAnimTimer;   /* $1496: PAR */
         W8(wm_FrameB, R8(wm_FrameB) + 1);
-        /* ColorFadeTimer+1..+$13 ($1496-$14A8) y, cada 4 frames, $14A9-$14AE;
-           con puntero (en el 68000, ram[base + x] cuesta el triple) */
-        for (p = ram + wm_ColorFadeTimer + 1, x = 0x13; x > 0; x--, p++)
-            if (*p)
-                (*p)--;
+        /* ColorFadeTimer+1..+$13 ($1496-$14A8) y, cada 4 frames, $14A9-$14AE.
+           Casi todos valen 0: se miran de a 4 (NZ32) y solo se bajan los
+           grupos con algo (el bucle byte a byte costaba ~600 ciclos) */
+        if (NZ32(p)) DEC4(p);
+        if (NZ32(p + 4)) DEC4(p + 4);
+        if (NZ32(p + 8)) DEC4(p + 8);
+        if (NZ32(p + 12)) DEC4(p + 12);
+        if (NZ16(p + 16)) { DEC1(p + 16); DEC1(p + 17); }
+        DEC1(p + 18);                       /* $14A8 */
         if (!(R8(wm_FrameB) & 0x03)) {
             /* (musica del interruptor P y del juego de bonus: solo sonido) */
-            for (p = ram + wm_14A8 + 1, x = 0x06; x > 0; x--, p++)
-                if (*p)
-                    (*p)--;
+            DEC1(p + 19);                   /* $14A9 */
+            if (NZ32(p + 20)) DEC4(p + 20); /* $14AA-$14AD */
+            DEC1(p + 24);                   /* $14AE */
         }
     }
     /* CODE_00C593 -> ResetAni */
@@ -328,15 +331,13 @@ u8 level_sprites;          /* 1: level_frame corre tambien los sprites (etapa 9)
 void level_frame(void)
 {
     u8 *p = ram + 0x0201;                   /* wm_ClearOam: la Y de las 128 */
-    int k;                                  /* entradas a $F0 (fuera de pantalla) */
-    W8(wm_FrameA, R8(wm_FrameA) + 1);
-    for (k = 32; k > 0; k--) {              /* con puntero y de 4 en 4: en el */
-        p[0] = 0xF0;                        /* 68000 cada vuelta con indice */
-        p[4] = 0xF0;                        /* costaba ~80 ciclos por entrada */
-        p[8] = 0xF0;
-        p[12] = 0xF0;
-        p += 16;
-    }
+    W8(wm_FrameA, R8(wm_FrameA) + 1);       /* entradas a $F0 (fuera de pantalla), */
+#define CLR4(o)  p[o] = 0xF0; p[(o) + 4] = 0xF0; p[(o) + 8] = 0xF0; p[(o) + 12] = 0xF0;
+#define CLR16(o) CLR4(o) CLR4((o) + 16) CLR4((o) + 32) CLR4((o) + 48)
+    CLR16(0) CLR16(64) CLR16(128) CLR16(192)        /* desenrollado: el bucle */
+    CLR16(256) CLR16(320) CLR16(384) CLR16(448)     /* costaba ~800 ciclos mas */
+#undef CLR16
+#undef CLR4
     mario_unsupported = MARIO_OK;
     camera_F6DB();
     if (!mario_unsupported) mario_E2BD();
@@ -347,11 +348,17 @@ void level_frame(void)
         return;
     sprites_begin();
     if (level_sprites) {                    /* CODE_01808C: ranuras 11..0 */
-        int k;
-        for (k = 11; k >= 0; k--) {
-            sprite_run((u8)k);
-            mario_unsupported = MARIO_OK;   /* un sprite sin portar no para el frame */
-        }
+        u8 k = 12;
+        do {
+            k--;
+            if (RX8(wm_SpriteStatus, k)) {
+                sprite_run(k);
+                mario_unsupported = MARIO_OK;   /* un sprite sin portar no para el frame */
+            } else {                        /* ranura vacia: lo que hace sprite_run */
+                W8(wm_SprProcessIndex, k);  /* (EraseSprite) sin llamarla */
+                RX8(wm_SprIndexInLvl, k) = 0xFF;
+            }
+        } while (k);
     }
     blocks_update();
     if (level_sprites)

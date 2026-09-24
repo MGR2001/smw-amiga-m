@@ -41,7 +41,7 @@ static int spawn(u8 y, u8 index, u8 col, u8 scr, u8 state)
         stop = 0xFF;
     }
     for (;;) {
-        if (!R8(wm_SpriteStatus + x))
+        if (!RX8(wm_SpriteStatus, x))
             break;
         x--;
         if (x == stop) {
@@ -49,23 +49,23 @@ static int spawn(u8 y, u8 index, u8 col, u8 scr, u8 state)
                 if (!mario_unsupported) mario_unsupported = MARIO_UNSUP_TILE;
                 return 0;
             }
-            W8(wm_SprLoadStatus + index, 0);    /* sin ranura: se reintenta */
+            (RX8(wm_SprLoadStatus, index) = (u8)(0));    /* sin ranura: se reintenta */
             return 0;
         }
     }
     /* CODE_02A93C / CODE_02A95B: nivel horizontal */
-    W8(wm_SpriteYLo + x, r[0] & 0xF0);
-    W8(wm_SpriteYHi + x, r[0] & 0x0D);
-    W8(wm_SpriteXLo + x, col);
-    W8(wm_SpriteXHi + x, scr);
-    W8(wm_SpriteStatus + x, state);
-    W8(wm_SpriteNum + x, state == 0x09 ? (u8)(num - 0xDA + 4) : num);
-    W8(wm_SprIndexInLvl + x, index);
+    (RX8(wm_SpriteYLo, x) = (u8)(r[0] & 0xF0));
+    (RX8(wm_SpriteYHi, x) = (u8)(r[0] & 0x0D));
+    (RX8(wm_SpriteXLo, x) = (u8)(col));
+    (RX8(wm_SpriteXHi, x) = (u8)(scr));
+    (RX8(wm_SpriteStatus, x) = (u8)(state));
+    (RX8(wm_SpriteNum, x) = (u8)(state == 0x09 ? (u8)(num - 0xDA + 4) : num));
+    (RX8(wm_SprIndexInLvl, x) = (u8)(index));
     if (R8(wm_SilverPowTimer) && !mario_unsupported)
         mario_unsupported = MARIO_UNSUP_TILE;
     init_sprite_tables(x);
-    W8(wm_OffscreenHorz + x, 1);
-    W8(wm_DisSprCapeContact + x, 4);
+    (RX8(wm_OffscreenHorz, x) = (u8)(1));
+    (RX8(wm_DisSprCapeContact, x) = (u8)(4));
     spr_spawned |= (u8)(1 << x);
     return 1;
 }
@@ -91,9 +91,9 @@ void sprite_load_level(void)
             continue;
         if (scr != scrn)
             return;                         /* ordenados por pantalla */
-        if ((b1 & 0xF0) != col || R8(wm_SprLoadStatus + index))
+        if ((b1 & 0xF0) != col || RX8(wm_SprLoadStatus, index))
             continue;
-        W8(wm_SprLoadStatus + index, 1);
+        (RX8(wm_SprLoadStatus, index) = (u8)(1));
         if (num >= 0xE7 || num == 0xDE || num == 0xE0 || (num >= 0xCB && num < 0xDA)
             || num >= 0xE1 || (num >= 0xC9 && num < 0xCB)) {
             if (!mario_unsupported) mario_unsupported = MARIO_UNSUP_TILE;
@@ -108,8 +108,8 @@ void sprite_load_level(void)
 /* Motor de sprites (sprite_1-main.s, sprite_3-1.s), lo que usa el Rex.
    Convenciones de mario.c: x = ranura (el registro X del 65816). */
 
-#define SPR(t, x)       R8((t) + (x))
-#define SETSPR(t, x, v) W8((t) + (x), (v))
+#define SPR(t, x)       RX8(t, x)
+#define SETSPR(t, x, v) (RX8(t, x) = (u8)(v))
 
 static void spr_unsup(void) { if (!mario_unsupported) mario_unsupported = MARIO_UNSUP_TILE; }
 
@@ -254,7 +254,7 @@ static void spr_obj_vert(u8 x)
         if (R8(m0) < 0x0C && R8(m0) < h)
             return;
         W8(wm_SprMoveDownPixels, h);
-        a = T8(DATA_00E53D + s8);
+        a = T8X(DATA_00E53D, s8);
         SETSPR(wm_SpriteSlopeTbl, x, a);
         if (a == 0x04 || a == 0xFC) {
             if (NEG((u8)(a ^ SPR(wm_SpriteSpeedX, x))) && SPR(wm_SpriteSpeedX, x)) {

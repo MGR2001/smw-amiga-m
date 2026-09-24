@@ -120,29 +120,36 @@ static u8 f545(u8 a)
 }
 
 /* CODE_00F465 (desde _00F461): lee el bloque en (BlockYPos, BlockXPos).
-   Deja el numero en rY y devuelve la pagina ajustada por F545. */
+   Deja el numero en rY y devuelve la pagina ajustada por F545.
+   (nativo: la pantalla en 8 bits y el desplazamiento en 32 bits, para que
+   vbcc no enmascare con and.l #$FFFF en cada paso) */
 static u8 f461_xy(u16 x, u16 y)
 {
-    u16 o;
+    u8 xs, lo, a;
+    unsigned o;
     W8(wm_WhichSwitchPressed, 0);
     if (R8(wm_8E)) { unsup(MARIO_UNSUP_LAYER); rY = 0x25; return 0; }
-    if (y >= 0x1B0 || (x >> 8) >= R8(wm_ScreensInLvl)) {
+    xs = (u8)(x >> 8);
+    if (y >= 0x1B0 || xs >= R8(wm_ScreensInLvl)) {
         rY = 0x25;                          /* CODE_00F4A0: fuera del nivel */
         return 0;
     }
-    o = (u16)(scr_ofs[(x >> 8) & 0x1F] + (y & 0x1F0) + ((x >> 4) & 0x0F));
-    {
-        u8 lo = map16_lo[o], a = map16_hi[o];
-        W8(wm_Map16NumLo, lo);
-        /* atajo de F545: solo 6 bloques + los interruptores la cambian */
-        if (a ? (lo == 0x32 || lo == 0x2F)
-              : (lo == 0x29 || lo == 0x2B || (u8)(lo - 0xEC) < 0x10))
+    o = (unsigned)scr_ofs[xs & 0x1F] + (unsigned)(y & 0x1F0) + (unsigned)((u8)x >> 4);
+    lo = map16_lo[o];
+    a = map16_hi[o];
+    W8(wm_Map16NumLo, lo);
+    rY = lo;
+    /* atajo de F545: solo 6 bloques + los interruptores la cambian */
+    if (a) {
+        if (lo == 0x32 || lo == 0x2F) {
             a = f545(a);
-        else if (!a)
-            a = 0;
+            rY = R8(wm_Map16NumLo);
+        }
+    } else if (lo == 0x29 || lo == 0x2B || (u8)(lo - 0xEC) < 0x10) {
+        a = f545(0);
         rY = R8(wm_Map16NumLo);
-        return a;
     }
+    return a;
 }
 static u8 f461(void) { return f461_xy(R16(wm_BlockYPos), R16(wm_BlockXPos)); }
 
@@ -157,6 +164,10 @@ static u8 f461(void) { return f461_xy(R16(wm_BlockYPos), R16(wm_BlockXPos)); }
    de rom00 byte a byte costaba ~50 ciclos por valor en el 68000. */
 static u16 probe_dx[64], probe_dy[64];
 static u8 probe_ok;
+/* La posicion de Mario para las sondas: eb77 la carga al empezar y la
+   actualiza donde la cambia antes de otra sonda (CODE_00ED28). Asi F44D
+   no relee MarioXPos/YPos de ram[] (4 bytes) en cada una de las 6. */
+static u16 probe_mx, probe_my;
 static void probe_init(void)
 {
     int k;
@@ -169,16 +180,41 @@ static void probe_init(void)
 
 static u8 f44d(void)
 {
-    u8 a;
+    u8 a, k, xs, lo;
     u16 x, y;
+    unsigned o;
     rX = (u8)(rX + 2);
-    if (!probe_ok)
-        probe_init();
-    x = (u16)(R16(wm_MarioXPos) + probe_dx[(rX >> 1) & 63]);
-    y = (u16)(R16(wm_MarioYPos) + probe_dy[(rX >> 1) & 63]);
+    k = (u8)(rX & 0x7E);                    /* 2 * ((rX >> 1) & 63), en bytes */
+    x = (u16)(probe_mx + *(const u16 *)(const void *)((const u8 *)probe_dx + k));
+    y = (u16)(probe_my + *(const u16 *)(const void *)((const u8 *)probe_dy + k));
     W16(wm_BlockYPos, x);
     W16(wm_BlockXPos, y);
-    a = f461_xy(x, y);
+    /* = f461_xy(x, y), copiada aqui: la llamada con 2 argumentos en la
+       pila costaba ~100 ciclos en cada una de las 6 sondas */
+    W8(wm_WhichSwitchPressed, 0);
+    if (R8(wm_8E)) { unsup(MARIO_UNSUP_LAYER); rY = 0x25; a = 0; goto out; }
+    xs = (u8)(x >> 8);
+    if (y >= 0x1B0 || xs >= R8(wm_ScreensInLvl)) {
+        rY = 0x25;                          /* CODE_00F4A0: fuera del nivel */
+        a = 0;
+        goto out;
+    }
+    o = (unsigned)*(const u16 *)(const void *)((const u8 *)scr_ofs + (u8)((xs & 0x1F) << 1))
+        + (unsigned)(y & 0x1F0) + (unsigned)((u8)x >> 4);
+    lo = map16_lo[o];
+    a = map16_hi[o];
+    W8(wm_Map16NumLo, lo);
+    rY = lo;
+    if (a) {
+        if (lo == 0x32 || lo == 0x2F) {
+            a = f545(a);
+            rY = R8(wm_Map16NumLo);
+        }
+    } else if (lo == 0x29 || lo == 0x2B || (u8)(lo - 0xEC) < 0x10) {
+        a = f545(0);
+        rY = R8(wm_Map16NumLo);
+    }
+out:
 #ifdef MCOLL_TRACE
     printf("    sonda X=%02X  (%04X,%04X) -> pagina %02X bloque %02X\n",
            rX, R16(wm_BlockYPos), R16(wm_BlockXPos), a, rY);
@@ -234,13 +270,13 @@ static void tile_from_bounce(u8 x, u8 id)
 {
     u16 p;
     W8(wm_BlockId, id);
-    p = (u16)((R8(wm_BounceSprYLo + x) | (R8(wm_BounceSprYHi + x) << 8)) + 8);
+    p = (u16)((RX8(wm_BounceSprYLo, x) | (RX8(wm_BounceSprYHi, x) << 8)) + 8);
     W8(wm_BlockYPos, p & 0xF0);
     W8(wm_BlockYPos + 1, p >> 8);
-    p = (u16)((R8(wm_BounceSprXLo + x) | (R8(wm_BounceSprXHi + x) << 8)) + 8);
+    p = (u16)((RX8(wm_BounceSprXLo, x) | (RX8(wm_BounceSprXHi, x) << 8)) + 8);
     W8(wm_BlockXPos, p & 0xF0);
     W8(wm_BlockXPos + 1, p >> 8);
-    W8(wm_LayerInProcess, (R8(wm_BounceSprTable + x) >> 7) & 1);
+    W8(wm_LayerInProcess, (RX8(wm_BounceSprTable, x) >> 7) & 1);
     generate_tile();
 }
 
@@ -256,7 +292,7 @@ static void bounce_spawn(void)
         return;
     }
     for (y = 3; ; y--) {                    /* NotBreakable: ranura libre */
-        if (!R8(wm_BounceSprNum + y))
+        if (!RX8(wm_BounceSprNum, y))
             goto found;
         if (y == 0)
             break;
@@ -265,15 +301,15 @@ static void bounce_spawn(void)
     if (NEG(y))
         y = 3;
     W8(wm_BounceSprAltIndex, y);
-    if (R8(wm_BounceSprNum + y) == 0x07) {  /* termina el giro de la anterior */
+    if (RX8(wm_BounceSprNum, y) == 0x07) {  /* termina el giro de la anterior */
         u16 by = R16(wm_BlockYPos), bx = R16(wm_BlockXPos), p;
         u8 id = R8(wm_BlockId);
-        W8(wm_BlockYPos, R8(wm_BounceSprYLo + y));
-        W8(wm_BlockYPos + 1, R8(wm_BounceSprYHi + y));
-        p = (u16)((R8(wm_BounceSprXLo + y) | (R8(wm_BounceSprXHi + y) << 8)) + 0x0C);
+        W8(wm_BlockYPos, RX8(wm_BounceSprYLo, y));
+        W8(wm_BlockYPos + 1, RX8(wm_BounceSprYHi, y));
+        p = (u16)((RX8(wm_BounceSprXLo, y) | (RX8(wm_BounceSprXHi, y) << 8)) + 0x0C);
         W8(wm_BlockXPos, p & 0xF0);
         W8(wm_BlockXPos + 1, p >> 8);
-        W8(wm_BlockId, R8(wm_BounceSprBlock + y));
+        W8(wm_BlockId, RX8(wm_BounceSprBlock, y));
         generate_tile();
         W16(wm_BlockYPos, by);
         W16(wm_BlockXPos, bx);
@@ -282,17 +318,17 @@ static void bounce_spawn(void)
 found:
     if (kind >= 0x10)
         kind = 0;
-    W8(wm_BounceSprNum + y, kind + 1);
-    W8(wm_BounceSprInit + y, 0);
-    W8(wm_BounceSprYLo + y, R8(wm_BlockYPos));
-    W8(wm_BounceSprYHi + y, R8(wm_BlockYPos + 1));
-    W8(wm_BounceSprXLo + y, R8(wm_BlockXPos));
-    W8(wm_BounceSprXHi + y, R8(wm_BlockXPos + 1));
-    W8(wm_BounceSprTable + y, R8(m6) | ((R8(wm_LayerInProcess) & 1) << 7));
-    W8(wm_BounceSprBlock + y, R8(m7));
-    W8(wm_BounceSprTimer + y, 0x08);
+    (RX8(wm_BounceSprNum, y) = (u8)(kind + 1));
+    (RX8(wm_BounceSprInit, y) = (u8)(0));
+    (RX8(wm_BounceSprYLo, y) = (u8)(R8(wm_BlockYPos)));
+    (RX8(wm_BounceSprYHi, y) = (u8)(R8(wm_BlockYPos + 1)));
+    (RX8(wm_BounceSprXLo, y) = (u8)(R8(wm_BlockXPos)));
+    (RX8(wm_BounceSprXHi, y) = (u8)(R8(wm_BlockXPos + 1)));
+    (RX8(wm_BounceSprTable, y) = (u8)(R8(m6) | ((R8(wm_LayerInProcess) & 1) << 7)));
+    (RX8(wm_BounceSprBlock, y) = (u8)(R8(m7)));
+    (RX8(wm_BounceSprTimer, y) = (u8)(0x08));
     if (kind + 1 == 0x07)
-        W8(wm_SpinBlockTimer + y, 0xFF);
+        (RX8(wm_SpinBlockTimer, y) = (u8)(0xFF));
     mario_events |= MEV_BOUNCE;
 }
 
@@ -306,48 +342,48 @@ void blocks_update(void)
     if (R8(wm_MultiCoinBlkTimer) >= 2 && !R8(wm_SpritesLocked))
         W8(wm_MultiCoinBlkTimer, R8(wm_MultiCoinBlkTimer) - 1);
     for (xi = 3; xi >= 0; xi--) {
-        u8 x = (u8)xi, num = R8(wm_BounceSprNum + x), y;
+        u8 x = (u8)xi, num = RX8(wm_BounceSprNum, x), y;
         if (!num)
             continue;
-        if (!R8(wm_SpritesLocked) && R8(wm_BounceSprTimer + x))
-            W8(wm_BounceSprTimer + x, R8(wm_BounceSprTimer + x) - 1);
+        if (!R8(wm_SpritesLocked) && RX8(wm_BounceSprTimer, x))
+            (RX8(wm_BounceSprTimer, x) = (u8)(RX8(wm_BounceSprTimer, x) - 1));
         if (R8(wm_SpritesLocked))
             continue;
         if (num == 0x07) {                  /* TurnBlockSpr */
-            if (!R8(wm_BounceSprInit + x)) {
-                W8(wm_BounceSprInit + x, 1);
+            if (!RX8(wm_BounceSprInit, x)) {
+                (RX8(wm_BounceSprInit, x) = (u8)(1));
                 tile_from_bounce(x, 0x09);
             }
-            if (R8(wm_BounceSprTimer + x) == 1) {
-                u16 p = (u16)((R8(wm_BounceSprXLo + x) | (R8(wm_BounceSprXHi + x) << 8)) + 8);
-                W8(wm_BounceSprXLo + x, p & 0xF0);
-                W8(wm_BounceSprXHi + x, p >> 8);
+            if (RX8(wm_BounceSprTimer, x) == 1) {
+                u16 p = (u16)((RX8(wm_BounceSprXLo, x) | (RX8(wm_BounceSprXHi, x) << 8)) + 8);
+                (RX8(wm_BounceSprXLo, x) = (u8)(p & 0xF0));
+                (RX8(wm_BounceSprXHi, x) = (u8)(p >> 8));
                 tile_from_bounce(x, 0x05);  /* gira: se puede atravesar */
             }
-            if (R8(wm_SpinBlockTimer + x)) {
-                W8(wm_SpinBlockTimer + x, R8(wm_SpinBlockTimer + x) - 1);
+            if (RX8(wm_SpinBlockTimer, x)) {
+                (RX8(wm_SpinBlockTimer, x) = (u8)(RX8(wm_SpinBlockTimer, x) - 1));
                 continue;
             }
-            tile_from_bounce(x, R8(wm_BounceSprBlock + x));
-            W8(wm_BounceSprNum + x, 0);
+            tile_from_bounce(x, RX8(wm_BounceSprBlock, x));
+            (RX8(wm_BounceSprNum, x) = (u8)(0));
             continue;
         }
         /* BounceBlockSpr (1..6). El movimiento del sprite (sube y vuelve)
            no se porta: la posicion final se redondea a la del bloque. */
-        y = R8(wm_BounceSprTable + x) & 0x03;
+        y = RX8(wm_BounceSprTable, x) & 0x03;
         if (y == 3) { unsup(MARIO_UNSUP_TILE); continue; }  /* bloque de nota */
-        if (!R8(wm_BounceSprInit + x)) {
-            W8(wm_BounceSprInit + x, 1);
+        if (!RX8(wm_BounceSprInit, x)) {
+            (RX8(wm_BounceSprInit, x) = (u8)(1));
             tile_from_bounce(x, 0x09);
             if (bnc_spd_y[y] != 0x80)
                 W8(wm_MarioSpeedY, bnc_spd_y[y]);
             if (bnc_spd_x[y] != 0x80)
                 W8(wm_MarioSpeedX, bnc_spd_x[y]);
         }
-        if (R8(wm_BounceSprTimer + x))
+        if (RX8(wm_BounceSprTimer, x))
             continue;
         {                                   /* TileFromBounceSpr0 */
-            u8 id = R8(wm_BounceSprBlock + x);
+            u8 id = RX8(wm_BounceSprBlock, x);
             if ((id == 0x0A || id == 0x0B) && R8(wm_MultiCoinBlkTimer) == 1) {
                 W8(wm_MultiCoinBlkTimer, 0);
                 id = 0x0D;
@@ -356,7 +392,7 @@ void blocks_update(void)
         }
         if (num >= 6)
             W8(wm_OnOffStatus, R8(wm_OnOffStatus) ^ 1);
-        W8(wm_BounceSprNum + x, 0);
+        (RX8(wm_BounceSprNum, x) = (u8)(0));
     }
 }
 
@@ -364,12 +400,12 @@ void blocks_update(void)
 static void f17f(u8 a, u8 y)
 {
     u8 x = a, v, c;
-    if (!(T8(DATA_00F0EC + y) & T8(DATA_00F0A4 + x)))
+    if (!(T8X(DATA_00F0EC, y) & T8X(DATA_00F0A4, x)))
         return;
     W8(m6, y);
-    W8(m7, T8(DATA_00F0C8 + x));
-    W8(m4, T8(DATA_00F05C + x));
-    v = T8(DATA_00F080 + x);
+    W8(m7, T8X(DATA_00F0C8, x));
+    W8(m4, T8X(DATA_00F05C, x));
+    v = T8X(DATA_00F080, x);
     if (NEG(v)) {
         if (v == 0xFF) {
             v = R8(wm_GreenStarCoins) ? 0x06 : 0x05;
@@ -378,7 +414,7 @@ static void f17f(u8 a, u8 y)
         /* CODE_00F1AE: el contenido alterna segun la fila */
         c = v & 1;
         v = (u8)(((c << 7) | (R8(wm_BlockXPos) >> 1)) >> 3);
-        v = T8(DATA_00F100 + v);
+        v = T8X(DATA_00F100, v);
     }
     /* _00F1BA */
     c = v & 1;
@@ -450,7 +486,7 @@ static void f3e9(u8 dir)
     if (a >= 2)
         return;
     y = a;
-    a = (u8)(R8(wm_PlayerBlkPosX) - T8(DATA_00F3E3 + y) - 1);   /* carry = 0 */
+    a = (u8)(R8(wm_PlayerBlkPosX) - T8X(DATA_00F3E3, y) - 1);   /* carry = 0 */
     if (a >= 5) { rY = R8(wm_Map16NumLo); return; }
     if (R8(wm_JoyPadA) & (dir == 2 ? 0x08 : 0x04)) {        /* PIPE_BUTTONS */
         mario_events |= MEV_PIPE;
@@ -577,8 +613,8 @@ static void efcd(u8 x)
 {
     if (R8(wm_FrameA) & 0x03)
         return;
-    W16(wm_MarioXPos, R16(wm_MarioXPos) + T16(DATA_00E913 + x));
-    W16(wm_MarioYPos, R16(wm_MarioYPos) + T16(DATA_00E91F + x));
+    W16(wm_MarioXPos, R16(wm_MarioXPos) + T16X(DATA_00E913, x));
+    W16(wm_MarioYPos, R16(wm_MarioYPos) + T16X(DATA_00E91F, x));
 }
 static void efbc(void)
 {
@@ -609,7 +645,7 @@ static int f005(void)
         W8(wm_BouncingWithYoshi, 0x80);
         return 1;
     }
-    if (NEG((u8)(R8(wm_MarioSpeedX) - T8(DATA_00EAB9 + x)) ^ T8(DATA_00EAB9 + x)))
+    if (NEG((u8)(R8(wm_MarioSpeedX) - T8X(DATA_00EAB9, x)) ^ T8X(DATA_00EAB9, x)))
         return 0;
     if (R8(wm_IsCarrying2) | R8(wm_IsDucking))
         return 0;
@@ -737,6 +773,10 @@ static void eb77(void)
 {
     u8 a, y, t;
 
+    if (!probe_ok)
+        probe_init();
+    probe_mx = R16(wm_MarioXPos);
+    probe_my = R16(wm_MarioYPos);
     rX = 0;
     if (R8(wm_MarioPowerUp) && !R8(wm_IsDucking))
         rX = 0x18;
@@ -893,8 +933,10 @@ l_ED0F:
         goto l_ED4A;
     if (a >= 0xF9 || R8(wm_IsFlying)) {
         /* CODE_00ED28 */
-        if (R8(wm_IsFlying))
-            W16(wm_MarioYPos, R16(wm_MarioYPos) + (u8)~a);
+        if (R8(wm_IsFlying)) {
+            probe_my = (u16)(probe_my + (u8)~a);
+            W16(wm_MarioYPos, probe_my);
+        }
         W8(wm_MarioObjStatus, R8(wm_MarioObjStatus) | 0x08);
     } else {
         W8(wm_MarioObjStatus, (R8(wm_MarioObjStatus) & 0xFC) | 0x09);
@@ -1089,12 +1131,12 @@ l_E98C:
         u8 sp;
         W8(wm_MarioObjStatus, R8(wm_MarioObjStatus) | 0x80);
         sp = (u8)(R16(wm_ScrollSpeedL1X) >> 4);
-        if (!NEG((u8)((u8)(sp - R8(wm_MarioSpeedX)) ^ T8(DATA_00E90D + 1 + y)))) {
+        if (!NEG((u8)((u8)(sp - R8(wm_MarioSpeedX)) ^ T8X(DATA_00E90D + 1, y)))) {
             W8(wm_MarioSpeedX, sp);
             W8(wm_PlayerXAccFixed, R8(wm_SprScrollL1X));
         }
     }
-    W8(wm_MarioObjStatus, R8(wm_MarioObjStatus) | T8(DATA_00E90A + y));
+    W8(wm_MarioObjStatus, R8(wm_MarioObjStatus) | T8X(DATA_00E90A, y));
 
 l_E9FB:
     if ((R8(wm_MarioObjStatus) & 0x1C) == 0x1C && !R8(wm_IsOnSolidSpr)) {
@@ -1105,11 +1147,11 @@ l_E9FB:
     a = R8(wm_MarioObjStatus) & 0x03;
     if (a) {
         y = a & 0x02;
-        W16(wm_MarioXPos, R16(wm_MarioXPos) + T16(DATA_00E90D + y));
+        W16(wm_MarioXPos, R16(wm_MarioXPos) + T16X(DATA_00E90D, y));
         if (NEG(R8(wm_MarioObjStatus)))
             goto l_EA34;
         W8(wm_PlayerFrameIndex, 0x03);
-        if (!NEG(R8(wm_MarioSpeedX) ^ T8(DATA_00E90D + y)))
+        if (!NEG(R8(wm_MarioSpeedX) ^ T8X(DATA_00E90D, y)))
             goto l_EA34;
 l_EA32:
         W8(wm_MarioSpeedX, 0);
@@ -1128,12 +1170,12 @@ l_EA34:
 /* CODE_00DC4F: velocidad (4.4 con signo) -> posicion + fraccion */
 static void dc4f(u8 x)
 {
-    u8 v = R8(wm_MarioSpeedX + x), f;
+    u8 v = RX8(wm_MarioSpeedX, x), f;
     u16 d;
     unsigned sum;
-    sum = (unsigned)(u8)(v << 4) + R8(wm_PlayerXAccFixed + x);
+    sum = (unsigned)(u8)(v << 4) + RX8(wm_PlayerXAccFixed, x);
     f = (u8)sum;
-    W8(wm_PlayerXAccFixed + x, f);
+    (RX8(wm_PlayerXAccFixed, x) = (u8)(f));
     d = (u16)((v >> 4) & 0x0F);
     if (d >= 8)
         d |= 0xFFF0;

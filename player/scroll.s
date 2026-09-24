@@ -58,6 +58,9 @@ SEG         equ 64+MIDMAX*12+12 ; 220 (tools/mkscroll.py: SEG). Una carga
 CL_SIZE     equ CL_LINES+SEG*LINES+4
 HOFS        equ $38             ; h de un WAIT = HOFS + x / 2 (medido, copcal.py)
 LASTX       equ 316             ; ninguna carga despues de esta x
+        ifnd    BLITS
+BLITS       equ 4               ; pasos de blit_steps por frame
+        endc
         ifnd    WOFS
 WOFS        equ 8               ; los WAIT, 8 px mas tarde: en el scroll las cargas
                                 ; caian ~5 px antes que en copcal (sin explicar)
@@ -109,7 +112,11 @@ V_MLXB  equ 58
 V_DATA  equ 62                  ; .l datos (build_copper usa a3)
 V_LSA   equ 66                  ; s con la que se escribio cada lista
 V_LSB   equ 68                  ; ($FFFF: nunca)
-V_SIZE  equ 70
+V_GMB   equ 70                  ; .l build_mid: minimos por bloque de la lista
+V_GI    equ 74                  ; bloque actual
+V_CCOL  equ 76                  ; columna que se esta dibujando (-1: ninguna)
+V_CBLK  equ 78                  ; su siguiente paso (0..13 bloques, 14 copia)
+V_SIZE  equ 80
 
 CIAB_TALO   equ $bfd400
 CIAB_TAHI   equ $bfd500
@@ -176,6 +183,7 @@ entry:
         move.l  V_COP2(a5),a0
         bsr     build_copper
         bsr     init_lo
+        move.w  #-1,V_CCOL(a5)
         clr.w   V_S(a5)
         move.w  #-1,V_P(a5)
         move.l  a3,a0
@@ -257,11 +265,16 @@ frame:
         add.w   #SLOTS-1,d0                 ; p + 21: la que entra despues
         cmp.w   D_COLS(a3),d0
         bhs.s   .nocol
-        bsr     blit_column
-        ifd     BENCH
-        st      V_COLF(a5)
-        endc
-.nocol:
+        tst.w   V_CCOL(a5)                  ; una columna a medias: terminarla
+        bmi.s   .nc
+        move.w  d0,-(sp)
+        moveq   #99,d7
+        bsr     blit_steps
+        move.w  (sp)+,d0
+.nc:    move.w  d0,V_CCOL(a5)               ; la columna nueva se dibuja en
+        clr.w   V_CBLK(a5)                  ; varios frames (blit_steps)
+.nocol: moveq   #BLITS-1,d7
+        bsr     blit_steps
         bsr     apply_colors
         bsr     set_pointers
         ifnd    NOMID
@@ -397,6 +410,10 @@ init_lo:                                    ; lo_tab[L] = (MLX[L], nxt = 0)
         move.w  #4,2(a0)
         lea     SHSZ(a0),a0
         dbf     d0,.sh
+        lea     gmin_a(pc),a0               ; minimos por bloque = 0
+        moveq   #LINES/16*2-1,d0
+.gz:    clr.w   (a0)+
+        dbf     d0,.gz
         lea     wake_a(pc),a0               ; wake = 0: todas en el 1er frame
         move.w  #LINES*2-1,d0
 .wk:    clr.w   (a0)+
@@ -461,10 +478,41 @@ build_mid:
         move.w  V_S(a5),d6                  ; d6 = s
         move.w  d6,d5
         add.w   #320,d5                     ; d5 = s + 320
-        move.w  #LINES-1,d3
+        ; bloques de 16 lineas con el minimo de su wake: si la camara no
+        ; llego al minimo, el bloque entero se salta
+        move.l  V_WKB(a5),d0
+        lea     wake_a(pc),a0
+        cmp.l   a0,d0
+        lea     gmin_a(pc),a0
+        beq.s   .gm
+        lea     gmin_b(pc),a0
+.gm:    move.l  a0,V_GMB(a5)
+        clr.w   V_GI(a5)
+.grp:   move.l  V_GMB(a5),a0
+        move.w  V_GI(a5),d0
+        add.w   d0,d0
+        cmp.w   (a0,d0.w),d6
+        bhs.s   .gscan
+        lea     32(a4),a4                   ; nada que mirar en el bloque
+        bra.s   .gnext
+.gscan: moveq   #16-1,d3
 .scan:  cmp.w   (a4)+,d6                    ; s >= wake: hay que mirarla
         bhs.s   .visit
         dbf     d3,.scan
+.gend:  lea     -32(a4),a0                  ; nuevo minimo del bloque
+        move.w  (a0)+,d0
+        moveq   #15-1,d1
+.gmn:   cmp.w   (a0)+,d0
+        bls.s   .gmn2
+        move.w  -2(a0),d0
+.gmn2:  dbf     d1,.gmn
+        move.l  V_GMB(a5),a0
+        move.w  V_GI(a5),d1
+        add.w   d1,d1
+        move.w  d0,(a0,d1.w)
+.gnext: addq.w  #1,V_GI(a5)
+        cmp.w   #LINES/16,V_GI(a5)
+        blo.s   .grp
         movem.l (sp)+,d2-d7/a2-a6
         rts
 .visit: movem.l d3/a4,-(sp)
@@ -501,8 +549,7 @@ build_mid:
 .wk:    movem.l (sp)+,d3/a4                 ; a mirar hasta que haga falta
         move.w  d0,-2(a4)
         dbf     d3,.scan
-        movem.l (sp)+,d2-d7/a2-a6
-        rts
+        bra     .gend
 
 ; una linea: a0 segmento, a2 = MLX[L+1], a4 = lo_tab[L], a6 = sombra, d7
 .do_line:
@@ -767,7 +814,7 @@ blit_column:
         move.l  a2,-(sp)
         move.l  a3,d2
         add.l   D_BLK(a3),d2                ; d2 = bloques
-        bsr.s   bwait
+        bsr     bwait
         move.l  #$09f00000,BLTCON0R(a4)     ; A -> D, BLTCON1 = 0
         move.l  #$ffffffff,BLTAFWMR(a4)
         move.w  #0,BLTAMODR(a4)
@@ -777,19 +824,77 @@ blit_column:
         move.b  (a1)+,d0
         mulu    #96,d0
         add.l   d2,d0
-        bsr.s   bwait
+        bsr     bwait
         move.l  d0,BLTAPTR(a4)
         move.l  a2,BLTDPTR(a4)
         move.w  #(48<<6)|1,BLTSIZER(a4)
         lea     16*LINEB1(a2),a2
         dbf     d3,.blk
         move.l  (sp)+,a2                    ; segunda copia, 44 bytes despues
-        bsr.s   bwait
+        bsr     bwait
         move.w  #ROWB1-2,BLTAMODR(a4)
         move.l  a2,BLTAPTR(a4)
         lea     SLOTS*2(a2),a2
         move.l  a2,BLTDPTR(a4)
         move.w  #((LINES*3)<<6)|1,BLTSIZER(a4)
+        rts
+
+;----------------------------------------------------------------------
+; --- blit_steps ---
+; La columna nueva, repartida entre frames: hasta d7+1 pasos por llamada.
+; Paso 0..13 = un bloque (1 palabra x 48 filas); paso 14 = la segunda
+; copia de toda la columna (1 x 672 filas, sin esperar a que termine).
+; Hay tiempo: la columna p + 21 no se ve hasta 16 px de scroll despues.
+; entrada:  V_CCOL (-1: nada), V_CBLK, d7 = pasos - 1
+; registros destruidos: d0-d3/d7/a0-a2
+;----------------------------------------------------------------------
+blit_steps:
+        tst.w   V_CCOL(a5)
+        bmi.s   .done
+        ifd     BENCH
+        st      V_COLF(a5)
+        endc
+        move.w  V_CCOL(a5),d0
+        moveq   #0,d1
+        move.w  d0,d1
+        divu    #SLOTS,d1
+        swap    d1
+        add.w   d1,d1
+        move.l  V_BUF1(a5),a2
+        add.w   d1,a2                       ; a2 = columna en el buffer
+        mulu    #15,d0
+        move.l  a3,a1
+        add.l   D_MAP(a3),a1
+        add.l   d0,a1                       ; a1 = MAP[c * 15]
+.step:  move.w  V_CBLK(a5),d1
+        cmp.w   #LINES/16,d1
+        beq.s   .copy
+        moveq   #0,d0
+        move.b  (a1,d1.w),d0
+        mulu    #96,d0
+        add.l   a3,d0
+        add.l   D_BLK(a3),d0                ; d0 = bloque
+        mulu    #16*LINEB1,d1
+        lea     (a2,d1.l),a0                ; destino
+        bsr     bwait
+        move.l  #$09f00000,BLTCON0R(a4)     ; A -> D, BLTCON1 = 0
+        move.l  #$ffffffff,BLTAFWMR(a4)
+        move.w  #0,BLTAMODR(a4)
+        move.w  #ROWB1-2,BLTDMODR(a4)
+        move.l  d0,BLTAPTR(a4)
+        move.l  a0,BLTDPTR(a4)
+        move.w  #(48<<6)|1,BLTSIZER(a4)
+        addq.w  #1,V_CBLK(a5)
+        dbf     d7,.step
+.done:  rts
+.copy:  bsr.s   bwait                       ; segunda copia, 44 bytes despues
+        move.w  #ROWB1-2,BLTAMODR(a4)
+        move.w  #ROWB1-2,BLTDMODR(a4)
+        move.l  a2,BLTAPTR(a4)
+        lea     SLOTS*2(a2),a2
+        move.l  a2,BLTDPTR(a4)
+        move.w  #((LINES*3)<<6)|1,BLTSIZER(a4)
+        move.w  #-1,V_CCOL(a5)
         rts
 
 bwait:  btst    #6,DMACONR(a4)              ; dos veces: bug del Agnus viejo
@@ -1039,6 +1144,8 @@ shadow_a: ds.b  SHSZ*LINES                  ; build_mid: sombra de cada lista
 shadow_b: ds.b  SHSZ*LINES
 segoff: ds.l    LINES                       ; build_mid: L * SEG y L * SHSZ
 shoff:  ds.w    LINES
+gmin_a: ds.w    LINES/16                    ; build_mid: minimo de wake por bloque
+gmin_b: ds.w    LINES/16                    ; de 16 lineas (0: mirar)
 wake_a: ds.w    LINES                       ; build_mid: s desde la que hay que
 wake_b: ds.w    LINES                       ; mirar cada linea (0: siempre)
 gfxname: dc.b   "graphics.library",0

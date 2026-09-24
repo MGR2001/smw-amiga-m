@@ -113,7 +113,6 @@ void camera_F6DB(void)
 {
     u8 y;
     u16 a, v0, v2, pts, bg1h, bg1v, bg2h, bg2v;
-    int k;
 
     pts = R16(wm_PosToScrollScreen);
     W16(wm_CanScrollScreen, pts - 0x000C);
@@ -173,6 +172,10 @@ void camera_F6DB(void)
     W8(wm_L1CurYChange, R8(wm_Bg1VOfs) - R8(wm_L1NextPosY));
     W8(wm_L2CurXChange, R8(wm_Bg2HOfs) - R8(wm_L2NextPosX));
     W8(wm_L2CurYChange, R8(wm_Bg2VOfs) - R8(wm_L2NextPosY));
-    for (k = 7; k >= 0; k--)
-        W8(wm_L1NextPosX + k, R8(wm_Bg1HOfs + k));
+    /* L1NextPosX..L2NextPosY = Bg1HOfs..Bg2VOfs (8 bytes), con las
+       variables: el bucle con indice costaba ~1000 ciclos en el 68000 */
+    W16(wm_L1NextPosX, bg1h);
+    W16(wm_L1NextPosX + 2, bg1v);
+    W16(wm_L1NextPosX + 4, bg2h);
+    W16(wm_L1NextPosX + 6, bg2v);
 }

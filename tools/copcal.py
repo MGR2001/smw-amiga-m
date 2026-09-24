@@ -48,8 +48,23 @@ TESTS += [
     ("borrado (v-1,$E2) 14 + WAIT $40", [("B", 0), ("P", 14), ("W", 0x40), ("M", 0)]),
     ("borrado (v-1,$D8) 14 MOVE: fin", [("B", 1), ("P", 14), ("M", 0)]),
 ]
+# COPCAL_FINE=1: la h de a 2 (no solo multiplos de 8: con 6 planos el
+# copper tiene una ranura cada 8 cc) y retardos de BPLCON1 ("D", d); para
+# leer con tools/copcal_fine.py y el binario armado con -DPATTERN
+TESTS_FINE = ([("wait h=$%02X" % h, [("W", h), ("M", 0)]) for h in range(0x40, 0x60, 2)]
+              + [("wait h=$%02X" % h, [("W", h), ("M", 0)]) for h in range(0x88, 0x92, 2)]
+              + [("d=%d wait h=$80" % d, [("D", d), ("W", 0x80), ("M", 0)]) for d in (0, 4, 8, 12, 15)]
+              + [("d=%d wait h=$8E" % d, [("D", d), ("W", 0x8E), ("M", 0)]) for d in (0, 12)])
 if os.environ.get("COPCAL_RIGHT"):
     TESTS = TESTS_RIGHT
+# COPCAL_FINE=2: borde derecho de a 2 y WAIT despues de un MOVE
+TESTS_FINE2 = ([("wait h=$%02X" % h, [("W", h), ("M", 0)]) for h in range(0xC8, 0xE4, 2)]
+               + [("W$50 M W$%02X M" % h, [("W", 0x50), ("M", 1), ("W", h), ("M", 0)])
+                  for h in range(0x5C, 0x6A, 2)])
+if os.environ.get("COPCAL_FINE") == "2":
+    TESTS, STEP = TESTS_FINE2, 7
+elif os.environ.get("COPCAL_FINE"):
+    TESTS, STEP = TESTS_FINE, 7
 
 
 def gen():
@@ -73,6 +88,8 @@ def gen():
                     out.append("        dc.w    $0182,$%04X" % COLORS[a])
                 elif op == "B":
                     pass
+                elif op == "D":                     # BPLCON1 = retardo d en PF1 y PF2
+                    out.append("        dc.w    $0102,$%04X" % (a * 0x11))
                 else:
                     regs = [0x184 + 2 * k for k in range(6)] + [0x192 + 2 * k for k in range(7)]
                     for k in range(a):

@@ -20,7 +20,8 @@ FETCHB      equ 42                  ; 21 palabras por linea y plano
 V_ONES      equ 0
 V_ZERO      equ 4
 V_COP       equ 8
-V_SIZE      equ 12
+V_PAT       equ 12
+V_SIZE      equ 16
 
         bra.w   entry
         dc.b    "A5PL"
@@ -41,6 +42,17 @@ entry:
         moveq   #64,d0
         bsr     alloc_chip
         move.l  d0,V_ZERO(a5)
+        ; -DPATTERN: PF1 plano 1 = $7FFF (el primer pixel de cada palabra a
+        ; 0: una raya vertical de 1 px cada 16 px, que se corre con el
+        ; retardo de BPLCON1) y PF2 plano 1 = unos (COLOR09 detras de las
+        ; rayas; el borde fuera de la DIW queda en COLOR00)
+        moveq   #64,d0
+        bsr     alloc_chip
+        move.l  d0,V_PAT(a5)
+        move.l  d0,a0
+        moveq   #32-1,d1
+.pat:   move.w  #$7fff,(a0)+
+        dbf     d1,.pat
         move.l  #COPEND-COPLIST,d0
         bsr     alloc_chip
         move.l  d0,V_COP(a5)
@@ -52,9 +64,17 @@ entry:
         dbf     d0,.cp
         move.l  V_COP(a5),a1
         lea     PTRS-COPLIST+2(a1),a1       ; valor de BPL1PTH
+        ifd     PATTERN
+        move.l  V_PAT(a5),d0                ; BPL1 = PF1 plano 1
+        bsr     .setp
+        move.l  V_ONES(a5),d0               ; BPL2 = PF2 plano 1
+        bsr     .setp
+        moveq   #4-1,d2
+        else
         move.l  V_ONES(a5),d0
         bsr     .setp
         moveq   #5-1,d2
+        endc
 .bp:    move.l  V_ZERO(a5),d0
         bsr     .setp
         dbf     d2,.bp
@@ -105,6 +125,7 @@ COPLIST:
 PTRS:   dc.w    $00e0,0,$00e2,0,$00e4,0,$00e6,0,$00e8,0,$00ea,0
         dc.w    $00ec,0,$00ee,0,$00f0,0,$00f2,0,$00f4,0,$00f6,0
         dc.w    $0180,$0000,$0182,$0fff
+        dc.w    $0192,$0444                 ; COLOR09: PF2 (solo con PATTERN)
         include "copcal_lines.i"
         dc.w    $ffff,$fffe
 COPEND:
