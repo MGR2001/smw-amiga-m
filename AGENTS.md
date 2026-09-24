@@ -1668,8 +1668,19 @@ Dos salidas:
 - **(b)** Rehacer el reparto de registros de `dpfsplit.py` contando los
   WAIT, y volver a simular antes de tocar la Amiga.
 
+Probado y descartado (13:07, revertido): planificar las cargas por plazo
+(EDF en ranuras de 16 px, como `dpfsplit`) en `mkscroll.py` y ordenar MLD
+por la x planificada. Con el modelo "1 ranura por carga" solo quedaban 3
+cargas tarde en todo el nivel, pero en la Amiga x = 1700 **empeoró** (1335
+px contra 1025). O sea: **el modelo de tiempos del copper no está
+calibrado** (dónde cae de verdad cada MOVE respecto a la h del WAIT,
+`HOFS`, cuánto cuesta un WAIT intercalado en medio de una cadena). Antes
+de (a) o (b) hay que **medirlo** con una prueba de copper (como
+`copbench.s`): una línea con WAIT + N MOVE de color y ver en la captura
+dónde cambia cada uno.
+
 **Siguiente (etapa 6), en orden:**
-- La franja (arriba): (a) o (b). Comprobar varias x con
+- Calibrar el copper (arriba) y después la franja: (a) o (b). Comprobar varias x con
   `scroll_check.py --mid`, no solo 1000 y 1700.
 - Bajar el 33 % de `build_mid`: tablas de desplazamientos por línea en vez
   de los dos `mulu` de cada visita, y no volver a escribir las h de los
