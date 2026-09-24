@@ -1519,6 +1519,9 @@ work/marioverify work/oracle_yi1.bin            # 8a sola (modo híbrido antiguo
 work/marioverify work/oracle_yi1.bin full       # frame del jugador: 6510/6547
 work/marioverify work/oracle_yi1.bin gfx        # gráficos de Mario: 6869/6869
 work/marioverify work/oracle_yi1.bin loop       # lazo cerrado: 37 resincronizaciones (sprites)
+work/marioverify work/oracle_yi1.bin sprload    # cargador de sprites: 20/20
+work/marioverify work/oracle_yi1.bin sprloop    # Rex en lazo cerrado: 2411/2412
+work/marioverify work/oracle_yi1.bin game       # Mario + Rex: 26 resincronizaciones, tramo 2711
 python3 tools/m68kverify.py --engine musashi --mode loop   # lo mismo en 68000 + ciclos
 python3 tools/mkbg.py && python3 tools/mkd8in.py && python3 tools/mkleveld.py && python3 tools/render_d.py
 FULL_FRAME=11180 work/mvtrace work/oracle_yi1.bin full   # un frame, con las sondas
@@ -1551,6 +1554,47 @@ Esta sesión de Claude cloud trabajó en la rama `claude/agents-md-x4v1di`.
 Antes de nada: `git fetch && git checkout claude/agents-md-x4v1di` (o
 mergearla), y leer "Dónde quedó el trabajo" justo arriba.
 
+**Actualización (2026-09-24, 06:25 UTC) — pasos 1 y 2 del plan de D1**
+
+El usuario eligió: optimizar en C nativo verificando contra el oráculo
+(paso 1) y escribir los sprites directamente así (paso 2). Estado:
+
+- **Paso 1 (nativo, primera parte):** sondas de colisión con tablas
+  nativas y atajo de `F545`; cámara con variables locales. Musashi:
+  31 972 → 30 848 ciclos por `level_frame`. Todo sigue exacto. **Falta** la
+  parte grande: el estado de Mario en variables nativas (ver "Implicación
+  para D1"), medir con FS-UAE después de cada paso.
+- **Paso 2 (sprites), `player/msprite.c`:**
+  - cargador `LoadSprFromLevel`: `marioverify ... sprload` → **20/20
+    nacimientos exactos** (ranura, número, X, Y) y ninguno de más;
+  - motor mínimo: `InitSpriteTables`, temporizadores, `HandleSprite`
+    (init + main), `SubUpdateSprPos`, colisión con el nivel
+    (`CODE_019140`, nivel horizontal de capa 1), `GetDrawInfo` (flags),
+    `SubOffscreen`, contacto Mario-sprite (`MarioSprInteract`, cajas,
+    `CheckForContact`), `BoostMarioSpeed`, choque sprite-sprite (estado 8
+    contra 8) y **el Rex completo**;
+  - `marioverify ... sprloop` (los Rex que nacen a la vista corren solos;
+    Mario y la cámara son entradas): **2411/2412 Rex-frames exactos**, los
+    pisotones, el doble pisotón y la muerte con giro incluidos; los 11
+    rebotes de Mario sobre esos Rex coinciden con el oráculo;
+  - `marioverify ... game` (Mario desde el joypad + los Rex del port en el
+    mismo frame): resincronizaciones de Mario **37 → 26**; tramo más largo
+    **1240 → 2711 frames idénticos** (~54 s). Lo que queda: 23 frames
+    parado sobre la **caja de mensaje** (`$B9`, sprite sólido), y 3
+    rebotes: Koopa sin caparazón (`$02`, frame 5322), bloque `?` volador
+    (`$83`, 6393) y un Rex que ya estaba al empezar el tramo (6909).
+  - Tablas de otros bancos: `tools/smwtabx.py` → `player/gen/smwtabx.h`
+    (generado, no se versiona). `smwgen.py` ahora lee también las tablas
+    de sprites (`INSTANCEOF` en `memory.i`): `smwram.h` cambió.
+  - Trampas nuevas: en `CODE_01A56D` el `ROL` guarda el **carry** de la
+    resta (sin préstamo), no el signo; `RexSpinKill` pasa a estado 4 (no a
+    0); al resincronizar un sprite hay que copiar también la fracción
+    (`SpriteXAcc`/`YAcc`, grabadas) y deducir la dirección (no grabada).
+  - **Los sprites todavía no están en `logicbench`** ni medidos en la
+    Amiga: `level_frame` no los llama (los llama el verificador). Siguiente:
+    caja de mensaje, bloque `?` volador, Koopa, Banzai Bill, piraña; meter
+    los sprites en `level_frame` y medir con FS-UAE.
+
 **Qué cambió (resumen; el detalle está arriba y en §8 P33-P37):**
 - 8b, animación, gráficos de Mario y cámara portados y verificados:
   `player/mcoll.c`, `manim.c`, `mgfx.c`, `mcam.c`, `smwmac.h`.
@@ -1567,9 +1611,10 @@ mergearla), y leer "Dónde quedó el trabajo" justo arriba.
 1. **Confirmar la 8d en WinUAE con KS 1.2** (la de cloud es FS-UAE + AROS):
    ```bash
    python tools/mkmapbin.py
-   gcc -O2 -Iplayer -o work/marioverify tools/marioverify.c player/mario.c player/mcoll.c player/manim.c player/mgfx.c player/mcam.c player/gen/smwrom00.c
+   gcc -O2 -Iplayer -o work/marioverify tools/marioverify.c player/mario.c player/mcoll.c player/manim.c player/mgfx.c player/mcam.c player/msprite.c player/gen/smwrom00.c
    work/marioverify work/oracle_yi1.bin fulldump 5410 work/cc/state_run.bin
    work/marioverify work/oracle_yi1.bin fulldump 10983 work/cc/state_jump.bin
+   python tools/smwgen.py && python tools/smwtabx.py
    sh tools/logicbench_build.sh
    ```
    ```powershell
@@ -1636,7 +1681,7 @@ iba a existir en la Amiga, y ponía la prueba de rendimiento en cuarto lugar.
 | 5 | **Conversor de nivel → Amiga, formato (d)** | Capa 1: 3 planos con la asignación de índices de `dpfsplit.py` (244 variantes de bloque) + tablas del copper por línea del nivel (cargas en el borrado y a mitad de línea con su ventana). Capa 2: bitmap de 3 planos de período 512 px + paleta por línea. `render_dat.py` renderiza el blob en el PC aplicando las tablas y se compara contra `d8d_g48m8_nivel.png` y la referencia con `cmp_ref.py` | **HECHO en cloud** (2026-09-24): `tools/mkd8in.py` → `tools/mkleveld.py` → `work/yi1_d.dat` (199 KB) → `tools/render_d.py`. Todo sale de los datos del ROM (la capa 2 también: `tools/mkbg.py`). Colores cuantizados a 12 bits (OCS) antes de repartir registros. 244 bloques, 9575 eventos, derrame 357 px (0,1 %). El render **solo desde el blob** = la imagen ideal (0 px distintos); moviendo la cámara cada 4 px, 0,018 % de píxeles mal (peor encuadre 132 px). **Falta en la PC**: `cmp_ref.py` contra `SuperMarioWorldMap02.png` |
 | 6 | Scroll del nivel real en la Amiga | PF1 con `BPLCON1` bits 0-3 + columna nueva; PF2 con bits 4-7 a media velocidad (paralaje); lista del copper por frame (segmentos por línea encadenados, §9 punto 10). Recorre las 20 pantallas a 50 Hz; captura de WinUAE = render del PC en varios puntos; coste medido con el método de `bench2.s` | — |
 | 7 | **Capa 2** | En (d) la hacen las etapas 5 y 6 (PF2 con scroll por hardware). Queda la verificación: recortes apilados contra `SuperMarioWorldMap02.png`, el diff tiene que bajar del 25.5 % | — |
-| 8 | **Mario**, por partes verificadas bit a bit contra el oráculo `work/oracle_yi1.txt` (partida real grabada en `smwrecomp`: joypad + WRAM `$0000-$00FF` y `$13C0-$14FF` + OAM por frame): **8a** velocidad horizontal, gravedad y saltos; **8b** colisiones con bloques (en SMW el "acts like" es el propio índice Map16); **8c** pendientes de 45° (hace falta grabar las colinas: a toda carrera, en las dos direcciones, parado encima y deslizándose); **8d** coste medido en la Amiga | Cada parte: el estado de Mario del port = el del oráculo en todos los frames de sus tramos | **8a, 8b, animación, gráficos y cámara HECHOS** (2026-09-24): 6510/6547 pares exactos, los 37 restantes son sprites (etapa 9); OAM 6869/6869; lazo cerrado solo con el joypad. 8c: las pendientes de la partida salen exactas, falta la grabación de las colinas. **8d medida: 34-36 % de un frame** (FS-UAE cycle-exact) |
+| 8 | **Mario**, por partes verificadas bit a bit contra el oráculo `work/oracle_yi1.txt` (partida real grabada en `smwrecomp`: joypad + WRAM `$0000-$00FF` y `$13C0-$14FF` + OAM por frame): **8a** velocidad horizontal, gravedad y saltos; **8b** colisiones con bloques (en SMW el "acts like" es el propio índice Map16); **8c** pendientes de 45° (hace falta grabar las colinas: a toda carrera, en las dos direcciones, parado encima y deslizándose); **8d** coste medido en la Amiga | Cada parte: el estado de Mario del port = el del oráculo en todos los frames de sus tramos | **8a, 8b, animación, gráficos y cámara HECHOS** (2026-09-24): 6510/6547 pares exactos, los 37 restantes son sprites (etapa 9); OAM 6869/6869; lazo cerrado solo con el joypad. 8c: las pendientes de la partida salen exactas, falta la grabación de las colinas. **8d medida: 31,6-32,9 % de un frame** (FS-UAE cycle-exact, tras la 1.ª optimización) |
 | 9 | **Sprites del nivel** (D3): Rex, Banzai Bill, Jumping Piranha; después Chuck, Sliding Koopa, bloque volador, Info Box, meta | Aparecen en las posiciones de `spr.lv` y se comportan como en la SNES | — |
 | 10 | HUD | Barra de estado con su propia paleta (copper) | — |
 | 11 | Audio (D5) | Música del nivel + efectos, 4 canales | — |
