@@ -1353,6 +1353,67 @@ es lo que muestra la referencia. Detalle en P28.
 
 ---
 
+## Dónde quedó el trabajo (2026-09-24) — leer primero
+
+**Etapa 8 en curso.** 8a (física de Mario: velocidad horizontal, gravedad y
+saltos) está portada en `player/mario.c` y verificada contra el oráculo con
+`tools/marioverify.c`:
+
+- 6547 pares de frames verificados; ninguno toca código sin portar y 322 se
+  saltan porque no corre la física normal.
+- En el aire coinciden todos los campos en 2989 de 3497 frames; en el suelo,
+  en 2962 de 3050.
+- Los fallos que quedan son de partes todavía sin portar:
+
+| causa | frames | parte que lo resuelve |
+|---|---|---|
+| giro (animación `CODE_00CEB1`) | 499 | portar `CODE_00CEB1` (opcional) |
+| pared o techo | 21 | 8b |
+| pendiente | 42 | 8c |
+| encima de un sprite | 23 | etapa 9 |
+| otros: 10 rebotes al pisar (`$D0`) y 1 golpe a un bloque (`$10`) | 11 | — |
+
+**Paso siguiente, 8d (sin hacer):** medir en la Amiga el coste de 8a.
+
+- `sh tools/logicbench_build.sh` genera `work/logicbench.adf`: vbcc con
+  `-sc -sd -const-in-data` y todas las secciones fundidas en `CODE`. El
+  binario ocupa 28.5 KB y cabe en el alcance de `a4` (32 KB). Ya se revisó
+  el listado: no hay ninguna referencia absoluta.
+- Ventanas: W1 = copiar el estado; W2 = estado "corriendo" (frame 5410) + 8a;
+  W3 = estado "salto" (frame 10983) + 8a.
+- Los estados se generan con
+  `marioverify work/oracle_yi1.bin dump FRAME work/cc/state_run.bin` (o
+  `state_jump.bin` para el frame 10983).
+- Para correrlo y leerlo:
+  `.\tools\shot.ps1 -Exact -Adf work\logicbench.adf -Out work\logicbench.png -Wait 80`
+  y después `python tools/logicbench_read.py`. Coste de 8a = W2−W1 y W3−W1.
+  Hay que anotarlo en §9.
+- **`tools/logicbench_read.py` no se probó nunca.** Supone el mismo formato
+  de captura que `bench2_read.py`; confirmarlo antes de creerle.
+
+**Después:**
+
+1. 8b: colisiones con bloques, con la tabla "acts like" del ROM.
+2. 8c: pendientes. Antes, el usuario tiene que grabar una sesión en las
+   colinas: a toda carrera en las dos direcciones, parado en la pendiente,
+   deslizándose y saltando sobre pendientes. Se graba con
+   `tools/oamrec.py --out` a un fichero **distinto** de `oracle_yi1`.
+3. Etapas 5 y 6, ya desbloqueadas porque D8 = (d).
+
+**Qué no está en git y cómo recuperarlo** (regla R9):
+
+- `work/` no se versiona: ahí van la ROM, los oráculos grabados, los ADF y
+  los renders.
+- `player/gen/smwrom00.c` tampoco. Se regenera con `python tools/smwgen.py`,
+  que necesita la ROM (U).
+- En Claude cloud no hay ROM, ni WinUAE, ni `smwrecomp`, ni el oráculo
+  grabado. Allí solo se puede leer y editar código: nada de verificar ni de
+  medir. **8d, la verificación con `marioverify` y la grabación de las
+  colinas tienen que correr en la PC local.**
+- El grabador tiene límites que ya costaron partidas: 1024 caracteres por
+  valor, 16 valores por respuesta y una sola conexión TCP. **Probar siempre
+  el grabador antes de pedirle al usuario que juegue.**
+
 ## 10. Roadmap
 
 Reordenado el 2026-09-22 con un criterio: **primero se mide en el hardware lo
