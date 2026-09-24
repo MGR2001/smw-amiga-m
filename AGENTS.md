@@ -1401,6 +1401,7 @@ oráculo**, en el PC y en el binario 68000 real. Todo corre en Claude cloud
 | 8b colisión con la capa 1 | `player/mcoll.c` | `CD24`: `DC2D`, `E92B` (sondas, pendientes, bloques), `F595`; `GenerateTile`; bloques que rebotan `CODE_028752` / `CODE_02902D` | `marioverify ... full` |
 | frame del jugador + animación | `player/manim.c` | `C500` (temporizadores), `ResetAni`, scroll L/R `CDDD`, `CEB1` | `marioverify ... full` |
 | gráficos de Mario | `player/mgfx.c` | `E2BD`, `E45D`, `F636` | `marioverify ... gfx` |
+| cámara + frame de nivel | `player/mcam.c`, `level_frame()` en `manim.c` | `F6DB` (`F7F4`, `F8AB`), principio de `01808C`, orden de `A295` | `marioverify ... loop` |
 
 Resultados (`work/oracle_yi1.txt`, 6547 pares de frames de Yoshi's Island 1):
 
@@ -1413,15 +1414,22 @@ Resultados (`work/oracle_yi1.txt`, 6547 pares de frames de Yoshi's Island 1):
   enemigo (`SpeedY` = `$D0` / `$10`).
 - **`gfx`: 6869 / 6869 frames con la OAM de Mario y `MarioScrPosX/Y`
   exactas** (13 432 entradas de OAM en 6718 frames con Mario visible).
+- **`loop` (lazo cerrado): el port reproduce la partida él solo**, desde el
+  primer frame de cada tramo y recibiendo **solo el joypad** (la cámara, el
+  `FrameA`, todo lo demás lo calcula). Tramo más largo: **1240 frames
+  seguidos idénticos** (~25 s). Se resincroniza 37 veces en 6547 frames:
+  exactamente los contactos con sprites. El binario 68000 da lo mismo.
 - Las pendientes de la partida (42 frames que antes fallaban) ya salen
   exactas: buena parte de la **8c** está hecha, pero falta la grabación de
   las colinas para darla por cerrada.
 - **El binario 68000 de vbcc da exactamente lo mismo que el C del PC**
   (`tools/m68kverify.py`, Unicorn y Musashi).
 
-Coste estimado del frame del jugador (`E2BD` + `mario_player` +
-`blocks_update`) en un 68000 **sin esperas de DMA** (Musashi): **26 674
-ciclos de media = 18,8 % de un frame PAL; peor frame 30 236 = 21,3 %**. Con
+Coste estimado de un frame de nivel sin sprites (`level_frame`: cámara,
+`E2BD`, jugador, bloques) en un 68000 **sin esperas de DMA** (Musashi):
+**34 529 ciclos de media = 24,3 % de un frame PAL; peor frame 38 712 =
+27,3 %**. Solo el jugador (`E2BD` + `mario_player` + `blocks_update`): 26 674
+de media (18,8 %). Con
 el DMA de 6 planos será más. Dónde se va (`tools/m68kprof.py`): las sondas
 de colisión (`f44d` + `f461` + `f545`, 5,5 por frame) ≈ 28 %, las 4 entradas
 de OAM (`e45d`) ≈ 12 %, `E2BD` ≈ 9 %, los bucles de temporizadores de
@@ -1453,10 +1461,10 @@ python tools/logicbench_read.py        # coste = W2-W1 (corriendo), W3-W1 (salto
 
 1. Optimizar el frame del jugador con el verificador como red: sondas,
    `e45d`, temporizadores.
-2. Cámara (`CODE_00F6DB`) y scroll (etapa 6): con eso el modo `full` ya no
-   necesita la cámara del oráculo.
-3. Etapa 5 (conversor de nivel a formato (d)) y etapa 9 (sprites: son los
-   37 frames que faltan).
+2. Etapa 6: el scroll en la Amiga con el blob de la etapa 5
+   (`work/yi1_d.dat`, formato en la cabecera de `tools/mkleveld.py`) y la
+   cámara ya portada (`player/mcam.c`).
+3. Etapa 9 (sprites): son los 37 frames que faltan en `full` y `loop`.
 4. 8c: el usuario graba las colinas (ver el grabador más abajo).
 
 **En Claude cloud, primero correr `sh tools/setup_cloud.sh`** (~15 s). Deja
@@ -1484,6 +1492,9 @@ Comprobaciones (todas en cloud):
 work/marioverify work/oracle_yi1.bin            # 8a sola (modo híbrido antiguo)
 work/marioverify work/oracle_yi1.bin full       # frame del jugador: 6510/6547
 work/marioverify work/oracle_yi1.bin gfx        # gráficos de Mario: 6869/6869
+work/marioverify work/oracle_yi1.bin loop       # lazo cerrado: 37 resincronizaciones (sprites)
+python3 tools/m68kverify.py --engine musashi --mode loop   # lo mismo en 68000 + ciclos
+python3 tools/mkbg.py && python3 tools/mkd8in.py && python3 tools/mkleveld.py && python3 tools/render_d.py
 FULL_FRAME=11180 work/mvtrace work/oracle_yi1.bin full   # un frame, con las sondas
 sh tools/logicbench_build.sh                    # (VBCC=~/vbcc) binario 68000 + ADF
 python3 tools/m68kverify.py --engine musashi    # el binario 68000 contra el oráculo + ciclos
@@ -1529,7 +1540,7 @@ iba a existir en la Amiga, y ponía la prueba de rendimiento en cuarto lugar.
 | Etapa | Contenido | Criterio de "hecho" | Cierra |
 |---|---|---|---|
 | **4** | **Prueba de viabilidad en `a500.uae`** (cycle-exact) | Tabla de costes medida en la Amiga + cómo se mueve la capa 2 | **HECHO** (2026-09-22) — ver "Etapa 4 — resultados" en §9. Cerró D1 y D9; D8 queda para el usuario con los datos. El scroll del **nivel real** no se hizo aquí (hace falta el conversor de la etapa 5): pasa a la etapa 6. `player/bench.s` + `tools/bench_read.py` |
-| 5 | **Conversor de nivel → Amiga, formato (d)** | Capa 1: 3 planos con la asignación de índices de `dpfsplit.py` (244 variantes de bloque) + tablas del copper por línea del nivel (cargas en el borrado y a mitad de línea con su ventana). Capa 2: bitmap de 3 planos de período 512 px + paleta por línea. `render_dat.py` renderiza el blob en el PC aplicando las tablas y se compara contra `d8d_g48m8_nivel.png` y la referencia con `cmp_ref.py` | — |
+| 5 | **Conversor de nivel → Amiga, formato (d)** | Capa 1: 3 planos con la asignación de índices de `dpfsplit.py` (244 variantes de bloque) + tablas del copper por línea del nivel (cargas en el borrado y a mitad de línea con su ventana). Capa 2: bitmap de 3 planos de período 512 px + paleta por línea. `render_dat.py` renderiza el blob en el PC aplicando las tablas y se compara contra `d8d_g48m8_nivel.png` y la referencia con `cmp_ref.py` | **HECHO en cloud** (2026-09-24): `tools/mkd8in.py` → `tools/mkleveld.py` → `work/yi1_d.dat` (199 KB) → `tools/render_d.py`. Todo sale de los datos del ROM (la capa 2 también: `tools/mkbg.py`). Colores cuantizados a 12 bits (OCS) antes de repartir registros. 244 bloques, 9575 eventos, derrame 357 px (0,1 %). El render **solo desde el blob** = la imagen ideal (0 px distintos); moviendo la cámara cada 4 px, 0,018 % de píxeles mal (peor encuadre 132 px). **Falta en la PC**: `cmp_ref.py` contra `SuperMarioWorldMap02.png` |
 | 6 | Scroll del nivel real en la Amiga | PF1 con `BPLCON1` bits 0-3 + columna nueva; PF2 con bits 4-7 a media velocidad (paralaje); lista del copper por frame (segmentos por línea encadenados, §9 punto 10). Recorre las 20 pantallas a 50 Hz; captura de WinUAE = render del PC en varios puntos; coste medido con el método de `bench2.s` | — |
 | 7 | **Capa 2** | En (d) la hacen las etapas 5 y 6 (PF2 con scroll por hardware). Queda la verificación: recortes apilados contra `SuperMarioWorldMap02.png`, el diff tiene que bajar del 25.5 % | — |
 | 8 | **Mario**, por partes verificadas bit a bit contra el oráculo `work/oracle_yi1.txt` (partida real grabada en `smwrecomp`: joypad + WRAM `$0000-$00FF` y `$13C0-$14FF` + OAM por frame): **8a** velocidad horizontal, gravedad y saltos; **8b** colisiones con bloques (en SMW el "acts like" es el propio índice Map16); **8c** pendientes de 45° (hace falta grabar las colinas: a toda carrera, en las dos direcciones, parado encima y deslizándose); **8d** coste medido en la Amiga | Cada parte: el estado de Mario del port = el del oráculo en todos los frames de sus tramos | **8a, 8b, animación y gráficos HECHOS** (2026-09-24): 6510/6547 pares exactos, los 37 restantes son sprites (etapa 9); OAM 6869/6869. 8c: las pendientes de la partida salen exactas, falta la grabación de las colinas. 8d: ADF listo, sin medir (estimado 18,8 % de frame sin DMA) |
