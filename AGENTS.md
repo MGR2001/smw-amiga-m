@@ -1388,8 +1388,13 @@ saltos) está portada en `player/mario.c` y verificada contra el oráculo con
   `.\tools\shot.ps1 -Exact -Adf work\logicbench.adf -Out work\logicbench.png -Wait 80`
   y después `python tools/logicbench_read.py`. Coste de 8a = W2−W1 y W3−W1.
   Hay que anotarlo en §9.
-- **`tools/logicbench_read.py` no se probó nunca.** Supone el mismo formato
-  de captura que `bench2_read.py`; confirmarlo antes de creerle.
+- `tools/logicbench_read.py` no se corrió nunca contra una captura, pero se
+  revisó contra el arnés: `show_results` y `measure` son idénticos a los de
+  `bench2.s` y las palabras caen donde las lee (w1 = ticks por frame,
+  w3/w5/w7/w9 = medias de W0-W3 con BLTPRI apagado).
+- `logicbench.s` abre `section "CODE",code` al principio: con vasm 2.0 el
+  arnés en la sección por defecto chocaba con la de vbcc ("sections must not
+  overlap"). El binario sigue midiendo 28 796 B.
 
 **Después:**
 
@@ -1400,27 +1405,35 @@ saltos) está portada en `player/mario.c` y verificada contra el oráculo con
    `tools/oamrec.py --out` a un fichero **distinto** de `oracle_yi1`.
 3. Etapas 5 y 6, ya desbloqueadas porque D8 = (d).
 
-**En Claude cloud, primero correr `sh tools/setup_cloud.sh`.** Instala:
+**En Claude cloud, primero correr `sh tools/setup_cloud.sh`** (~15 s). Deja
+todo listo para compilar **y verificar**:
 
-- vasm y vbcc para el 68000;
+- vasm y vbcc para el 68000, desde espejos de GitHub (la red del entorno no
+  deja bajar de `sun.hasenbraten.de` ni de `phoenix.owl.de`);
 - las librerías de Python (numpy, pillow, scipy);
 - el fuente de SMW, clonado desde https://github.com/galaxyhaxz/smw-src en
-  `../../smw-src-master`, que es donde lo busca `smwgen.py`.
+  `../../smw-src-master`, que es donde lo busca `smwgen.py`;
+- **la ROM (U), ensamblada desde ese fuente** en `work/smw.sfc`: WLA-DX del
+  2016-07-29 (misma fecha que el `wla-65816.exe` de smw-src) con `DL` en
+  `.ENUM`, más `tools/smwsrc_wla.py`, que traduce las etiquetas `@` y el
+  `.ASC "...\n"` de la WLA modificada. El script comprueba **CRC32
+  `B19ED489`** = Super Mario World (U) [!];
+- `player/gen/*`, `work/oracle_yi1.bin`, `work/marioverify` y los estados de
+  `logicbench`.
 
-Las grabaciones del oráculo **sí** están en git: `work/oracle_yi1.txt` y
-`work/oam_yi1.txt`. Son RAM y joypad, sin bytes de la ROM. El `.bin` se
-regenera con `python tools/oracle2bin.py`.
+Comprobado el 2026-09-24 en cloud: `marioverify` da exactamente los números de
+arriba (2989/3497 en el aire, 2962/3050 en el suelo) y `logicbench_build.sh`
+arma el ADF.
 
 **Qué no está en git y cómo recuperarlo** (regla R9):
 
-- `work/` no se versiona: ahí van la ROM, los oráculos grabados, los ADF y
-  los renders.
+- `work/` no se versiona (salvo `oracle_*.txt` y `oam_*.txt`): ahí van la
+  ROM, los `.bin` del oráculo, los ADF y los renders.
 - `player/gen/smwrom00.c` tampoco. Se regenera con `python tools/smwgen.py`,
   que necesita la ROM (U).
-- En Claude cloud no hay ROM, ni WinUAE, ni `smwrecomp`, ni el oráculo
-  grabado. Allí solo se puede leer y editar código: nada de verificar ni de
-  medir. **8d, la verificación con `marioverify` y la grabación de las
-  colinas tienen que correr en la PC local.**
+- En Claude cloud no hay WinUAE ni Kickstart, ni `smwrecomp`: **se puede
+  compilar y verificar contra el oráculo, pero no medir ni grabar.** 8d y la
+  grabación de las colinas tienen que correr en la PC local.
 - El grabador tiene límites que ya costaron partidas: 1024 caracteres por
   valor, 16 valores por respuesta y una sola conexión TCP. **Probar siempre
   el grabador antes de pedirle al usuario que juegue.**

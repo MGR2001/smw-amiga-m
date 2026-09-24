@@ -15,6 +15,11 @@
 ; Los estados salen de tools/marioverify.c (dump), ya preparados.
 ;----------------------------------------------------------------------
 
+; Una sola seccion, la misma que usan los .s de vbcc (logicbench_build.sh
+; las renombra a "CODE"): con -Fbin, vasm 2.0 pone cada seccion en 0 y da
+; "sections must not overlap" si el arnes queda en la seccion por defecto.
+        section "CODE",code
+
 binstart:
         include "exec.i"
 
