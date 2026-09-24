@@ -1564,6 +1564,46 @@ Esta sesión de Claude cloud trabajó en la rama `claude/agents-md-x4v1di`.
 Antes de nada: `git fetch && git checkout claude/agents-md-x4v1di` (o
 mergearla), y leer "Dónde quedó el trabajo" justo arriba.
 
+**Actualización (2026-09-24, 12:05 UTC) — etapa 6, primer prototipo (media hora)**
+
+- `tools/mkscroll.py`: de `work/yi1_d.dat` a `work/yi1_s.dat` (126 KB, en
+  el orden de la Amiga). Ventana vertical fija, líneas 192-415: la cámara
+  no se mueve en Y en toda la partida (`Bg1VOfs` = `Bg2VOfs` = 192).
+  Colores de la capa 1: el valor de cada registro en el borrado solo
+  cambia cuando la cámara pasa el final de un evento → **lista de 3409
+  cambios ordenada por x**, que la Amiga aplica a la lista del copper
+  según avanza (barato: un puntero que avanza).
+- `player/scroll.s`: toma la máquina como `demo.s` y se desplaza sola a 2
+  px/frame hasta `STOPX` (`-DSTOPX=n`). PF1: buffer circular de 22
+  columnas escrito dos veces (704 px, 3 planos entrelazados); puntero =
+  palabra `(s-1)>>4`, retardo `(-s)&15` (con `DDFSTRT $30` la fórmula de
+  R5 da 1 px de desfase; esta no). PF2: bitmap de 848 px (512 + 336) a
+  `s/2`: paralaje por hardware. Lista del copper: 64 bytes por línea (2
+  WAIT + 7 + 7 MOVE; el segundo WAIT es el `$FFDF` en la línea 256).
+  La columna nueva la copia **la CPU** (~24 000 ciclos cada 16 px): el
+  definitivo va por blitter.
+- Verificado en FS-UAE (`STOPX=1000`, 60 s de captura: con AROS tarda en
+  arrancar, a los 30 s todavía no llegó) con `tools/scroll_check.py`,
+  contra el frame esperado con el mismo modelo (paralaje + solo borrado):
+  **~6-7 % de píxeles distintos, todos bordes de 1 px y puntos de la
+  tierra del reescalado ×2,125 de la captura**; a la vista son idénticos.
+  Ojo: la imagen "ideal" de `render_d.py` / `yi1_d_nivel.png` pone la capa
+  2 a la misma velocidad que la 1 (sin paralaje): no sirve de esperado
+  para el scroll.
+- Falta (en orden): las cargas de mitad de línea (sin ellas, franjas de
+  color en las pendientes y en los bloques; `scroll_check.py --mid` es el
+  esperado final); la columna por blitter; la lista del copper por
+  segmentos encadenados (§9 punto 10); medir el coste por frame; conectar
+  la cámara de `mcam.c` en vez del avance automático.
+
+```bash
+python3 tools/mkscroll.py
+~/vbcc/bin/vasmm68k_mot -Fbin -m68000 -I player -DSTOPX=1000 -o work/scroll.bin player/scroll.s
+python3 tools/mkadf.py --boot work/boot.bin --stage2 work/scroll.bin --data work/yi1_s.dat --out work/scroll.adf
+sh tools/fsuae_shot.sh work/scroll.adf work/scroll.png 60
+python3 tools/scroll_check.py --shot work/scroll.png --s 1000
+```
+
 **Actualización (2026-09-24, 07:00 UTC) — cierre de la hora de trabajo**
 
 Sobre lo de 06:25 (abajo), en esta última media hora:
@@ -1736,7 +1776,7 @@ iba a existir en la Amiga, y ponía la prueba de rendimiento en cuarto lugar.
 |---|---|---|---|
 | **4** | **Prueba de viabilidad en `a500.uae`** (cycle-exact) | Tabla de costes medida en la Amiga + cómo se mueve la capa 2 | **HECHO** (2026-09-22) — ver "Etapa 4 — resultados" en §9. Cerró D1 y D9; D8 queda para el usuario con los datos. El scroll del **nivel real** no se hizo aquí (hace falta el conversor de la etapa 5): pasa a la etapa 6. `player/bench.s` + `tools/bench_read.py` |
 | 5 | **Conversor de nivel → Amiga, formato (d)** | Capa 1: 3 planos con la asignación de índices de `dpfsplit.py` (244 variantes de bloque) + tablas del copper por línea del nivel (cargas en el borrado y a mitad de línea con su ventana). Capa 2: bitmap de 3 planos de período 512 px + paleta por línea. `render_dat.py` renderiza el blob en el PC aplicando las tablas y se compara contra `d8d_g48m8_nivel.png` y la referencia con `cmp_ref.py` | **HECHO en cloud** (2026-09-24): `tools/mkd8in.py` → `tools/mkleveld.py` → `work/yi1_d.dat` (199 KB) → `tools/render_d.py`. Todo sale de los datos del ROM (la capa 2 también: `tools/mkbg.py`). Colores cuantizados a 12 bits (OCS) antes de repartir registros. 244 bloques, 9575 eventos, derrame 357 px (0,1 %). El render **solo desde el blob** = la imagen ideal (0 px distintos); moviendo la cámara cada 4 px, 0,018 % de píxeles mal (peor encuadre 132 px). **Falta en la PC**: `cmp_ref.py` contra `SuperMarioWorldMap02.png` |
-| 6 | Scroll del nivel real en la Amiga | PF1 con `BPLCON1` bits 0-3 + columna nueva; PF2 con bits 4-7 a media velocidad (paralaje); lista del copper por frame (segmentos por línea encadenados, §9 punto 10). Recorre las 20 pantallas a 50 Hz; captura de WinUAE = render del PC en varios puntos; coste medido con el método de `bench2.s` | — |
+| 6 | Scroll del nivel real en la Amiga | PF1 con `BPLCON1` bits 0-3 + columna nueva; PF2 con bits 4-7 a media velocidad (paralaje); lista del copper por frame (segmentos por línea encadenados, §9 punto 10). Recorre las 20 pantallas a 50 Hz; captura de WinUAE = render del PC en varios puntos; coste medido con el método de `bench2.s` | **Primer prototipo** (2026-09-24, cloud): `tools/mkscroll.py` → `work/yi1_s.dat`, `player/scroll.s` (ver el handoff). Nivel real en DPF, PF1 con buffer circular + columna nueva, PF2 con paralaje por hardware, colores de la capa 1 **solo en el borrado**. Falta: cargas a mitad de línea, columna por blitter, lista del copper por segmentos, medir el coste |
 | 7 | **Capa 2** | En (d) la hacen las etapas 5 y 6 (PF2 con scroll por hardware). Queda la verificación: recortes apilados contra `SuperMarioWorldMap02.png`, el diff tiene que bajar del 25.5 % | — |
 | 8 | **Mario**, por partes verificadas bit a bit contra el oráculo `work/oracle_yi1.txt` (partida real grabada en `smwrecomp`: joypad + WRAM `$0000-$00FF` y `$13C0-$14FF` + OAM por frame): **8a** velocidad horizontal, gravedad y saltos; **8b** colisiones con bloques (en SMW el "acts like" es el propio índice Map16); **8c** pendientes de 45° (hace falta grabar las colinas: a toda carrera, en las dos direcciones, parado encima y deslizándose); **8d** coste medido en la Amiga | Cada parte: el estado de Mario del port = el del oráculo en todos los frames de sus tramos | **8a, 8b, animación, gráficos y cámara HECHOS** (2026-09-24): 6510/6547 pares exactos, los 37 restantes son sprites (etapa 9); OAM 6869/6869; lazo cerrado solo con el joypad. 8c: las pendientes de la partida salen exactas, falta la grabación de las colinas. **8d medida: 31,6-32,9 % de un frame** (FS-UAE cycle-exact, tras la 1.ª optimización) |
 | 9 | **Sprites del nivel** (D3): Rex, Banzai Bill, Jumping Piranha; después Chuck, Sliding Koopa, bloque volador, Info Box, meta | Aparecen en las posiciones de `spr.lv` y se comportan como en la SNES | — |
