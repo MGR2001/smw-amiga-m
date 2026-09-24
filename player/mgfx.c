@@ -29,27 +29,30 @@
 #define OAM_P(y)    (0x0303 + (y))
 #define OAM_SIZE    0x0460          /* wm_OamSize.1 */
 
-/* CODE_00E45D: una entrada de OAM. y = desplazamiento en wm_OamSlot. */
-static u8 e45d(u8 y)
+/* CODE_00E45D: una entrada de OAM. y = desplazamiento en wm_OamSlot;
+   sx, sy = MarioScrPosX/Y (las acaba de calcular E2BD: se pasan en vez de
+   releerlas de ram[] en cada una de las 4 llamadas). */
+static u8 e45d(u8 y, u16 sx, u16 sy)
 {
     u8 c, x, a;
     u16 w;
+    u8 *o = ram + 0x0300 + y;               /* wm_OamSlot.1,Y: X, Y, tile, prop */
 
     c = R8(wm_HidePlayer) & 1;
     W8(wm_HidePlayer, R8(wm_HidePlayer) >> 1);
     if (c)
         goto l_plus;
-    a = T8(Mario8x8Tiles + R8(m6));
+    a = T8X(Mario8x8Tiles, R8(m6));
     if (NEG(a))
         goto l_plus;                        /* c = 0 (del LSR) */
-    W8(OAM_T(y), a);
+    o[2] = a;
     x = R8(m5);
-    w = (u16)(R16(wm_MarioScrPosY) + T16(DATA_00DE32 + x));
+    w = (u16)(sy + T16X(DATA_00DE32, x));
     if ((u16)(w + 0x10) >= 0x100) { c = 1; goto l_plus; }
-    W8(OAM_Y(y), w);
-    w = (u16)(R16(wm_MarioScrPosX) + T16(DATA_00DD4E + x));
+    o[1] = (u8)w;
+    w = (u16)(sx + T16X(DATA_00DD4E, x));
     if ((u16)(w + 0x80) >= 0x200) { c = 1; goto l_plus; }
-    W8(OAM_X(y), w);
+    o[0] = (u8)w;
     c = (u8)((w >> 8) & 1);                 /* XBA / LSR: bit 8 de la X */
 l_plus:
     a = R8(m4);
@@ -164,21 +167,21 @@ l_E31A:
     W8(m4, x == 0x43 ? 0xE8 : 0xC8);
     if (x == 0x29 && !R8(wm_MarioPowerUp))
         x = 0x20;
-    y = (u8)(T8(DATA_00DCEC + x) | R8(wm_MarioDirection));
-    W8(m5, T8(DATA_00DD32 + y));
+    y = (u8)(T8X(DATA_00DCEC, x) | R8(wm_MarioDirection));
+    W8(m5, T8X(DATA_00DD32, y));
     a = R8(wm_MarioFrame);
     if (a < 0x3D)
-        a = (u8)(a + T8(TilesetIndex + R8(wm_MarioPowerUp)));
+        a = (u8)(a + T8X(TilesetIndex, R8(wm_MarioPowerUp)));
     y = a;
-    W8(m6, T8(TileExpansion + y));
-    W8(m10, T8(DATA_00E00C + y));
-    W8(m11, T8(DATA_00E0CC + y));
+    W8(m6, T8X(TileExpansion, y));
+    W8(m10, T8X(DATA_00E00C, y));
+    W8(m11, T8X(DATA_00E0CC, y));
     a = R8(wm_SpriteProp);
     x = R8(wm_IsBehindScenery);
     if (x)
-        a = T8(DATA_00E2B9 + x);
-    y = T8(DATA_00E2B2 + x);
-    a |= T8(MarioPalIndex + R8(wm_MarioDirection));
+        a = T8X(DATA_00E2B9, x);
+    y = T8X(DATA_00E2B2, x);
+    a |= T8X(MarioPalIndex, R8(wm_MarioDirection));
     W8(OAM_P(y), a);
     W8(OAM_P(y + 4), a);
     W8(OAM_P(y + 12), a);
@@ -188,10 +191,13 @@ l_E31A:
     if (R8(m4) == 0xE8)
         a ^= 0x40;
     W8(OAM_P(y + 8), a);
-    y = e45d(y);
-    y = e45d(y);
-    y = e45d(y);
-    y = e45d(y);
+    {
+        u16 sx = R16(wm_MarioScrPosX), sy = R16(wm_MarioScrPosY);
+        y = e45d(y, sx, sy);
+        y = e45d(y, sx, sy);
+        y = e45d(y, sx, sy);
+        y = e45d(y, sx, sy);
+    }
     if (R8(wm_MarioPowerUp) == 0x02) {
         if (!mario_unsupported) mario_unsupported = MARIO_UNSUP_CAPE;
         return;

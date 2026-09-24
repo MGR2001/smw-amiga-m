@@ -29,13 +29,13 @@ static void f8ab(void)
         return;
     x = R8(wm_LRScrollStop);
     y = 0x08;
-    if (S16(R16(wm_PosToScrollScreen) - T16(DATA_00F6B3 + x)) < 0)
+    if (S16(R16(wm_PosToScrollScreen) - T16X(DATA_00F6B3, x)) < 0)
         y = 0x0A;
-    if (!((T16(DATA_00F6BF + y) ^ v2) & 0x8000))
+    if (!((T16X(DATA_00F6BF, y) ^ v2) & 0x8000))
         return;
-    if (!((T16(DATA_00F6BF + x) ^ v2) & 0x8000))
+    if (!((T16X(DATA_00F6BF, x) ^ v2) & 0x8000))
         return;
-    a = (u16)(v2 + T16(DATA_00F6CF + y));
+    a = (u16)(v2 + T16X(DATA_00F6CF, y));
     if (!a)
         return;
     W16(m2, a);
@@ -58,9 +58,9 @@ static void f7f4(u16 limit)
         y = 2;
     W8(wm_Layer1ScrollDir, y);
     W8(wm_Layer2ScrollDir, y);
-    v2 = (u16)(v0 - T16(DATA_00F69F + y));
+    v2 = (u16)(v0 - T16X(DATA_00F69F, y));
     W16(m2, v2);
-    if (!((v2 ^ T16(DATA_00F6A3 + y)) & 0x8000)) {
+    if (!((v2 ^ T16X(DATA_00F6A3, y)) & 0x8000)) {
         y = 2;
         v2 = 0;
         W16(m2, 0);
@@ -93,12 +93,12 @@ static void f7f4(u16 limit)
     a = v2;                                 /* _00F881 */
 l_F883:
     {
-        u16 v = T16(DATA_00F6A7 + y);
+        u16 v = T16X(DATA_00F6A7, y);
         if (!(((u16)(a - v) ^ v) & 0x8000))
             a = v;                          /* limita la velocidad */
         a = (u16)(a + R16(wm_Bg1VOfs));
-        if (S16(a - T16(DATA_00F6AD + y)) < 0)
-            a = T16(DATA_00F6AD + y);
+        if (S16(a - T16X(DATA_00F6AD, y)) < 0)
+            a = T16X(DATA_00F6AD, y);
         W16(wm_Bg1VOfs, a);
     }
     if (S16(R16(m4) - R16(wm_Bg1VOfs)) >= 0)
@@ -134,7 +134,7 @@ void camera_F6DB(void)
         W8(wm_Layer1ScrollDir, y);
         W8(wm_Layer2ScrollDir, y);
         a = (u16)(v0 - R16(wm_CanScrollScreen + y));
-        if (a && ((a ^ T16(DATA_00F6A3 + y)) & 0x8000)) {
+        if (a && ((a ^ T16X(DATA_00F6A3, y)) & 0x8000)) {
             W16(m2, a);
             f8ab();
             v2 = R16(m2);

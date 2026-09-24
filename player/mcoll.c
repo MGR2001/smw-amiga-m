@@ -121,9 +121,9 @@ static u8 f545(u8 a)
 
 /* CODE_00F465 (desde _00F461): lee el bloque en (BlockYPos, BlockXPos).
    Deja el numero en rY y devuelve la pagina ajustada por F545. */
-static u8 f461(void)
+static u8 f461_xy(u16 x, u16 y)
 {
-    u16 y = R16(wm_BlockXPos), x = R16(wm_BlockYPos), o;
+    u16 o;
     W8(wm_WhichSwitchPressed, 0);
     if (R8(wm_8E)) { unsup(MARIO_UNSUP_LAYER); rY = 0x25; return 0; }
     if (y >= 0x1B0 || (x >> 8) >= R8(wm_ScreensInLvl)) {
@@ -138,18 +138,24 @@ static u8 f461(void)
         return a;
     }
 }
+static u8 f461(void) { return f461_xy(R16(wm_BlockYPos), R16(wm_BlockXPos)); }
 
-/* CODE_00F44D: siguiente sonda (X += 2) respecto de la posicion de Mario */
+/* CODE_00F44D: siguiente sonda (X += 2) respecto de la posicion de Mario.
+   (x, y) van a la RAM como en el ROM y ademas se pasan directos a F465:
+   en el 68000 releer un valor de 16 bits de ram[] cuesta ~50 ciclos) */
 #ifdef MCOLL_TRACE
 #include <stdio.h>
 #endif
 static u8 f44d(void)
 {
     u8 a;
+    u16 x, y;
     rX = (u8)(rX + 2);
-    W16(wm_BlockYPos, R16(wm_MarioXPos) + T16(DATA_00E832 - 2 + rX));
-    W16(wm_BlockXPos, R16(wm_MarioYPos) + T16(DATA_00E89C + rX));
-    a = f461();
+    x = (u16)(R16(wm_MarioXPos) + T16X(DATA_00E832 - 2, rX));
+    y = (u16)(R16(wm_MarioYPos) + T16X(DATA_00E89C, rX));
+    W16(wm_BlockYPos, x);
+    W16(wm_BlockXPos, y);
+    a = f461_xy(x, y);
 #ifdef MCOLL_TRACE
     printf("    sonda X=%02X  (%04X,%04X) -> pagina %02X bloque %02X\n",
            rX, R16(wm_BlockYPos), R16(wm_BlockXPos), a, rY);
@@ -538,7 +544,7 @@ static int f04d(u8 a)
 {
     int x;
     for (x = 0x19; x >= 0; x--)
-        if (T8(DATA_00EAC1 + x) == a)
+        if (T8X(DATA_00EAC1, x) == a)
             return 1;
     return 0;
 }
@@ -593,7 +599,7 @@ static int f005(void)
 static void eee1(u8 y)
 {
     u8 a, x;
-    a = T8(DATA_00E53D + y);
+    a = T8X(DATA_00E53D, y);
     if (a)
         goto p1;
     x = R8(wm_PlayerSlopePose);
@@ -612,29 +618,29 @@ p1:
 p2:
     W8(wm_PlayerSlopePose, x);
 p3:
-    x = T8(DATA_00E4B9 + y);
+    x = T8X(DATA_00E4B9, y);
     W8(wm_OnSlopeTypeB, x);
     if (y >= 0x1C)
         goto ef38;
-    if (!R8(wm_MarioSpeedX) || !T8(DATA_00E53D + y))
+    if (!R8(wm_MarioSpeedX) || !T8X(DATA_00E53D, y))
         goto ef31;
-    if (!NEG(T8(DATA_00E53D + y) ^ R8(wm_MarioSpeedX)))
+    if (!NEG(T8X(DATA_00E53D, y) ^ R8(wm_MarioSpeedX)))
         goto ef31;
     W8(wm_PlayerFrameIndex, x);
     a = R8(wm_MarioSpeedX);
     if (NEG(a))
         a = (u8)(-a);
     if (a >= 0x28) {
-        a = T8(DATA_00E4FB + y);
+        a = T8X(DATA_00E4FB, y);
         goto ef60;
     }
     y = 0x20;                               /* CODE_00EF2F */
 ef31:
     a = R8(wm_MarioSpeedY);
-    if (a < T8(DATA_00E4DA + y))
+    if (a < T8X(DATA_00E4DA, y))
         goto ef3b;
 ef38:
-    a = T8(DATA_00E4DA + y);
+    a = T8X(DATA_00E4DA, y);
 ef3b:
     if (NEG(R8(wm_8E))) { unsup(MARIO_UNSUP_LAYER); return; }
 ef60:
@@ -722,7 +728,7 @@ static void eb77(void)
         W8(wm_PlayerBlkSide, 1);
     }
     W8(wm_PlayerExitBlkPos,
-       (R8(wm_PlayerBlkPosY) + T8(DATA_00E89C + 8 + rX)) & 0x0F);
+       (R8(wm_PlayerBlkPosY) + T8X(DATA_00E89C + 8, rX)) & 0x0F);
 
     /* --- sonda 1: el costado, a la altura de la cabeza ------------- */
     a = f44d();
@@ -803,14 +809,14 @@ l_EC4E:
     }
     W8(wm_PlayerFrameIndex, 0x03);
     y = R8(wm_PlayerBlkSide);
-    if ((R8(wm_MarioXPos) & 0x0F) == T8(DATA_00E911 + y))
+    if ((R8(wm_MarioXPos) & 0x0F) == T8X(DATA_00E911, y))
         goto l_EC8A;
     rY = y;
 
 l_EC6F:
     if (R8(wm_NoteBlkBounceFlag) && R8(wm_Map16NumLo) == 0x52)
         goto l_EC8A;
-    a = T8(DATA_00E90A + rY);
+    a = T8X(DATA_00E90A, rY);
     W8(wm_MarioObjStatus, R8(wm_MarioObjStatus) | a);
     rY = a & 0x03;
     f127(R8(wm_Map16NumLo), rY);
@@ -909,7 +915,7 @@ l_ED86:
     if (NEG(a))
         W8(wm_IsOnGround, R8(wm_IsOnGround) + 1);
     rY = t;
-    if (a >= T8(DATA_00E51C + rY))
+    if (a >= T8X(DATA_00E51C, rY))
         goto l_EDE9;
     W8(wm_PlayerExitBlkPos, a);
     W8(wm_PlayerBlkPosY, 0);

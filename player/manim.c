@@ -258,15 +258,18 @@ void mario_player(void)
     mario_unsupported = MARIO_OK;
     mario_events = 0;
     if (!R8(wm_SpritesLocked)) {
+        u8 *p;
         W8(wm_FrameB, R8(wm_FrameB) + 1);
-        for (x = 0x13; x > 0; x--)
-            if (R8(wm_ColorFadeTimer + x))
-                W8(wm_ColorFadeTimer + x, R8(wm_ColorFadeTimer + x) - 1);
+        /* ColorFadeTimer+1..+$13 ($1496-$14A8) y, cada 4 frames, $14A9-$14AE;
+           con puntero (en el 68000, ram[base + x] cuesta el triple) */
+        for (p = ram + wm_ColorFadeTimer + 1, x = 0x13; x > 0; x--, p++)
+            if (*p)
+                (*p)--;
         if (!(R8(wm_FrameB) & 0x03)) {
             /* (musica del interruptor P y del juego de bonus: solo sonido) */
-            for (x = 0x06; x > 0; x--)
-                if (R8(wm_14A8 + x))
-                    W8(wm_14A8 + x, R8(wm_14A8 + x) - 1);
+            for (p = ram + wm_14A8 + 1, x = 0x06; x > 0; x--, p++)
+                if (*p)
+                    (*p)--;
         }
     }
     /* CODE_00C593 -> ResetAni */

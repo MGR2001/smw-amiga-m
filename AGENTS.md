@@ -1447,9 +1447,24 @@ con la pantalla DPF de 6 planos encendida y el código en chip RAM:
 | empieza un salto (frame 10983) | 5065 | ~50 700 | **35,6 %** |
 
 Musashi, sin DMA, estimaba 24,3 % de media: el resto es contención (DMA de
-6 planos, código en chip RAM). **Es mucho**: con los sprites de la etapa 9
-por delante, D1 (50 Hz) exige optimizar (ver el perfil) o mover el código a
-slow RAM no ayuda (P29). Se repite con:
+6 planos, código en chip RAM).
+
+Primera ronda de optimización (sin cambiar la semántica: el verificador en
+PC y en 68000 sigue exacto): tablas del ROM con índice de 8 bits
+(`T8X`/`T16X`), temporizadores y OAM por puntero, las sondas pasan X/Y en
+variables. **Queda en 31,6 % corriendo y 32,9 % saltando** (Musashi: 31 972
+ciclos, −7,4 %). Lo que queda ya no son descuidos: es el precio de emular la
+RAM de la SNES byte a byte (cada valor de 16 bits son 2 lecturas + `lsl` +
+`or`, ~50 ciclos) y de las tablas leídas de a bytes.
+
+**Implicación para D1 (decisión del usuario):** el presupuesto conservador
+del peor frame de vídeo era 58 % (§9 punto 10); con el jugador (~33 %) ya
+son ~91 %, y faltan los sprites (etapa 9: 18 Rex, Banzai Bill...). A 50 Hz
+no entra sin una optimización de otro nivel. Opciones: (1) reescribir las
+rutinas calientes con el estado de Mario en variables nativas del 68000 (y
+seguir verificando contra el oráculo), (2) bajar a 25 Hz (lógica cada 2
+frames: la previsión de §9 D1), (3) ensamblador a mano en las sondas y la
+OAM. Mover el código a slow RAM no ayuda (P29). Se repite con:
 
 ```bash
 sh tools/logicbench_build.sh && sh tools/fsuae_shot.sh work/logicbench.adf work/logicbench.png 30
