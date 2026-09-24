@@ -6,7 +6,8 @@ del C, sobre el binario de perfil (PROF=1 sh tools/logicbench_build.sh:
 sin inline y sin "static", para que cada funcion tenga su simbolo).
 
 Ejecuta instruccion a instruccion en Musashi (el nucleo de amitools) los
-mismos frames del oraculo que tools/m68kverify.py y reparte los ciclos
+mismos frames del oraculo que tools/m68kverify.py (un _level_frame desde
+el estado grabado de cada frame) y reparte los ciclos
 entre las funciones (ciclos PROPIOS, sin las llamadas). Sin esperas de
 DMA: sirve para saber DONDE se va el tiempo, no cuanto cuesta en la A500.
 
@@ -87,21 +88,15 @@ def main():
         ri, rj = db[o + 8:o + V.REC], db[p + 8:p + V.REC]
         if ri[0x71] or rj[0x71] or ri[0x9D] or rj[0x9D]:
             continue
-        cpu.write(RAM, ri[:256])
+        cpu.write(RAM, ri[:256])                  # estado de N + joypad de N+1
         cpu.write(RAM + 0x13C0, ri[256:])
-        cpu.write(RAM + 0x13, rj[0x13:0x14])
         cpu.write(RAM + 0x15, rj[0x15:0x19])
-        cpu.write(RAM + 0x1A, rj[0x1A:0x1E])
         cpu.write(RAM + 0x1931, b"\x07")
-        cpu.write(RAM + 0x0200, bytes([0, 0xF0, 0, 0]) * 128)
+        cpu.write(RAM + 0x13, bytes([(ri[0x13] + 0) & 255]))   # level_frame lo sube a N+1
         if i % a.every:
-            cpu.call(V.BASE + syms["_mario_E2BD"], V.BASE)       # sin perfilar
-            cpu.call(V.BASE + syms["_mario_player"], V.BASE)
-            cpu.call(V.BASE + syms["_blocks_update"], V.BASE)
+            cpu.call(V.BASE + syms["_level_frame"], V.BASE)      # sin perfilar
             continue
-        run("_mario_E2BD")
-        run("_mario_player")
-        run("_blocks_update")
+        run("_level_frame")
         frames += 1
 
     tot = sum(prof.values())

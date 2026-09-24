@@ -14,11 +14,12 @@
  * Los frames donde aterriza, choca un techo o pisa un enemigo fallan por
  * construccion hasta la 8b; se cuentan aparte (columna "suelo/aire").
  *
- *   gcc -O2 -Iplayer -o work/marioverify tools/marioverify.c player/mario.c player/mcoll.c player/manim.c player/mgfx.c player/gen/smwrom00.c
+ *   gcc -O2 -Iplayer -o work/marioverify tools/marioverify.c player/mario.c player/mcoll.c player/manim.c player/mgfx.c player/mcam.c player/gen/smwrom00.c
  *   work/marioverify work/oracle_yi1.bin
  *   work/marioverify work/oracle_yi1.bin full [work/yi1_map16.bin [CAMPO]]   (8b)
  *   work/marioverify work/oracle_yi1.bin fulldump FRAME salida.bin   (estado para logicbench)
  *   work/marioverify work/oracle_yi1.bin gfx [work/oracle_yi1_oam.bin]   (graficos de Mario)
+ *   work/marioverify work/oracle_yi1.bin loop   (lazo cerrado: solo el joypad)
  *   FULL_FRAME=N work/mvtrace ... full   (un solo frame; mvtrace = -DMCOLL_TRACE)
  */
 #include <stdio.h>
@@ -277,6 +278,102 @@ static int run_gfx(const char *oampath)
     return 0;
 }
 
+/* ------------------------------------------------------------------ */
+/* Modo "loop": LAZO CERRADO.  Desde el primer frame de cada tramo el port
+   corre solo, recibiendo del oraculo unicamente el joypad ($15-$18), con
+   el orden de CODE_00A295: FrameA++, wm_ClearOam, camara (F6DB), graficos
+   de Mario (E2BD), el jugador (C500...) y los bloques que rebotan.  Se
+   compara cada frame con el oraculo; en la primera diferencia se anota el
+   frame y el campo, se vuelve a cargar el estado grabado (resincronizar) y
+   se sigue.  Tramos mas largos = el port reproduce la partida solo. */
+static const Field lfields[] = {
+    {"Bg1HOfs $1A", wm_Bg1HOfs, 2}, {"Bg1VOfs $1C", wm_Bg1VOfs, 2},
+    {"Bg2HOfs $1E", wm_Bg2HOfs, 2}, {"Bg2VOfs $20", wm_Bg2VOfs, 2},
+    {"ScrPosX $7E", wm_MarioScrPosX, 2}, {"ScrPosY $80", wm_MarioScrPosY, 2},
+};
+#define NLF ((int)(sizeof lfields / sizeof lfields[0]))
+
+static int run_loop(const char *mappath)
+{
+    static u8 map0[0x8000], map[0x8000];
+    long i, frames = 0, resync = 0, longest = 0, cur = 0, longest_end = 0;
+    long cause[NFF + NLF + 2];
+    size_t mlen;
+    int k, shown = 0, synced = 0;
+    FILE *f = fopen(mappath, "rb");
+    if (!f) { perror(mappath); return 2; }
+    mlen = fread(map0, 1, sizeof map0, f);
+    fclose(f);
+    map16_lo = map;
+    map16_hi = map + mlen / 2;
+    keep_ram = 1;
+    memset(cause, 0, sizeof cause);
+
+    for (i = 0; i < nrec; i++) {
+        int bad = -1;
+        int newseg = i == 0 || frame_of(i) != frame_of(i - 1) + 1 || db[(i - 1) * REC + 4] != 0x29;
+        if (db[i * REC + 4] != 0x29) { synced = 0; continue; }
+        if (newseg) { memcpy(map, map0, mlen); memset(ram, 0, sizeof ram); synced = 0; }
+        if (orc(i, wm_MarioAnimation) || orc(i, wm_SpritesLocked)) { synced = 0; continue; }
+        if (!synced) {                          /* (re)arrancar desde el oraculo */
+            load(i);
+            ram[0x1931] = 0x07;
+            synced = 1;
+            if (cur > longest) { longest = cur; longest_end = frame_of(i); }
+            cur = 0;
+            continue;
+        }
+        /* un frame del juego con las entradas de i */
+        for (k = 0x15; k <= 0x18; k++) take(i, k);
+        level_frame();
+        frames++;
+        if (mario_unsupported) bad = NFF + NLF;
+        for (k = 0; k < NFF && bad < 0; k++) {
+            int a = ffields[k].adr;
+            if (ram[a] != orc(i, a) || (ffields[k].w == 2 && ram[a + 1] != orc(i, a + 1))) bad = k;
+        }
+        for (k = 0; k < NLF && bad < 0; k++) {
+            int a = lfields[k].adr;
+            if (ram[a] != orc(i, a) || (lfields[k].w == 2 && ram[a + 1] != orc(i, a + 1))) bad = NFF + k;
+        }
+        if (bad < 0) { cur++; continue; }
+        cause[bad]++;
+        resync++;
+        if (shown < 40) {
+            int a = bad < NFF ? ffields[bad].adr : bad < NFF + NLF ? lfields[bad - NFF].adr : 0;
+            shown++;
+            printf("  frame %u: tras %ld frames solo, difiere %s (port %02X%02X oraculo %02X%02X)%s\n",
+                   frame_of(i), cur,
+                   bad < NFF ? ffields[bad].name : bad < NFF + NLF ? lfields[bad - NFF].name : "(sin portar)",
+                   a ? ram[a + 1] : 0, a ? ram[a] : 0, a ? orc(i, a + 1) : 0, a ? orc(i, a) : 0,
+                   orc(i, wm_IsOnSolidSpr) ? "  [sobre un sprite]" : "");
+        }
+        if (getenv("LOOP_DIFF") && shown <= 40) {  /* todos los bytes grabados distintos */
+            int adr;
+            printf("      distintos (port/oraculo):");
+            for (adr = 0; adr < 0x1500; adr++) {
+                int v = orc(i, adr);
+                if (v >= 0 && ram[adr] != v) printf(" $%04X=%02X/%02X", adr, ram[adr], v);
+                if (adr == 0xFF) adr = 0x13BF;
+            }
+            printf("\n");
+        }
+        if (cur > longest) { longest = cur; longest_end = frame_of(i); }
+        cur = 0;
+        load(i);                                /* resincronizar */
+        ram[0x1931] = 0x07;
+    }
+    if (cur > longest) { longest = cur; longest_end = frame_of(nrec - 1); }
+    printf("\n[loop] frames corridos por el port: %ld, resincronizaciones: %ld\n", frames, resync);
+    printf("       tramo mas largo sin diferencias: %ld frames (hasta el %ld)\n", longest, longest_end);
+    printf("       primer campo distinto en cada resincronizacion:");
+    for (k = 0; k < NFF; k++) if (cause[k]) printf(" %s:%ld", ffields[k].name, cause[k]);
+    for (k = 0; k < NLF; k++) if (cause[NFF + k]) printf(" %s:%ld", lfields[k].name, cause[NFF + k]);
+    if (cause[NFF + NLF]) printf(" sin-portar:%ld", cause[NFF + NLF]);
+    printf("\n");
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     const char *path = argc > 1 ? argv[1] : "work/oracle_yi1.bin";
@@ -301,6 +398,8 @@ int main(int argc, char **argv)
     if (only && !strcmp(only, "full"))
         return run_full(argc > 3 ? argv[3] : "work/yi1_map16.bin",
                         argc > 4 ? argv[4] : NULL, 1);
+    if (only && !strcmp(only, "loop"))
+        return run_loop(argc > 3 ? argv[3] : "work/yi1_map16.bin");
     if (only && !strcmp(only, "gfx"))
         return run_gfx(argc > 3 ? argv[3] : "work/oracle_yi1_oam.bin");
     if (only && !strcmp(only, "fulldump") && argc > 4) {

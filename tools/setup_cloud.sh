@@ -93,7 +93,7 @@ cd "$PORT"
 python3 tools/smwgen.py --rom work/smw.sfc
 python3 tools/oracle2bin.py
 python3 tools/mkmapbin.py
-SRCS="tools/marioverify.c player/mario.c player/mcoll.c player/manim.c player/mgfx.c player/gen/smwrom00.c"
+SRCS="tools/marioverify.c player/mario.c player/mcoll.c player/manim.c player/mgfx.c player/mcam.c player/gen/smwrom00.c"
 gcc -O2 -Iplayer -o work/marioverify $SRCS
 gcc -O2 -DMCOLL_TRACE -Iplayer -o work/mvtrace $SRCS
 mkdir -p work/cc

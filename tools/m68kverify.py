@@ -131,11 +131,15 @@ def main():
     ap.add_argument("--max", type=int, default=0, help="parar despues de N pares")
     ap.add_argument("--count", action="store_true", help="contar instrucciones (Unicorn)")
     ap.add_argument("--engine", choices=("unicorn", "musashi"), default="unicorn")
+    ap.add_argument("--mode", choices=("full", "loop"), default="full",
+                    help="full: estado de N + entradas de N+1 (como marioverify full); "
+                         "loop: lazo cerrado con _level_frame, solo el joypad")
     a = ap.parse_args()
 
     code = open(a.bin, "rb").read()
     syms = symbols(a.lst)
     for s in ("_ram", "_map16_lo", "_map16_hi", "_mario_player", "_blocks_update", "_mario_E2BD",
+              "_level_frame",
               "_mario_unsupported", "map16"):
         if s not in syms:
             sys.exit("falta el simbolo %s en %s" % (s, a.lst))
@@ -164,6 +168,9 @@ def main():
         if adr < 0x100:
             return r[2][adr]
         return r[3][adr - 0x13C0]
+
+    if a.mode == "loop":
+        return run_loop(a, cpu, call, rec, orc, n, RAM, MAP, map0, syms)
 
     pairs = allok = unsup = 0
     bad = [0] * len(FIELDS)
@@ -229,6 +236,66 @@ def main():
         if a.engine == "musashi":
             print("  = media %.1f %%, max %.1f %% de un frame PAL (%.0f ciclos), sin contar el DMA"
                   % (100 * mean / PAL_FRAME, 100 * worst[0] / PAL_FRAME, PAL_FRAME))
+
+
+def run_loop(a, cpu, call, rec, orc, n, RAM, MAP, map0, syms):
+    """lazo cerrado: como `marioverify ... loop`, con el binario 68000"""
+    frames = resync = longest = cur = 0
+    synced = False
+    costs = []
+    prev = None
+    for i in range(n):
+        r = rec(i)
+        newseg = prev is None or r[0] != prev[0] + 1 or prev[1] != 0x29
+        prev = r
+        if r[1] != 0x29:
+            synced = False
+            continue
+        if newseg:
+            cpu.write(MAP, map0)
+            cpu.write(RAM, bytes(0x2000))
+            synced = False
+        if orc(r, ANIM) or orc(r, LOCKED):
+            synced = False
+            continue
+        if not synced:
+            cpu.write(RAM, r[2])
+            cpu.write(RAM + 0x13C0, r[3])
+            cpu.write(RAM + 0x1931, b"\x07")
+            synced = True
+            longest = max(longest, cur)
+            cur = 0
+            continue
+        cpu.write(RAM + 0x15, r[2][0x15:0x19])
+        costs.append((call("_level_frame"), r[0]))
+        frames += 1
+        ram = cpu.read(RAM, 0x2000)
+        ok = all(bytes(ram[adr:adr + w]) == bytes(orc(r, adr + t) for t in range(w))
+                 for _, adr, w in FIELDS + LOOP_FIELDS)
+        if ok:
+            cur += 1
+            continue
+        resync += 1
+        longest = max(longest, cur)
+        cur = 0
+        cpu.write(RAM, r[2])
+        cpu.write(RAM + 0x13C0, r[3])
+        cpu.write(RAM + 0x1931, b"\x07")
+    longest = max(longest, cur)
+    print("binario 68000 en lazo cerrado (%s): %d frames, %d resincronizaciones, "
+          "tramo mas largo %d frames" % (a.engine, frames, resync, longest))
+    if a.engine == "musashi" and costs:
+        c = sorted(x[0] for x in costs)
+        mean = sum(c) / len(c)
+        worst = max(costs)
+        print("ciclos 68000 (sin DMA) por _level_frame: media %.0f, p99 %d, max %d (frame %d)"
+              " = media %.1f %%, max %.1f %% de un frame PAL"
+              % (mean, c[int(len(c) * 0.99)], worst[0], worst[1],
+                 100 * mean / PAL_FRAME, 100 * worst[0] / PAL_FRAME))
+
+
+LOOP_FIELDS = [("Bg1HOfs $1A", 0x1A, 2), ("Bg1VOfs $1C", 0x1C, 2), ("Bg2HOfs $1E", 0x1E, 2),
+               ("Bg2VOfs $20", 0x20, 2), ("ScrPosX $7E", 0x7E, 2), ("ScrPosY $80", 0x80, 2)]
 
 
 if __name__ == "__main__":

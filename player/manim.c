@@ -301,3 +301,43 @@ void mario_player(void)
         mario_events |= MEV_SPRITE;
     W8(wm_NoteBlkBounceFlag, 0);            /* _00C58F */
 }
+
+/* ------------------------------------------------------------------ */
+/* CODE_01808C, solo el principio (el motor de sprites es la etapa 9):
+   lo que el jugador ve de los sprites se borra cada frame y los sprites lo
+   vuelven a poner (sobre un sprite solido, llevando algo, Lakitu...) */
+void sprites_begin(void)
+{
+    W8(wm_IsCarrying, R8(wm_IsCarrying2));
+    W8(wm_IsCarrying2, 0);
+    W8(wm_IsOnSolidSpr, 0);
+    W8(wm_IsInLakituCloud, 0);
+    W8(wm_LooseYoshiFlag, R8(wm_YoshiSlot));
+    W8(wm_YoshiSlot, 0);
+}
+
+/* Un frame de nivel, en el orden de CODE_00A295 (sin la barra de estado,
+   el scroll de los tiles de la capa 1 ni los sprites):
+   FrameA, wm_ClearOam, camara, graficos de Mario, jugador, sprites,
+   bloques que rebotan. */
+void level_frame(void)
+{
+    u8 *p = ram + 0x0201;                   /* wm_ClearOam: la Y de las 128 */
+    int k;                                  /* entradas a $F0 (fuera de pantalla) */
+    W8(wm_FrameA, R8(wm_FrameA) + 1);
+    for (k = 32; k > 0; k--) {              /* con puntero y de 4 en 4: en el */
+        p[0] = 0xF0;                        /* 68000 cada vuelta con indice */
+        p[4] = 0xF0;                        /* costaba ~80 ciclos por entrada */
+        p[8] = 0xF0;
+        p[12] = 0xF0;
+        p += 16;
+    }
+    mario_unsupported = MARIO_OK;
+    camera_F6DB();
+    if (!mario_unsupported) mario_E2BD();
+    if (!mario_unsupported) mario_player();
+    if (mario_unsupported)
+        return;
+    sprites_begin();
+    blocks_update();
+}

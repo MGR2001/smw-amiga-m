@@ -66,4 +66,11 @@ void mario_CEB1(void);
 /* mgfx.c: CODE_00E2BD, graficos de Mario (OAM, MarioScrPosX/Y, DMA) */
 void mario_E2BD(void);
 
+/* mcam.c: CODE_00F6DB, la camara (antes que los graficos y la fisica) */
+void camera_F6DB(void);
+
+/* manim.c: el principio de CODE_01808C y un frame de nivel entero */
+void sprites_begin(void);
+void level_frame(void);
+
 #endif
