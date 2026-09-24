@@ -6,8 +6,10 @@
 ;
 ;   W0  nada (coste de la propia medida)
 ;   W1  copiar a ram[] el estado de un frame (576 bytes): se descuenta
-;   W2  copiar el estado "corriendo en el suelo" (frame 5410) + la 8a
-;   W3  copiar el estado "empieza un salto" (frame 10983) + la 8a
+;   W2  copiar el estado "corriendo en el suelo" (frame 5410) + el frame
+;       entero del jugador: mario_player (colision 8b, fisica 8a,
+;       animacion CEB1) + blocks_update (bloques que rebotan)
+;   W3  lo mismo con el estado "empieza un salto" (frame 10983)
 ;
 ; El C (mario.c, smwrom00.c) lo compila vbcc con -sc -sd -const-in-data:
 ; codigo relativo al PC y datos relativos a a4. Aca a4 = binstart, asi que
@@ -346,17 +348,17 @@ work1:
         lea     state_run(pc),a0
         bra     copystate
 
-; W2: estado "corriendo" + la fisica de la etapa 8a
+; W2: estado "corriendo" + el frame entero del jugador
 work2:
         lea     state_run(pc),a0
         bsr     copystate
-        bra     call8a
+        bra     callframe
 
-; W3: estado "empieza un salto" + la fisica de la etapa 8a
+; W3: estado "empieza un salto" + el frame entero del jugador
 work3:
         lea     state_jump(pc),a0
         bsr     copystate
-        bra     call8a
+        bra     callframe
 
 ; build_tab: lo llama el arranque heredado de bench2.s; aca no hace falta.
 build_tab:
@@ -374,17 +376,30 @@ copystate:
         moveq   #80-1,d0
 .w13:   move.l  (a0)+,(a1)+
         dbf     d0,.w13
+        move.b  #$07,_ram+$1931(a4)         ; wm_LvHeadTileset (no se graba)
         move.l  (sp)+,a4
         rts
 
-; call8a: el orden de CODE_00CD82 (D5F2, D062, D7E4). El C respeta la ABI
-; de vbcc (d2-d7/a2-a6 preservados); a4 = base de datos pequenos.
-call8a:
+; callframe: un frame del jugador como en el juego: CODE_00C500 (con
+; colision, 8a y animacion) y despues la fase de sprites de los bloques.
+; El C respeta la ABI de vbcc (d2-d7/a2-a6 preservados); a4 = base de
+; datos pequenos. El mapa del nivel (lo / hi) se lee por puntero.
+callframe:
         movem.l d2-d7/a2-a6,-(sp)
         lea     binstart(pc),a4
-        bsr     _mario_D5F2
-        bsr     _mario_D062
-        bsr     _mario_D7E4
+        ; el codigo del C y el mapa quedan a mas de 32 KB: direccion =
+        ; binstart + desplazamiento (el binario se carga en cualquier sitio)
+        move.l  a4,a0
+        add.l   #map16-binstart,a0
+        move.l  a0,_map16_lo(a4)
+        add.l   #MAPHALF,a0
+        move.l  a0,_map16_hi(a4)
+        move.l  a4,a0
+        add.l   #_mario_player-binstart,a0
+        jsr     (a0)
+        move.l  a4,a0
+        add.l   #_blocks_update-binstart,a0
+        jsr     (a0)
         movem.l (sp)+,d2-d7/a2-a6
         rts
 
@@ -509,5 +524,19 @@ vars:   ds.b    V_SIZE
 ;----------------------------------------------------------------------
 ; El C compilado por vbcc (work/cc/*.s, lo genera tools/logicbench_build.sh)
 ;----------------------------------------------------------------------
-        include "work/cc/mario.s"
-        include "work/cc/smwrom00.s"
+; datos del C primero (tienen que quedar a menos de 32 KB de binstart),
+; despues el codigo y el mapa
+        cnop    0,4
+        include "work/cc/smwrom00.data.s"
+        include "work/cc/mario.data.s"
+        include "work/cc/mcoll.data.s"
+        include "work/cc/manim.data.s"
+        cnop    0,4
+        include "work/cc/mario.code.s"
+        include "work/cc/mcoll.code.s"
+        include "work/cc/manim.code.s"
+        include "work/cc/smwrom00.code.s"
+        even
+MAPHALF     equ 20*$1B0                     ; 20 pantallas de Yoshi's Island 1
+map16:
+        incbin  "work/yi1_map16.bin"

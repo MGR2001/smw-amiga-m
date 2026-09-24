@@ -36,6 +36,15 @@ static u8 rX, rY;
 #define SCR_BYTES   0x1B0
 
 static void unsup(int why) { if (!mario_unsupported) mario_unsupported = why; }
+
+/* DATA_00BA60/BA9C: inicio de cada pantalla en el buffer (s * $1B0), en
+   tabla como en el ROM: el 68000 tarda hasta 70 ciclos en un MULU */
+static const u16 scr_ofs[32] = {
+    0x0000, 0x01B0, 0x0360, 0x0510, 0x06C0, 0x0870, 0x0A20, 0x0BD0,
+    0x0D80, 0x0F30, 0x10E0, 0x1290, 0x1440, 0x15F0, 0x17A0, 0x1950,
+    0x1B00, 0x1CB0, 0x1E60, 0x2010, 0x21C0, 0x2370, 0x2520, 0x26D0,
+    0x2880, 0x2A30, 0x2BE0, 0x2D90, 0x2F40, 0x30F0, 0x32A0, 0x3450,
+};
 static void generate_tile(void);
 
 /* ------------------------------------------------------------------ */
@@ -53,7 +62,7 @@ static void generate_tile(void)
     if (!id || y >= 0x200)
         return;
     if (R8(wm_IsVerticalLvl) & 1) { unsup(MARIO_UNSUP_LAYER); return; }
-    o = (u16)((x >> 8) * SCR_BYTES + (y & 0x1F0) + ((x >> 4) & 0x0F));
+    o = (u16)(scr_ofs[(x >> 8) & 0x1F] + (y & 0x1F0) + ((x >> 4) & 0x0F));
     mario_events |= MEV_TILE;
     if (id <= 8) {                          /* _00C077 */
         map16_hi[o] &= 0xFE;
@@ -121,7 +130,7 @@ static u8 f461(void)
         rY = 0x25;                          /* CODE_00F4A0: fuera del nivel */
         return 0;
     }
-    o = (u16)((x >> 8) * SCR_BYTES + (y & 0x1F0) + ((x >> 4) & 0x0F));
+    o = (u16)(scr_ofs[(x >> 8) & 0x1F] + (y & 0x1F0) + ((x >> 4) & 0x0F));
     W8(wm_Map16NumLo, map16_lo[o]);
     {
         u8 a = f545(map16_hi[o]);

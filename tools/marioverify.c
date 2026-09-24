@@ -17,6 +17,8 @@
  *   gcc -O2 -Iplayer -o work/marioverify tools/marioverify.c player/mario.c player/mcoll.c player/manim.c player/gen/smwrom00.c
  *   work/marioverify work/oracle_yi1.bin
  *   work/marioverify work/oracle_yi1.bin full [work/yi1_map16.bin [CAMPO]]   (8b)
+ *   work/marioverify work/oracle_yi1.bin fulldump FRAME salida.bin   (estado para logicbench)
+ *   FULL_FRAME=N work/mvtrace ... full   (un solo frame; mvtrace = -DMCOLL_TRACE)
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -102,6 +104,9 @@ static const Field ffields[] = {
 };
 #define NFF ((int)(sizeof ffields / sizeof ffields[0]))
 
+static unsigned fdump_frame;        /* fulldump: volcar el estado preparado */
+static const char *fdump_path;
+
 static int run_full(const char *mappath, const char *only, int verbose)
 {
     static u8 map0[0x8000], map[0x8000];
@@ -137,6 +142,15 @@ static int run_full(const char *mappath, const char *only, int verbose)
         take(j, 0x13);                      /* FrameA: lo sube el bucle del juego */
         for (k = 0x15; k <= 0x18; k++) take(j, k);
         ram[0x1931] = 0x07;                 /* wm_LvHeadTileset (no se graba) */
+        if (fdump_frame && frame_of(j) == fdump_frame) {
+            /* estado de N + entradas de N+1, para player/logicbench.s:
+               $0000-$00FF y $13C0-$14FF, 576 bytes */
+            FILE *o = fopen(fdump_path, "wb");
+            fwrite(ram, 1, 256, o);
+            fwrite(ram + 0x13C0, 1, 320, o);
+            fclose(o);
+            printf("estado del frame %u -> %s\n", fdump_frame, fdump_path);
+        }
         mario_player();
         if (!mario_unsupported) blocks_update();
         if (mario_unsupported) { unsup++; why[mario_unsupported & 15]++; continue; }
@@ -214,6 +228,11 @@ int main(int argc, char **argv)
     if (only && !strcmp(only, "full"))
         return run_full(argc > 3 ? argv[3] : "work/yi1_map16.bin",
                         argc > 4 ? argv[4] : NULL, 1);
+    if (only && !strcmp(only, "fulldump") && argc > 4) {
+        fdump_frame = (unsigned)atoi(argv[3]);
+        fdump_path = argv[4];
+        return run_full("work/yi1_map16.bin", NULL, 0);
+    }
     memset(ok, 0, sizeof ok);
     memset(bad, 0, sizeof bad);
 

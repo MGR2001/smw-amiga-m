@@ -24,7 +24,7 @@
 #define NumWalkingFrames (DATA_00DC7C - 4)  /* .DB 1,2,2,2 justo antes */
 #endif
 
-static void unsup(int why) { if (!mario_unsupported) mario_unsupported = why; }
+static void unsup_anim(int why) { if (!mario_unsupported) mario_unsupported = why; }
 
 /* ------------------------------------------------------------------ */
 /* CODE_00CEB1 */
@@ -92,7 +92,7 @@ l_14A2:
         if (R8(wm_MarioPowerUp))
             x++;
         W8(wm_MarioDirection, T8(DATA_00CEA1 + x));
-        if (R8(wm_MarioPowerUp) == 0x02) { unsup(MARIO_UNSUP_CAPE); return; }  /* CODE_00D044 */
+        if (R8(wm_MarioPowerUp) == 0x02) { unsup_anim(MARIO_UNSUP_CAPE); return; }  /* CODE_00D044 */
         a = T8(DATA_00CE99 + x);
         goto l_D01A;
     }
@@ -270,8 +270,8 @@ void mario_player(void)
         }
     }
     /* CODE_00C593 -> ResetAni */
-    if (R8(wm_MarioAnimation)) { unsup(MARIO_UNSUP_TILE); return; }
-    if (R8(wm_EndLevelTimer)) { unsup(MARIO_UNSUP_TILE); return; }   /* CODE_00C915 */
+    if (R8(wm_MarioAnimation)) { unsup_anim(MARIO_UNSUP_TILE); return; }
+    if (R8(wm_EndLevelTimer)) { unsup_anim(MARIO_UNSUP_TILE); return; }   /* CODE_00C915 */
     /* CODE_00CCC3 */
     cddd();
     if (!R8(wm_SpritesLocked)) {
@@ -282,7 +282,7 @@ void mario_player(void)
             W8(wm_MarioSpeedX, 0);
             W8(wm_MarioFrame, 0x0F);
         } else if (NEG(R8(wm_LevelMode)) && !(R8(wm_LevelMode) & 1)) {
-            unsup(MARIO_UNSUP_LAYER);       /* capa 2 que mueve a Mario */
+            unsup_anim(MARIO_UNSUP_LAYER);       /* capa 2 que mueve a Mario */
             return;
         } else {
             mario_collide();                /* CODE_00CD24 + _00CD39 */
@@ -294,7 +294,7 @@ void mario_player(void)
             if (mario_unsupported)
                 return;
             mario_CEB1();
-            if (R8(wm_OnYoshi)) { unsup(MARIO_UNSUP_YOSHI); return; }
+            if (R8(wm_OnYoshi)) { unsup_anim(MARIO_UNSUP_YOSHI); return; }
         }
     }
     if (R8(wm_JoyFrameA) & 0x20)            /* SELECT: soltar el item de reserva */

@@ -92,12 +92,16 @@ EOF
 cd "$PORT"
 python3 tools/smwgen.py --rom work/smw.sfc
 python3 tools/oracle2bin.py
-gcc -O2 -Iplayer -o work/marioverify tools/marioverify.c player/mario.c player/gen/smwrom00.c
+python3 tools/mkmapbin.py
+SRCS="tools/marioverify.c player/mario.c player/mcoll.c player/manim.c player/gen/smwrom00.c"
+gcc -O2 -Iplayer -o work/marioverify $SRCS
+gcc -O2 -DMCOLL_TRACE -Iplayer -o work/mvtrace $SRCS
 mkdir -p work/cc
-work/marioverify work/oracle_yi1.bin dump 5410 work/cc/state_run.bin >/dev/null || true
-work/marioverify work/oracle_yi1.bin dump 10983 work/cc/state_jump.bin >/dev/null || true
+work/marioverify work/oracle_yi1.bin fulldump 5410 work/cc/state_run.bin >/dev/null || true
+work/marioverify work/oracle_yi1.bin fulldump 10983 work/cc/state_jump.bin >/dev/null || true
 "$VBCC/bin/vasmm68k_mot" -quiet -Fbin -m68000 -no-opt -I player -o work/boot.bin player/boot.s
 
 echo "listo."
 echo "  verificar la 8a:  work/marioverify work/oracle_yi1.bin"
+echo "  verificar 8a+8b:  work/marioverify work/oracle_yi1.bin full"
 echo "  ADF de la 8d:     VBCC=$VBCC sh tools/logicbench_build.sh   (se corre en la PC, WinUAE)"
