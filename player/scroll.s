@@ -354,6 +354,12 @@ apply_colors:
 ; lo_tab[L] = primera carga a mitad de linea de la linea L (MLX)
 ;----------------------------------------------------------------------
 init_lo:                                    ; lo_tab[L] = (MLX[L], nxt = 0)
+        lea     shadow_a(pc),a0             ; sombras: vu = 0, sin entradas
+        move.w  #LINES*2-1,d0
+.sh:    clr.w   (a0)
+        move.w  #4,2(a0)
+        lea     SHSZ(a0),a0
+        dbf     d0,.sh
         move.l  a3,a0
         add.l   D_MLX(a3),a0
         lea     lo_tab(pc),a1
@@ -367,23 +373,29 @@ init_lo:                                    ; lo_tab[L] = (MLX[L], nxt = 0)
 ; --- build_mid ---
 ; entrada:  V_BACK = lista que se escribe, V_S = scroll
 ; salida:   en cada segmento de linea, las cargas a mitad de linea que se
-;           ven con esta camara (un WAIT + un MOVE cada una) y el salto al
-;           segmento siguiente. Una linea sin cargas ahora ni la ultima vez
-;           que se escribio esta lista no se toca.
+;           ven con esta camara (WAIT + MOVE; solo MOVE si cae a menos de
+;           16 px de la anterior) y el salto al segmento siguiente.
 ; registros destruidos: d0-d1/a0-a1 (guarda el resto)
-; Atajo: lo_tab guarda por linea (primera carga viva, nxt = la s desde la
-; que esa carga entra en pantalla). Con s < nxt y ninguna carga escrita en
-; esta lista la linea se salta (~90 ciclos en vez de ~290: de media solo
-; 24 de las 224 lineas tienen cargas a la vista).
-; PROTOTIPO: la camara solo avanza (lo_tab no retrocede).
+;
+; Incremental. Por lista y por linea hay una SOMBRA (SHSZ bytes):
+;   +0 vu: la estructura de la linea (que cargas, con o sin WAIT) vale
+;      mientras s < vu. Cambia cuando la carga mas vieja sale por la
+;      izquierda, una entra por la derecha o una saltada empieza a verse.
+;   +2 fin de las entradas (4 = ninguna)
+;   +4 por cada WAIT escrito: desplazamiento en el segmento, x objetivo
+; Con s < vu solo se recalculan las h de los WAIT (camino rapido). Y una
+; linea sin cargas a la vista ni escritas (s < nxt de lo_tab) se salta.
+; PROTOTIPO: la camara solo avanza (lo_tab y vu suponen s creciente).
 ;----------------------------------------------------------------------
+SHSZ        equ 4+MIDMAX*4
+
 build_mid:
         movem.l d2-d7/a2-a6,-(sp)
         move.l  V_BACK(a5),a0
-        lea     lastn_a(pc),a6
+        lea     shadow_a(pc),a6
         cmp.l   V_COP(a5),a0
         beq.s   .ln
-        lea     lastn_b(pc),a6
+        lea     shadow_b(pc),a6
 .ln:    lea     CL_LINES(a0),a0             ; a0 = segmento de la linea
         move.l  a3,a1
         add.l   D_MLD(a3),a1                ; a1 = cargas
@@ -396,19 +408,44 @@ build_mid:
         add.w   #320,d5                     ; d5 = s + 320
         move.w  #$2c01,d7                   ; WAIT: (v << 8) | 1
 .line:  cmp.w   2(a4),d6                    ; s < nxt: nada entra todavia
-        bhs.s   .full
-        tst.b   (a6)
-        bne.s   .full                       ; hay cargas viejas que borrar
-        addq.l  #4,a4
-        addq.l  #2,a2
-        addq.l  #1,a6
-        lea     SEG(a0),a0
-        add.w   #$0100,d7
-        cmp.w   #($2c01+LINES*$100)&$ffff,d7
-        bne.s   .line
-        bra     .end
-.full:  move.w  (a4),d2                     ; d2 = primera carga viva
-        move.w  (a2)+,d3                    ; d3 = fin de la linea
+        bhs.s   .notidle
+        cmp.w   #4,2(a6)
+        beq     .next                       ; ...y nada escrito: saltar
+.notidle:
+        cmp.w   (a6),d6
+        bhs     .full
+        ;--- camino rapido: la misma estructura, otras h ---------------
+        move.w  2(a6),d4
+        subq.w  #4,d4
+        beq     .next
+        lsr.w   #2,d4                       ; d4 = WAITs
+        lea     4(a6),a3
+        moveq   #0,d1                       ; ultima h
+.fast:  move.w  (a3)+,d0                    ; desplazamiento del WAIT
+        move.w  (a3)+,d2                    ; x objetivo
+        sub.w   d6,d2
+        bpl.s   .fp
+        moveq   #0,d2
+.fp:    lsr.w   #1,d2
+        add.w   #HOFS,d2
+        and.w   #$fe,d2
+        cmp.w   d1,d2
+        bhs.s   .fh
+        move.w  d1,d2
+.fh:    cmp.w   #$e2,d2
+        bls.s   .fh2
+        move.w  #$e2,d2
+.fh2:   move.w  d2,d1
+        or.w    d7,d2
+        move.w  d2,(a0,d0.w)
+        subq.w  #1,d4
+        bne.s   .fast
+        bra     .next
+        ;--- camino completo ---------------------------------------------
+.full:  move.w  2(a6),-(sp)                 ; habia cargas escritas?
+        move.w  #4,2(a6)
+        move.w  (a4),d2                     ; d2 = primera carga viva
+        move.w  (a2),d3                     ; d3 = fin de la linea
 .adv:   cmp.w   d3,d2
         bhs.s   .adv_done
         move.w  d2,d0
@@ -418,35 +455,52 @@ build_mid:
         addq.w  #1,d2
         bra.s   .adv
 .adv_done:
-        move.w  d2,(a4)+
-        move.w  #$ffff,d0                   ; nxt: fin de la carga d2 - 319
+        move.w  d2,(a4)
+        move.w  #$ffff,d0                   ; nxt = fin de la carga d2 - 319
+        move.w  #$ffff,(a6)                 ; vu = fin de la carga d2 + 1
         cmp.w   d3,d2
         bhs.s   .nx
         move.w  d2,d0
         lsl.w   #3,d0
         move.w  (a1,d0.w),d0
+        move.w  d0,(a6)
+        addq.w  #1,(a6)
         sub.w   #319,d0
         bcc.s   .nx
         moveq   #0,d0
-.nx:    move.w  d0,(a4)+
+.nx:    move.w  d0,2(a4)
         lea     64(a0),a3                   ; a3 = donde van las cargas
         moveq   #0,d4                       ; d4 = cargas escritas
         moveq   #0,d1                       ; d1 = ultima h
 .ld:    cmp.w   d3,d2
-        bhs.s   .ld_done
+        bhs     .ld_done
         move.w  d2,d0
         lsl.w   #3,d0
         lea     (a1,d0.w),a5                ; OJO: a5 prestado (vars)
         cmp.w   (a5),d5                     ; fin anterior >= s + 320: ya no
-        bls.s   .ld_done
-        move.w  2(a5),d0                    ; principio del nuevo
+        bhi.s   .in
+        move.w  (a5),d0                     ; entra cuando s > fin - 320
+        sub.w   #319,d0
+        bcc.s   .vu1
+        moveq   #0,d0
+.vu1:   cmp.w   (a6),d0
+        bhs     .ld_done
+        move.w  d0,(a6)
+        bra     .ld_done
+.in:    move.w  2(a5),d0                    ; principio del nuevo
         cmp.w   d0,d5
-        bls.s   .next                       ; empieza fuera de la pantalla
-        add.w   (a5),d0
+        bhi.s   .vis
+        sub.w   #319,d0                     ; empieza fuera: se vera cuando
+        cmp.w   (a6),d0                     ; s > principio - 320
+        bhs     .next_ld
+        move.w  d0,(a6)
+        bra     .next_ld
+.vis:   add.w   (a5),d0
         addq.w  #1,d0
         lsr.w   #1,d0                       ; mitad de la ventana
-        sub.w   d6,d0
         sub.w   #8,d0                       ; un poco antes: el MOVE llega tarde
+        move.w  d0,-(sp)                    ; x objetivo
+        sub.w   d6,d0
         bpl.s   .pos
         moveq   #0,d0
 .pos:   lsr.w   #1,d0
@@ -462,25 +516,37 @@ build_mid:
         beq.s   .wait                       ; sin WAIT (el copper en DPF tiene
         sub.w   d1,d0                       ; una ranura cada 16 px y un WAIT
         cmp.w   #8,d0                       ; gasta ranuras como un MOVE)
-        bls.s   .mv
-        add.w   d1,d0
+        bhi.s   .w0
+        addq.l  #2,sp                       ; sin WAIT: sin sombra
+        bra.s   .mv
+.w0:    add.w   d1,d0
 .wait:  move.w  d0,d1
         or.w    d7,d0
-        move.w  d0,(a3)+                    ; WAIT
-        move.w  #$fffe,(a3)+
+        move.w  d0,(a3)                     ; WAIT
+        move.w  #$fffe,2(a3)
+        move.l  a3,d0
+        sub.l   a0,d0
+        move.w  d0,-(sp)                    ; desplazamiento del WAIT
+        move.w  2(a6),d0
+        move.w  (sp)+,(a6,d0.w)
+        move.w  (sp)+,2(a6,d0.w)
+        addq.w  #4,2(a6)
+        addq.l  #4,a3
 .mv:    move.w  4(a5),(a3)+                 ; MOVE registro, color
         move.w  6(a5),(a3)+
         addq.w  #1,d4
         cmp.w   #MIDMAX,d4
         beq.s   .ld_done
-.next:  addq.w  #1,d2
-        bra.s   .ld
+.next_ld:
+        addq.w  #1,d2
+        bra     .ld
 .ld_done:
         lea     vars(pc),a5
+        move.w  (sp)+,d0                    ; lo que habia escrito antes
         tst.w   d4
         bne.s   .jump
-        tst.b   (a6)
-        beq.s   .skip                       ; sin cargas, igual que la ultima vez
+        cmp.w   #4,d0
+        beq.s   .next                       ; sin cargas, igual que antes
 .jump:  lea     SEG(a0),a5                  ; el siguiente segmento
         move.l  a5,d0
         lea     vars(pc),a5
@@ -491,12 +557,14 @@ build_mid:
         swap    d0
         move.w  d0,(a3)+
         move.l  #$008a0000,(a3)+            ; COPJMP2
-.skip:  move.b  d4,(a6)+
+.next:  addq.l  #4,a4
+        addq.l  #2,a2
+        lea     SHSZ(a6),a6
         lea     SEG(a0),a0
         add.w   #$0100,d7                   ; v + 1 (el byte alto da la vuelta en 256)
         cmp.w   #($2c01+LINES*$100)&$ffff,d7
         bne     .line
-.end:   movem.l (sp)+,d2-d7/a2-a6
+        movem.l (sp)+,d2-d7/a2-a6
         rts
 
 ;----------------------------------------------------------------------
@@ -836,7 +904,8 @@ fail:   lea     CUSTOM,a4
         even
 vars:   ds.b    V_SIZE
 lo_tab: ds.w    LINES*2                     ; build_mid: (primera carga viva, nxt)
-lastn_a: ds.b   LINES                       ; cargas escritas en cada lista
-lastn_b: ds.b   LINES
+        even
+shadow_a: ds.b  SHSZ*LINES                  ; build_mid: sombra de cada lista
+shadow_b: ds.b  SHSZ*LINES
 gfxname: dc.b   "graphics.library",0
         even
