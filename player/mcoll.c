@@ -131,9 +131,15 @@ static u8 f461_xy(u16 x, u16 y)
         return 0;
     }
     o = (u16)(scr_ofs[(x >> 8) & 0x1F] + (y & 0x1F0) + ((x >> 4) & 0x0F));
-    W8(wm_Map16NumLo, map16_lo[o]);
     {
-        u8 a = f545(map16_hi[o]);
+        u8 lo = map16_lo[o], a = map16_hi[o];
+        W8(wm_Map16NumLo, lo);
+        /* atajo de F545: solo 6 bloques + los interruptores la cambian */
+        if (a ? (lo == 0x32 || lo == 0x2F)
+              : (lo == 0x29 || lo == 0x2B || (u8)(lo - 0xEC) < 0x10))
+            a = f545(a);
+        else if (!a)
+            a = 0;
         rY = R8(wm_Map16NumLo);
         return a;
     }
@@ -146,13 +152,30 @@ static u8 f461(void) { return f461_xy(R16(wm_BlockYPos), R16(wm_BlockXPos)); }
 #ifdef MCOLL_TRACE
 #include <stdio.h>
 #endif
+/* Desplazamientos de las sondas (DATA_00E832-2 / DATA_00E89C por X/2),
+   en tablas nativas de 16 bits que se arman una vez desde la ROM: leerlos
+   de rom00 byte a byte costaba ~50 ciclos por valor en el 68000. */
+static u16 probe_dx[64], probe_dy[64];
+static u8 probe_ok;
+static void probe_init(void)
+{
+    int k;
+    for (k = 0; k < 64; k++) {
+        probe_dx[k] = T16(DATA_00E832 - 2 + 2 * k);
+        probe_dy[k] = T16(DATA_00E89C + 2 * k);
+    }
+    probe_ok = 1;
+}
+
 static u8 f44d(void)
 {
     u8 a;
     u16 x, y;
     rX = (u8)(rX + 2);
-    x = (u16)(R16(wm_MarioXPos) + T16X(DATA_00E832 - 2, rX));
-    y = (u16)(R16(wm_MarioYPos) + T16X(DATA_00E89C, rX));
+    if (!probe_ok)
+        probe_init();
+    x = (u16)(R16(wm_MarioXPos) + probe_dx[(rX >> 1) & 63]);
+    y = (u16)(R16(wm_MarioYPos) + probe_dy[(rX >> 1) & 63]);
     W16(wm_BlockYPos, x);
     W16(wm_BlockXPos, y);
     a = f461_xy(x, y);

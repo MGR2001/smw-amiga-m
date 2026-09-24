@@ -42,29 +42,30 @@ static void f8ab(void)
     W8(wm_LRMoveCamera, y);
 }
 
-/* CODE_00F7F4 / CODE_00F7FA: scroll vertical. m4 = tope de abajo. */
-static void f7f4(u16 limit)
+/* CODE_00F7F4 / CODE_00F7FA: scroll vertical. Entra y sale Bg1VOfs en una
+   variable (nativo: en el 68000 cada valor de 16 bits de ram[] cuesta ~50
+   ciclos); escribe en la RAM lo mismo que el ROM. */
+static u16 f7f4(u16 limit, u16 bg1v)
 {
     u8 y, x;
     u16 a, v0, v2;
 
     if (!R8(wm_VertScrollHead))
-        return;
+        return bg1v;
     W16(m4, limit);
     y = 0;
-    v0 = (u16)(R16(wm_MarioYPos) - R16(wm_Bg1VOfs));
+    v0 = (u16)(R16(wm_MarioYPos) - bg1v);
     W16(m0, v0);
     if (S16(v0 - 0x0070) >= 0)
         y = 2;
     W8(wm_Layer1ScrollDir, y);
     W8(wm_Layer2ScrollDir, y);
     v2 = (u16)(v0 - T16X(DATA_00F69F, y));
-    W16(m2, v2);
     if (!((v2 ^ T16X(DATA_00F6A3, y)) & 0x8000)) {
         y = 2;
         v2 = 0;
-        W16(m2, 0);
     }
+    W16(m2, v2);
     if (!(v2 & 0x8000)) {
         W8(wm_ScrScrollToPlayer, 0);
         a = v2;
@@ -76,15 +77,15 @@ static void f7f4(u16 limit)
         x = (u8)((R8(wm_YoshiHasWingsB) >> 1) | R8(wm_GlideTimer) | R8(wm_IsClimbing)
                  | R8(wm_PBalloonFrame) | R8(wm_IsInLakituCloud) | R8(wm_BouncingWithYoshi));
     if (x)
-        return;
+        return bg1v;
     if (R8(wm_OnYoshi) && R8(wm_YoshiHasWings) >= 0x02)
-        return;
+        return bg1v;
     if (R8(wm_IsSwimming) && R8(wm_IsFlying))
-        return;
+        return bg1v;
     if (R8(wm_VertScrollHead) == 1) {       /* CODE_00F875 */
         if (!R8(wm_ScrScrollToPlayer)) {
             if (R8(wm_IsFlying))
-                return;
+                return bg1v;
             W8(wm_ScrScrollToPlayer, R8(wm_ScrScrollToPlayer) + 1);
         }
     } else if (!R8(wm_EnableVertScroll)) {
@@ -96,76 +97,78 @@ l_F883:
         u16 v = T16X(DATA_00F6A7, y);
         if (!(((u16)(a - v) ^ v) & 0x8000))
             a = v;                          /* limita la velocidad */
-        a = (u16)(a + R16(wm_Bg1VOfs));
+        a = (u16)(a + bg1v);
         if (S16(a - T16X(DATA_00F6AD, y)) < 0)
             a = T16X(DATA_00F6AD, y);
-        W16(wm_Bg1VOfs, a);
+        bg1v = a;
     }
-    if (S16(R16(m4) - R16(wm_Bg1VOfs)) >= 0)
-        return;
-    W16(wm_Bg1VOfs, R16(m4));
+    if (S16(limit - bg1v) >= 0)
+        return bg1v;
     W8(wm_EnableVertScroll, 0);
+    return limit;
 }
 
 /* CODE_00F6DB */
 void camera_F6DB(void)
 {
     u8 y;
-    u16 a, v0, v2;
+    u16 a, v0, v2, pts, bg1h, bg1v, bg2h, bg2v;
     int k;
 
-    W16(wm_CanScrollScreen, R16(wm_PosToScrollScreen) - 0x000C);
-    W16(wm_CanScrollScreen + 2, R16(wm_PosToScrollScreen) - 0x000C + 0x0018);
-    W16(wm_Bg1HOfs, R16(wm_L1NextPosX));
-    W16(wm_Bg1VOfs, R16(wm_L1NextPosY));
-    W16(wm_Bg2HOfs, R16(wm_L2NextPosX));
-    W16(wm_Bg2VOfs, R16(wm_L2NextPosY));
+    pts = R16(wm_PosToScrollScreen);
+    W16(wm_CanScrollScreen, pts - 0x000C);
+    W16(wm_CanScrollScreen + 2, pts - 0x000C + 0x0018);
+    bg1h = R16(wm_L1NextPosX);
+    bg1v = R16(wm_L1NextPosY);
+    bg2h = R16(wm_L2NextPosX);
+    bg2v = R16(wm_L2NextPosY);
     if (R8(wm_IsVerticalLvl) & 1) {         /* CODE_00F75C */
         if (!mario_unsupported) mario_unsupported = MARIO_UNSUP_LAYER;
         return;
     }
-    f7f4(0x00C0);
+    W16(wm_Bg1HOfs, bg1h);                  /* f8ab no la lee; se escribe igual */
+    bg1v = f7f4(0x00C0, bg1v);
     if (R8(wm_HorzScrollHead)) {
         y = 2;
-        v0 = (u16)(R16(wm_MarioXPos) - R16(wm_Bg1HOfs));
+        v0 = (u16)(R16(wm_MarioXPos) - bg1h);
         W16(m0, v0);
-        if (S16(v0 - R16(wm_PosToScrollScreen)) < 0)
+        if (S16(v0 - pts) < 0)
             y = 0;
         W8(wm_Layer1ScrollDir, y);
         W8(wm_Layer2ScrollDir, y);
-        a = (u16)(v0 - R16(wm_CanScrollScreen + y));
+        a = (u16)(v0 - (u16)(pts - 0x000C + (y ? 0x0018 : 0)));
         if (a && ((a ^ T16X(DATA_00F6A3, y)) & 0x8000)) {
             W16(m2, a);
             f8ab();
             v2 = R16(m2);
-            a = (u16)(v2 + R16(wm_Bg1HOfs));
+            a = (u16)(v2 + bg1h);
             if (a & 0x8000)
                 a = 0;
-            W16(wm_Bg1HOfs, a);
+            bg1h = a;
             a = (u16)(((R16(wm_LastScreenHorz) - 1) & 0xFF) << 8);  /* DEC A / XBA / AND */
             if (a & 0x8000)
                 a = 0x0080;
-            if (S16(a - R16(wm_Bg1HOfs)) < 0)
-                W16(wm_Bg1HOfs, a);
+            if (S16(a - bg1h) < 0)
+                bg1h = a;
         }
     }
     /* _00F79D: la capa 2 */
     y = R8(wm_HorzScrollLyr2);
-    if (y) {
-        a = R16(wm_Bg1HOfs);
-        if (y != 1)
-            a >>= 1;
-        W16(wm_Bg2HOfs, a);
-    }
+    if (y)
+        bg2h = (y != 1) ? (u16)(bg1h >> 1) : bg1h;
     y = R8(wm_VertScrollLyr2);
     if (y) {
-        a = R16(wm_Bg1VOfs);
+        a = bg1v;
         if (y == 2)
             a >>= 1;
         else if (y != 1)
             a >>= 5;
-        W16(wm_Bg2VOfs, a + R16(wm_VertL2ScrollLength));
+        bg2v = (u16)(a + R16(wm_VertL2ScrollLength));
     }
+    W16(wm_Bg1HOfs, bg1h);
+    W16(wm_Bg1VOfs, bg1v);
+    W16(wm_Bg2HOfs, bg2h);
+    W16(wm_Bg2VOfs, bg2v);
     W8(wm_L1CurXChange, R8(wm_Bg1HOfs) - R8(wm_L1NextPosX));
     W8(wm_L1CurYChange, R8(wm_Bg1VOfs) - R8(wm_L1NextPosY));
     W8(wm_L2CurXChange, R8(wm_Bg2HOfs) - R8(wm_L2NextPosX));
