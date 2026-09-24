@@ -530,12 +530,14 @@ vars:   ds.b    V_SIZE
         include "work/cc/manim.data.s"
         include "work/cc/mgfx.data.s"
         include "work/cc/mcam.data.s"
+        include "work/cc/msprite.data.s"
         cnop    0,4
         include "work/cc/mario.code.s"
         include "work/cc/mcoll.code.s"
         include "work/cc/manim.code.s"
         include "work/cc/mgfx.code.s"
         include "work/cc/mcam.code.s"
+        include "work/cc/msprite.code.s"
         include "work/cc/smwrom00.code.s"
         even
 MAPHALF     equ 20*$1B0                     ; 20 pantallas de Yoshi's Island 1

@@ -31,10 +31,13 @@ def main():
     ap.add_argument("--bin", default=os.path.join(WORK, "prof", "logicbench.bin"))
     ap.add_argument("--lst", default=os.path.join(WORK, "prof", "logicbench.lst"))
     ap.add_argument("--every", type=int, default=10, help="perfilar 1 de cada N frames")
+    ap.add_argument("--sprites", action="store_true",
+                    help="_level_sprites = 1: el frame corre tambien los sprites (etapa 9)")
     a = ap.parse_args()
 
     syms = V.symbols(a.lst)
-    data = {"_ram", "_rom00", "_map16_lo", "_map16_hi", "_mario_events", "_mario_unsupported"}
+    data = {"_ram", "_rom00", "_map16_lo", "_map16_hi", "_mario_events", "_mario_unsupported",
+            "_spr_level", "_spr_spawned", "_level_sprites"}
     funcs = sorted((V.BASE + v, k) for k, v in syms.items() if k.startswith("_") and k not in data)
     starts = [f[0] for f in funcs]
     code = open(a.bin, "rb").read()
@@ -48,6 +51,13 @@ def main():
     cpu.write(V.BASE + syms["_map16_lo"], struct.pack(">I", MAP))
     cpu.write(V.BASE + syms["_map16_hi"], struct.pack(">I", MAP + len(map0) // 2))
     cpu.write(MAP, map0)
+    if a.sprites:
+        spr = open(os.path.join(HERE, "..", "..", "smw-src-master", "project", "mw_e10", "levels",
+                                "data", "world_1", "1", "spr.lv"), "rb").read()
+        SPR = V.BASE + ((len(code) + 0x103) & ~3)
+        cpu.write(SPR, spr)
+        cpu.write(V.BASE + syms["_spr_level"], struct.pack(">I", SPR))
+        cpu.write(V.BASE + syms["_level_sprites"], b"\x01")
 
     prof = collections.Counter()
     calls = collections.Counter()
@@ -92,6 +102,9 @@ def main():
         cpu.write(RAM + 0x13C0, ri[256:])
         cpu.write(RAM + 0x15, rj[0x15:0x19])
         cpu.write(RAM + 0x1931, b"\x07")
+        if a.sprites:
+            cpu.write(RAM + 0x1692, bytes([spr[0] & 0x3F]))   # wm_SpriteMemory
+            cpu.write(RAM + 0x1430, b"\xff\xff")
         cpu.write(RAM + 0x13, bytes([(ri[0x13] + 0) & 255]))   # level_frame lo sube a N+1
         if i % a.every:
             cpu.call(V.BASE + syms["_level_frame"], V.BASE)      # sin perfilar

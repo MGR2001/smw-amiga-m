@@ -978,6 +978,16 @@ ciclos al global anterior. Para perfilar, `PROF=1 sh
 tools/logicbench_build.sh` arma una variante sin inline y sin `static`
 (`work/prof/`). **No** sirve para medir la 8d.
 
+**P38 — vbcc `-O=991` puede sumar dos veces la base de un puntero.**
+`u8 *p = ram + x; if (p[wm_SpriteDecTbl1]) p[wm_SpriteDecTbl1]--;` salió
+como `lea 5440+_ram(a4),a1` + `add.l d0,a1` y después `subq.b #1,5440(a1)`
+(y `tst.b 5452(a1)` para la tabla siguiente): cada byte, al doble de
+desplazamiento. gcc lo compila bien, así que **`marioverify` no lo ve**: lo
+vio `m68kverify` (el frame llegaba al tope de 10 M ciclos). Arreglo: el
+puntero apunta a la primera tabla y los índices son relativos
+(`p[wm_X - wm_SpriteDecTbl1]`). **Después de cada cambio en C, correr
+`m68kverify` con el binario del 68000, no solo `marioverify`.**
+
 **P8 — El slow RAM de la A501 no está disponible si el software lo desactiva.**
 Algunas rutinas de arranque desactivan `/EXRAM`. Verifica que `$C00000`
 responde antes de usarlo.
@@ -1553,6 +1563,53 @@ suelo) y `logicbench_build.sh` arma el ADF.
 Esta sesión de Claude cloud trabajó en la rama `claude/agents-md-x4v1di`.
 Antes de nada: `git fetch && git checkout claude/agents-md-x4v1di` (o
 mergearla), y leer "Dónde quedó el trabajo" justo arriba.
+
+**Actualización (2026-09-24, 07:00 UTC) — cierre de la hora de trabajo**
+
+Sobre lo de 06:25 (abajo), en esta última media hora:
+
+- **Sprites nuevos**: bloque `?` volador (`$83`, sólido, golpe desde
+  abajo) y `CODE_019386` (sprite sobre un tile de pendiente ≥ `$D8`: sube
+  1 px y repite `CODE_0192C9`). Antes, en las colinas, cortaba el
+  seguimiento del Rex.
+- `marioverify ... game` adopta los Rex vivos del oráculo que nacieron
+  antes del tramo (`GAME_NOADOPT=1` lo apaga, `GAME_SHOW=1` imprime los
+  campos distintos). **Resincronizaciones de Mario: 26 → 1** (la que queda
+  es el frame 5322: pisotón al Koopa sin caparazón `$02`, sin portar).
+  **Rex exactos 3192/3194**; `sprloop` 2593/2594.
+- **Los sprites ya están en el binario del 68000**: `msprite.c` entra en
+  `logicbench_build.sh` y en el arnés; `level_frame` corre las 12
+  ranuras (`sprite_run`) y el cargador si `level_sprites = 1` (apagado
+  por defecto: `logicbench` y la 8d miden lo mismo que antes).
+- `m68kverify.py --mode loop --sprites` (lazo cerrado del binario 68000
+  con TODOS los sprites en el port: los sin portar no hacen nada) y
+  `m68kprof.py --sprites`. Medido en Musashi (sin DMA), antes de
+  optimizar el motor de sprites: **media 48 054 ciclos por frame (33,9 %
+  de un frame PAL), p99 67 420, máx. 68 638 (48,4 %)**; sin sprites, 31 056
+  (21,9 %). Mario: 4 resincronizaciones en 6547 frames (en `game` hay 1,
+  porque allí los sprites sin portar se copian del oráculo).
+- Perfil con sprites (`m68kprof.py --sprites`): `sprite_run` se llevaba
+  6120 ciclos/frame (510 por ranura), casi todo del bucle de los 7
+  temporizadores sobre una tabla de direcciones. Desenrollado: **48 054 →
+  44 364 ciclos de media (31,3 %), máx. 64 752 (45,6 %)**, con el mismo
+  resultado. La primera versión la compiló mal vbcc (P38).
+  Sin sprites: 31 124 (+68 por el `tst` de `level_sprites`).
+- Trampa de `m68kprof.py`: va instrucción a instrucción y **no tiene
+  tope**. Si el binario se cuelga (P38), no termina nunca. Probar antes
+  con `m68kverify.py`, que corta a los 10 M ciclos.
+
+**Siguiente (en este orden):**
+1. Seguir con el perfil de sprites (`PROF=1 sh tools/logicbench_build.sh
+   && python tools/m68kprof.py --sprites`): `level_frame` pasó de 2708 a
+   3944 ciclos propios (bucle de 12 ranuras + cargador en línea),
+   `spr_tile` 947, `get_draw_info` 673.
+2. Koopa sin caparazón (`$02`, sale del `$BD`): es la última
+   resincronización de `game` (frame 5322). Después Banzai Bill (`$9F`),
+   piraña saltarina (`$4F`), Chuck (`$95`).
+3. Medir `level_frame` con `level_sprites = 1` en FS-UAE/WinUAE: hace
+   falta meter `spr.lv` en el arnés (hoy solo `m68kverify`/`m68kprof`
+   lo cargan en memoria y apuntan `_spr_level`) y un estado del oráculo
+   con Rex a la vista.
 
 **Actualización (2026-09-24, 06:25 UTC) — pasos 1 y 2 del plan de D1**
 

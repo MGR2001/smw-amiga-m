@@ -76,6 +76,7 @@ void level_frame(void);
 /* msprite.c: etapa 9 */
 extern const u8 *spr_level;     /* spr.lv del nivel */
 extern u8 spr_spawned;          /* ranuras creadas por el cargador en este frame */
+extern u8 level_sprites;        /* manim.c: 1 = level_frame corre tambien los sprites */
 void sprite_load_level(void);   /* LoadSprFromLevel */
 void sprite_run(u8 x);          /* CODE_0180D2 + HandleSprite de la ranura x (Rex) */
 void sprite_tweakers(u8 x);     /* LoadTweakerBytes */

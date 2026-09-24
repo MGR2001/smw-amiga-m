@@ -707,14 +707,19 @@ void sprite_run(u8 x)
 {
     u8 st = SPR(wm_SpriteStatus, x);
     W8(wm_SprProcessIndex, x);
-    if (st && !R8(wm_SpritesLocked)) {
-        static const u16 dec[] = { wm_SpriteDecTbl1, wm_SpriteDecTbl2, wm_SpriteDecTbl3,
-                                   wm_SpriteDecTbl4, wm_DisSprCapeContact, wm_SpriteDecTbl5,
-                                   wm_SpriteDecTbl6 };
-        unsigned k;
-        for (k = 0; k < sizeof dec / sizeof dec[0]; k++)
-            if (SPR(dec[k], x))
-                SETSPR(dec[k], x, SPR(dec[k], x) - 1);
+    if (st && !R8(wm_SpritesLocked)) {      /* CODE_0180D2: los temporizadores */
+        u8 *p = ram + wm_SpriteDecTbl1 + x; /* desenrollado (un bucle sobre una */
+        u8 v;                               /* tabla de direcciones costaba ~450 */
+        if ((v = p[0]) != 0) p[0] = v - 1;  /* ciclos). Desplazamientos relativos */
+        if ((v = p[12]) != 0) p[12] = v - 1;/* a DecTbl1: con p[wm_...] vbcc */
+        if ((v = p[24]) != 0) p[24] = v - 1;/* -O=991 sumaba la base dos veces */
+        if ((v = p[36]) != 0) p[36] = v - 1;
+        if ((v = p[wm_DisSprCapeContact - wm_SpriteDecTbl1]) != 0)
+            p[wm_DisSprCapeContact - wm_SpriteDecTbl1] = v - 1;
+        if ((v = p[wm_SpriteDecTbl5 - wm_SpriteDecTbl1]) != 0)
+            p[wm_SpriteDecTbl5 - wm_SpriteDecTbl1] = v - 1;
+        if ((v = p[wm_SpriteDecTbl6 - wm_SpriteDecTbl1]) != 0)
+            p[wm_SpriteDecTbl6 - wm_SpriteDecTbl1] = v - 1;
     }
     if (!st) {                              /* EraseSprite */
         SETSPR(wm_SprIndexInLvl, x, 0xFF);

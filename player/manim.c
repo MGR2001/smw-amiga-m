@@ -323,6 +323,8 @@ void sprites_begin(void)
    el scroll de los tiles de la capa 1 ni los sprites):
    FrameA, wm_ClearOam, camara, graficos de Mario, jugador, sprites,
    bloques que rebotan. */
+u8 level_sprites;          /* 1: level_frame corre tambien los sprites (etapa 9) */
+
 void level_frame(void)
 {
     u8 *p = ram + 0x0201;                   /* wm_ClearOam: la Y de las 128 */
@@ -344,5 +346,14 @@ void level_frame(void)
     if (mario_unsupported)
         return;
     sprites_begin();
+    if (level_sprites) {                    /* CODE_01808C: ranuras 11..0 */
+        int k;
+        for (k = 11; k >= 0; k--) {
+            sprite_run((u8)k);
+            mario_unsupported = MARIO_OK;   /* un sprite sin portar no para el frame */
+        }
+    }
     blocks_update();
+    if (level_sprites)
+        sprite_load_level();                /* al final de CODE_028AB1 */
 }

@@ -134,6 +134,11 @@ def main():
     ap.add_argument("--mode", choices=("full", "loop"), default="full",
                     help="full: estado de N + entradas de N+1 (como marioverify full); "
                          "loop: lazo cerrado con _level_frame, solo el joypad")
+    ap.add_argument("--sprites", action="store_true",
+                    help="loop con _level_sprites = 1: los sprites del nivel los corre el "
+                         "binario (como marioverify game, pero TODOS: los sin portar no hacen nada)")
+    ap.add_argument("--spr", default=os.path.join(HERE, "..", "..", "smw-src-master", "project",
+                                                  "mw_e10", "levels", "data", "world_1", "1", "spr.lv"))
     a = ap.parse_args()
 
     code = open(a.bin, "rb").read()
@@ -238,9 +243,44 @@ def main():
                   % (100 * mean / PAL_FRAME, 100 * worst[0] / PAL_FRAME, PAL_FRAME))
 
 
+# tablas de sprite que el port conserva al resincronizar a Mario (--sprites)
+SPR_KEEP = [0x14C8, 0x9E, 0xE4, 0x14E0, 0xD8, 0x14D4, 0xB6, 0xAA, 0xC2, 0x14F8, 0x14EC]
+
+
 def run_loop(a, cpu, call, rec, orc, n, RAM, MAP, map0, syms):
     """lazo cerrado: como `marioverify ... loop`, con el binario 68000"""
     frames = resync = longest = cur = 0
+    spr = None
+    if a.sprites:
+        spr = open(a.spr, "rb").read()
+        SPR = BASE + ((len(open(a.bin, "rb").read()) + 0x103) & ~3)
+        cpu.write(SPR, spr)
+        cpu.write(BASE + syms["_spr_level"], struct.pack(">I", SPR))
+        cpu.write(BASE + syms["_level_sprites"], b"\x01")
+
+    def sync(r, keep):
+        cpu.write(RAM, r[2])
+        cpu.write(RAM + 0x13C0, r[3])
+        cpu.write(RAM + 0x1931, b"\x07")
+        if spr is None:
+            return
+        for t in SPR_KEEP:                  # los sprites son del port
+            cpu.write(RAM + t, keep[t:t + 12])
+        cpu.write(RAM + 0x1692, bytes([spr[0] & 0x3F]))    # wm_SpriteMemory
+        cpu.write(RAM + 0x1430, b"\xff\xff")               # Lowest/HighestSolidSprTile
+
+    def newseg_sprites(r):
+        """como marioverify game: los sprites ya a la vista cuentan como cargados
+        (el oraculo no los tiene: nacieron antes de empezar a grabar)"""
+        cam = orc(r, 0x1A) | orc(r, 0x1B) << 8
+        y = idx = 0
+        y = 1
+        while spr[y] != 0xFF:
+            sx = ((((spr[y] << 3) & 0x10) | (spr[y + 1] & 0x0F)) << 8) | (spr[y + 1] & 0xF0)
+            if sx + 0x30 >= cam and sx < cam + 0x120:
+                cpu.write(RAM + 0x1938 + idx, b"\x01")    # wm_SprLoadStatus
+            y += 3
+            idx += 1
     synced = False
     costs = []
     prev = None
@@ -254,14 +294,14 @@ def run_loop(a, cpu, call, rec, orc, n, RAM, MAP, map0, syms):
         if newseg:
             cpu.write(MAP, map0)
             cpu.write(RAM, bytes(0x2000))
+            if spr is not None:
+                newseg_sprites(r)
             synced = False
         if orc(r, ANIM) or orc(r, LOCKED):
             synced = False
             continue
         if not synced:
-            cpu.write(RAM, r[2])
-            cpu.write(RAM + 0x13C0, r[3])
-            cpu.write(RAM + 0x1931, b"\x07")
+            sync(r, cpu.read(RAM, 0x2000))
             synced = True
             longest = max(longest, cur)
             cur = 0
@@ -278,12 +318,11 @@ def run_loop(a, cpu, call, rec, orc, n, RAM, MAP, map0, syms):
         resync += 1
         longest = max(longest, cur)
         cur = 0
-        cpu.write(RAM, r[2])
-        cpu.write(RAM + 0x13C0, r[3])
-        cpu.write(RAM + 0x1931, b"\x07")
+        sync(r, ram)
     longest = max(longest, cur)
-    print("binario 68000 en lazo cerrado (%s): %d frames, %d resincronizaciones, "
-          "tramo mas largo %d frames" % (a.engine, frames, resync, longest))
+    print("binario 68000 en lazo cerrado (%s%s): %d frames, %d resincronizaciones, "
+          "tramo mas largo %d frames" % (a.engine, ", con sprites" if spr else "", frames, resync,
+                                         longest))
     if a.engine == "musashi" and costs:
         c = sorted(x[0] for x in costs)
         mean = sum(c) / len(c)
