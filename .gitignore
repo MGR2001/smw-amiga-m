@@ -1,0 +1,20 @@
+# R9 (AGENTS.md): nunca versionar la ROM ni material derivado de ella.
+# Todo lo de abajo se regenera con las herramientas de tools/.
+
+# graficos, paletas y tilesets convertidos
+assets-out/
+
+# renders, capturas, blobs de datos, ADF, logs
+work/
+
+# por si alguien copia aqui una ROM o un Kickstart
+*.sfc
+*.smc
+*.rom
+*.adf
+
+__pycache__/
+*.pyc
+
+# bytes de la ROM volcados a C (tools/smwgen.py los regenera)
+player/gen/smwrom00.c
