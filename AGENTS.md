@@ -1545,6 +1545,72 @@ suelo) y `logicbench_build.sh` arma el ADF.
   valor, 16 valores por respuesta y una sola conexión TCP. **Probar siempre
   el grabador antes de pedirle al usuario que juegue.**
 
+## Handoff cloud → sesión local (2026-09-24) — para el agente en la PC
+
+Esta sesión de Claude cloud trabajó en la rama `claude/agents-md-x4v1di`.
+Antes de nada: `git fetch && git checkout claude/agents-md-x4v1di` (o
+mergearla), y leer "Dónde quedó el trabajo" justo arriba.
+
+**Qué cambió (resumen; el detalle está arriba y en §8 P33-P37):**
+- 8b, animación, gráficos de Mario y cámara portados y verificados:
+  `player/mcoll.c`, `manim.c`, `mgfx.c`, `mcam.c`, `smwmac.h`.
+  `marioverify` tiene los modos `full`, `gfx`, `loop` y `fulldump`.
+- `logicbench` ahora mide `level_frame` (cámara + gráficos + jugador +
+  bloques) y lleva el mapa del nivel dentro (`work/yi1_map16.bin`, lo
+  genera `tools/mkmapbin.py`). `logicbench_build.sh` compila 5 ficheros
+  C, parte datos/código y **se para si hay referencias absolutas**.
+- Etapa 5: `tools/mkbg.py` (capa 2 desde el ROM), `mkd8in.py`,
+  `mkleveld.py` → `work/yi1_d.dat`, `render_d.py`.
+- 8d medida en cloud con FS-UAE + AROS: **31,6 % / 32,9 % de un frame**.
+
+**Qué hay que hacer en la PC (lo que cloud no puede):**
+1. **Confirmar la 8d en WinUAE con KS 1.2** (la de cloud es FS-UAE + AROS):
+   ```bash
+   python tools/mkmapbin.py
+   gcc -O2 -Iplayer -o work/marioverify tools/marioverify.c player/mario.c player/mcoll.c player/manim.c player/mgfx.c player/mcam.c player/gen/smwrom00.c
+   work/marioverify work/oracle_yi1.bin fulldump 5410 work/cc/state_run.bin
+   work/marioverify work/oracle_yi1.bin fulldump 10983 work/cc/state_jump.bin
+   sh tools/logicbench_build.sh
+   ```
+   ```powershell
+   .\tools\shot.ps1 -Exact -Adf work\logicbench.adf -Out work\logicbench.png -Wait 80
+   ```
+   ```bash
+   python tools/logicbench_read.py        # esperado: ~31,6 % y ~32,9 %
+   ```
+   Si difiere de FS-UAE en más de 1 punto, anotarlo: la validación con
+   `bench2.s` dio los mismos números en los dos emuladores.
+   Esto también prueba que el ADF **arranca en KS 1.2** con el binario de
+   58 KB (en cloud solo se probó con AROS).
+2. **Etapa 5 contra la referencia**: `cmp_ref.py` / recortes apilados de
+   `work/yi1_d_nivel.png` contra `SuperMarioWorldMap02.png` (la de cloud
+   se comparó con la imagen ideal sacada del ROM, no con la referencia).
+   Ojo: los colores del blob están cuantizados a 12 bits (OCS); comparar a
+   4 bits por canal o esperar diferencias de 1 bit en todo.
+3. **8c: grabar las colinas** (a toda carrera en las dos direcciones,
+   parado encima, deslizándose, saltando) con `tools/oamrec.py --out` a un
+   fichero **distinto** de `oracle_yi1`. **Probar el grabador antes** de
+   pedirle al usuario que juegue (límites de 1024 caracteres, 16 valores y
+   una sola conexión). Después: `oracle2bin.py --inp ... --out ...` y
+   `marioverify <bin> full` / `loop` (el mapa es el mismo nivel).
+4. Esperar la **decisión del usuario sobre D1** (ver "Implicación para D1"
+   arriba) antes de empezar la etapa 9: define si los sprites se portan al
+   estilo byte a byte (fácil de verificar, lento) o en C nativo pensado
+   para el 68000.
+
+**Diferencias de entorno a tener en cuenta en la PC:**
+- `tools/mkd8in.py`, `mkleveld.py`, `render_d.py` y `dpfsplit.py` usan
+  **numpy**, y el Python local (§6) no lo tiene: instalarlo o correrlos en
+  cloud. `m68kverify.py` / `m68kprof.py` necesitan `unicorn` y
+  `machine68k` (pip).
+- `logicbench_build.sh` llama a `python tools/mkmapbin.py` si falta el
+  mapa: necesita `../../smw-src-master` como siempre.
+- `work/smw.sfc` en cloud es la ROM **ensamblada desde el fuente** (CRC32
+  `B19ED489`, idéntica a la (U)); en la PC se sigue usando la del usuario.
+- Los `*_read.py` aceptan `--auto` (capturas con otra escala, p. ej.
+  FS-UAE); sin la opción siguen leyendo las capturas de `shot.ps1` como
+  antes.
+
 ## 10. Roadmap
 
 Reordenado el 2026-09-22 con un criterio: **primero se mide en el hardware lo
