@@ -14,8 +14,9 @@
  * Los frames donde aterriza, choca un techo o pisa un enemigo fallan por
  * construccion hasta la 8b; se cuentan aparte (columna "suelo/aire").
  *
- *   gcc -O2 -Iplayer -o work/marioverify tools/marioverify.c player/mario.c player/gen/smwrom00.c
+ *   gcc -O2 -Iplayer -o work/marioverify tools/marioverify.c player/mario.c player/mcoll.c player/manim.c player/gen/smwrom00.c
  *   work/marioverify work/oracle_yi1.bin
+ *   work/marioverify work/oracle_yi1.bin full [work/yi1_map16.bin [CAMPO]]   (8b)
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -56,14 +57,138 @@ static int orc(long i, int adr)             /* byte del oraculo en el frame i */
     return -1;
 }
 
+static int keep_ram;         /* modo full: la RAM no grabada persiste */
 static void load(long i)
 {
-    memset(ram, 0, sizeof ram);
+    if (!keep_ram) memset(ram, 0, sizeof ram);
     memcpy(ram, dp_of(i), 256);
     memcpy(ram + 0x13C0, w13_of(i), 320);
 }
 
 static void take(long j, int adr) { int v = orc(j, adr); if (v >= 0) ram[adr] = (u8)v; }
+
+/* ------------------------------------------------------------------ */
+/* Modo "full" (etapa 8b): el frame entero del jugador, colision incluida.
+   De N+1 solo se toman las ENTRADAS (joypad, contador de frames); todo lo
+   demas lo calcula el port desde el estado de N, contra el mapa de la
+   capa 1 (work/yi1_map16.bin, tools/mkmapbin.py), que se recarga al
+   empezar cada tramo del nivel y guarda los cambios (monedas...) que hace
+   el propio port. */
+static const Field ffields[] = {
+    {"XPos $94-95", wm_MarioXPos, 2},
+    {"YPos $96-97", wm_MarioYPos, 2},
+    {"SpeedX $7B", wm_MarioSpeedX, 1},
+    {"SpeedY $7D", wm_MarioSpeedY, 1},
+    {"SubX $13DA", wm_PlayerXAccFixed, 1},
+    {"SubY $13DC", wm_PlayerXAccFixed + 2, 1},
+    {"AccSpeedX $7A", wm_MarioAccSpeedX, 1},
+    {"ObjStatus $77", wm_MarioObjStatus, 1},
+    {"OnGround $13EF", wm_IsOnGround, 1},
+    {"IsFlying $72", wm_IsFlying, 1},
+    {"SlopeA $13EE", wm_OnSlopeTypeA, 1},
+    {"SlopeB $13E1", wm_OnSlopeTypeB, 1},
+    {"SlopePose $13ED", wm_PlayerSlopePose, 1},
+    {"Direction $76", wm_MarioDirection, 1},
+    {"IsDucking $73", wm_IsDucking, 1},
+    {"DashTimer $13E4", wm_PlayerDashTimer, 1},
+    {"IsSpinJump $140D", wm_IsSpinJump, 1},
+    {"FrameB $14", wm_FrameB, 1},
+    {"MarioFrame $13E0", wm_MarioFrame, 1},
+    {"WalkPose $13DB", wm_PlayerWalkPose, 1},
+    {"AnimTimer $1496", wm_PlayerAnimTimer, 1},
+    {"CapeImage $13DF", wm_CapeImage, 1},
+    {"CapeWave $14A2", wm_CapeWaveTimer, 1},
+    {"FrameIndex $13E5", wm_PlayerFrameIndex, 1},
+};
+#define NFF ((int)(sizeof ffields / sizeof ffields[0]))
+
+static int run_full(const char *mappath, const char *only, int verbose)
+{
+    static u8 map0[0x8000], map[0x8000];
+    long i, pairs = 0, unsup = 0, skipped = 0, allok[2] = {0, 0}, tot[2] = {0, 0};
+    long ok[NFF][2], bad[NFF][2], why[16], cls[8];
+    int shown = 0, k, n;
+    size_t mlen;
+    FILE *f = fopen(mappath, "rb");
+    if (!f) { perror(mappath); return 2; }
+    mlen = fread(map0, 1, sizeof map0, f);
+    fclose(f);
+    memset(ok, 0, sizeof ok); memset(bad, 0, sizeof bad);
+    memset(why, 0, sizeof why); memset(cls, 0, sizeof cls);
+    map16_lo = map;
+    map16_hi = map + mlen / 2;
+    keep_ram = 1;
+    memset(ram, 0, sizeof ram);
+
+    for (i = 0; i + 1 < nrec; i++) {
+        long j = i + 1;
+        int air, all = 1, spr;
+        /* tramo nuevo del nivel: el juego vuelve a cargar el mapa */
+        if (i == 0 || frame_of(i) != frame_of(i - 1) + 1 || db[(i - 1) * REC + 4] != 0x29)
+        { memcpy(map, map0, mlen); memset(ram, 0, sizeof ram); }
+        if (frame_of(j) != frame_of(i) + 1) continue;
+        if (db[i * REC + 4] != 0x29 || db[j * REC + 4] != 0x29) continue;
+        if (orc(j, wm_MarioAnimation) || orc(i, wm_MarioAnimation)
+            || orc(j, wm_SpritesLocked) || orc(i, wm_SpritesLocked)) { skipped++; continue; }
+        if (getenv("FULL_FRAME") && frame_of(j) != (unsigned)atoi(getenv("FULL_FRAME")))
+            continue;
+        pairs++;
+        load(i);
+        take(j, 0x13);                      /* FrameA: lo sube el bucle del juego */
+        for (k = 0x15; k <= 0x18; k++) take(j, k);
+        ram[0x1931] = 0x07;                 /* wm_LvHeadTileset (no se graba) */
+        mario_player();
+        if (!mario_unsupported) blocks_update();
+        if (mario_unsupported) { unsup++; why[mario_unsupported & 15]++; continue; }
+
+        air = orc(i, wm_IsFlying) != 0;
+        /* los sprites corren DESPUES que Mario y pueden moverlo: pisar un
+           enemigo, apoyarse en un sprite solido, empujones */
+        spr = orc(j, wm_IsOnSolidSpr) || orc(i, wm_IsOnSolidSpr);
+        tot[air]++;
+        for (k = 0; k < NFF; k++) {
+            int a = ffields[k].adr, m;
+            m = ram[a] == orc(j, a) && (ffields[k].w == 1 || ram[a + 1] == orc(j, a + 1));
+            if (m) ok[k][air]++; else { bad[k][air]++; all = 0; }
+            if (!m && verbose && shown < 60 && (!only || strstr(ffields[k].name, only))) {
+                shown++;
+                printf("  frame %u (%s) %-16s port %02X%02X oraculo %02X%02X | x %04X y %04X vx %02X vy %02X "
+                       "joy %02X/%02X vuela %02X->%02X st %02X->%02X suelo %02X->%02X spr %d ev %03X\n",
+                       frame_of(j), air ? "aire" : "suelo", ffields[k].name,
+                       ffields[k].w == 2 ? ram[a + 1] : 0, ram[a],
+                       ffields[k].w == 2 ? orc(j, a + 1) : 0, orc(j, a),
+                       orc(i, wm_MarioXPos) | orc(i, wm_MarioXPos + 1) << 8,
+                       orc(i, wm_MarioYPos) | orc(i, wm_MarioYPos + 1) << 8,
+                       orc(i, wm_MarioSpeedX), orc(i, wm_MarioSpeedY),
+                       orc(j, 0x15), orc(j, 0x16),
+                       orc(i, wm_IsFlying), orc(j, wm_IsFlying),
+                       orc(i, wm_MarioObjStatus), orc(j, wm_MarioObjStatus),
+                       orc(i, wm_IsOnGround), orc(j, wm_IsOnGround), spr, mario_events);
+            }
+        }
+        allok[air] += all;
+        if (!all) {
+            if (spr) cls[0]++;
+            else if (orc(j, wm_IsSpinJump) && !orc(i, wm_IsSpinJump)) cls[1]++;
+            else cls[2]++;
+        }
+    }
+    printf("\n[full] pares de frames seguidos en YI1: %ld (sin portar: %ld; sin fisica normal: %ld)\n",
+           pairs, unsup, skipped);
+    if (unsup) {
+        printf("sin portar por causa:");
+        for (n = 0; n < 16; n++) if (why[n]) printf(" %d:%ld", n, why[n]);
+        printf("\n");
+    }
+    printf("frames con algun fallo: %ld sobre/junto a un sprite solido, %ld otros\n",
+           cls[0], cls[2] + cls[1]);
+    printf("%-20s %18s %18s\n", "campo", "en el aire (N)", "en el suelo (N)");
+    for (k = 0; k < NFF; k++)
+        printf("%-20s %8ld/%-8ld  %8ld/%-8ld\n", ffields[k].name,
+               ok[k][1], ok[k][1] + bad[k][1], ok[k][0], ok[k][0] + bad[k][0]);
+    printf("%-20s %8ld/%-8ld  %8ld/%-8ld\n", "TODOS los campos", allok[1], tot[1], allok[0], tot[0]);
+    return 0;
+}
 
 int main(int argc, char **argv)
 {
@@ -86,6 +211,9 @@ int main(int argc, char **argv)
     db = malloc(nrec * REC);
     if (fread(db, REC, nrec, f) != (size_t)nrec) { fprintf(stderr, "lectura corta\n"); return 2; }
     fclose(f);
+    if (only && !strcmp(only, "full"))
+        return run_full(argc > 3 ? argv[3] : "work/yi1_map16.bin",
+                        argc > 4 ? argv[4] : NULL, 1);
     memset(ok, 0, sizeof ok);
     memset(bad, 0, sizeof bad);
 

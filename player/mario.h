@@ -15,6 +15,7 @@
 typedef unsigned char u8;
 typedef signed char s8;
 typedef unsigned short u16;
+typedef signed short s16;
 
 extern u8 ram[0x2000];
 extern const unsigned char rom00[0x4000];   /* $00:C000-$00:FFFF */
@@ -24,14 +25,42 @@ enum {
     MARIO_OK = 0,
     MARIO_UNSUP_CAPE,       /* capa: planeo, giro, picada */
     MARIO_UNSUP_FIRE,       /* flor de fuego: bolas */
-    MARIO_UNSUP_YOSHI       /* Yoshi con alas */
+    MARIO_UNSUP_YOSHI,      /* Yoshi con alas */
+    MARIO_UNSUP_LAYER,      /* capa 2 interactiva, nivel vertical, salida lateral */
+    MARIO_UNSUP_TILE,       /* bloques especiales (interruptor de palacio, bloque para tirar...) */
+    MARIO_UNSUP_HURT,       /* un bloque lo dania (munchers, espinas) */
+    MARIO_UNSUP_PIPE,       /* entra en una tuberia o una puerta */
+    MARIO_UNSUP_WATER,      /* agua */
+    MARIO_UNSUP_CLIMB,      /* trepar */
+    MARIO_UNSUP_WALL        /* correr por la pared */
 };
 extern int mario_unsupported;
+
+/* Etapa 8b (mcoll.c): el mapa de la capa 1 con el layout de la WRAM
+   ($7E:C800 / $7F:C800, pantalla s en s*$1B0) y lo que paso en el frame
+   que no mueve a Mario (para el verificador). */
+extern u8 *map16_lo, *map16_hi;
+enum {
+    MEV_TILE = 1, MEV_COIN = 2, MEV_BOUNCE = 4, MEV_DEATH = 8, MEV_HURT = 16,
+    MEV_PIPE = 32, MEV_MIDWAY = 64, MEV_1UP = 128, MEV_POUND = 256,
+    MEV_SWITCH = 512, MEV_SPRITE = 1024
+};
+extern unsigned mario_events;
 
 /* Etapa 8a: velocidad horizontal, salto, gravedad (en el orden de
    CODE_00CD82). */
 void mario_D5F2(void);      /* CODE_00D5F2: velocidad X, agacharse, saltar */
 void mario_D062(void);      /* CODE_00D062: capa / fuego */
 void mario_D7E4(void);      /* CODE_00D7E4: gravedad, planeo */
+
+/* Etapa 8b: CODE_00CD24 (movimiento DC2D + colision E92B + F595) y el
+   frame entero del jugador (colision + 8a). */
+void mario_collide(void);
+void blocks_update(void);   /* CODE_02902D: bloques que rebotan (fase de sprites) */
+
+/* manim.c: el frame entero del jugador (CODE_00C500 + ResetAni: colision,
+   8a y animacion CODE_00CEB1) */
+void mario_player(void);
+void mario_CEB1(void);
 
 #endif
