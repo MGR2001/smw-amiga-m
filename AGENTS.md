@@ -1400,6 +1400,17 @@ saltos) está portada en `player/mario.c` y verificada contra el oráculo con
    `tools/oamrec.py --out` a un fichero **distinto** de `oracle_yi1`.
 3. Etapas 5 y 6, ya desbloqueadas porque D8 = (d).
 
+**En Claude cloud, primero correr `sh tools/setup_cloud.sh`.** Instala:
+
+- vasm y vbcc para el 68000;
+- las librerías de Python (numpy, pillow, scipy);
+- el fuente de SMW, clonado desde https://github.com/galaxyhaxz/smw-src en
+  `../../smw-src-master`, que es donde lo busca `smwgen.py`.
+
+Las grabaciones del oráculo **sí** están en git: `work/oracle_yi1.txt` y
+`work/oam_yi1.txt`. Son RAM y joypad, sin bytes de la ROM. El `.bin` se
+regenera con `python tools/oracle2bin.py`.
+
 **Qué no está en git y cómo recuperarlo** (regla R9):
 
 - `work/` no se versiona: ahí van la ROM, los oráculos grabados, los ADF y

@@ -5,7 +5,11 @@
 assets-out/
 
 # renders, capturas, blobs de datos, ADF, logs
-work/
+work/*
+# excepcion: grabaciones del oraculo (RAM + joypad de partidas reales, sin
+# bytes de la ROM). Volver a grabarlas exige jugar de nuevo.
+!work/oracle_*.txt
+!work/oam_*.txt
 
 # por si alguien copia aqui una ROM o un Kickstart
 *.sfc
