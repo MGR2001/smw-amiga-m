@@ -58,6 +58,10 @@ SEG         equ 64+MIDMAX*12+12 ; 220 (tools/mkscroll.py: SEG). Una carga
 CL_SIZE     equ CL_LINES+SEG*LINES+4
 HOFS        equ $38             ; h de un WAIT = HOFS + x / 2 (medido, copcal.py)
 LASTX       equ 316             ; ninguna carga despues de esta x
+        ifnd    WOFS
+WOFS        equ 8               ; los WAIT, 8 px mas tarde: en el scroll las cargas
+                                ; caian ~5 px antes que en copcal (sin explicar)
+        endc
 XKNEE       equ 304             ; medido (copcal.py): hasta h = $D0, x = 2 (h - $38);
 HKNEE       equ $d0             ; despues, 1 px por unidad de h ($D4 -> 307, $DC -> 315)
 BLANKH      equ $e2             ; el borrado empieza en esta h de la linea
@@ -102,7 +106,9 @@ V_SHB   equ 50
 V_WKB   equ 54
 V_MLXB  equ 58
 V_DATA  equ 62                  ; .l datos (build_copper usa a3)
-V_SIZE  equ 66
+V_LSA   equ 66                  ; s con la que se escribio cada lista
+V_LSB   equ 68                  ; ($FFFF: nunca)
+V_SIZE  equ 70
 
 CIAB_TALO   equ $bfd400
 CIAB_TAHI   equ $bfd500
@@ -372,6 +378,18 @@ apply_colors:
 ; lo_tab[L] = primera carga a mitad de linea de la linea L (MLX)
 ;----------------------------------------------------------------------
 init_lo:                                    ; lo_tab[L] = (MLX[L], nxt = 0)
+        lea     segoff(pc),a0               ; tablas L * SEG, L * SHSZ
+        lea     shoff(pc),a1
+        moveq   #0,d1
+        moveq   #0,d2
+        move.w  #LINES-1,d0
+.tb:    move.l  d1,(a0)+
+        move.w  d2,(a1)+
+        add.l   #SEG,d1
+        add.w   #SHSZ,d2
+        dbf     d0,.tb
+        move.w  #$ffff,V_LSA(a5)
+        move.w  #$ffff,V_LSB(a5)
         lea     shadow_a(pc),a0             ; sombras: vu = 0, sin entradas
         move.w  #LINES*2-1,d0
 .sh:    clr.w   (a0)
@@ -418,11 +436,19 @@ build_mid:
         move.l  V_BACK(a5),a0
         lea     shadow_a(pc),a6
         lea     wake_a(pc),a4
+        lea     V_LSA(a5),a1
         cmp.l   V_COP(a5),a0
         beq.s   .ln
         lea     shadow_b(pc),a6
         lea     wake_b(pc),a4
-.ln:    lea     CL_LINES(a0),a0
+        lea     V_LSB(a5),a1
+.ln:    move.w  V_S(a5),d0                  ; la camara no se movio desde la
+        cmp.w   (a1),d0                     ; ultima vez que se escribio esta
+        bne.s   .moved                      ; lista: ya esta bien
+        movem.l (sp)+,d2-d7/a2-a6
+        rts
+.moved: move.w  d0,(a1)
+        lea     CL_LINES(a0),a0
         move.l  a0,V_LB(a5)                 ; bases, para cada linea visitada
         move.l  a6,V_SHB(a5)
         move.l  a4,V_WKB(a5)
@@ -446,13 +472,17 @@ build_mid:
         lsr.w   #1,d0
         subq.w  #1,d0                       ; d0 = linea
         move.w  d0,d1
-        mulu    #SEG,d1
+        lsl.w   #2,d1
+        lea     segoff(pc),a0
+        move.l  (a0,d1.w),d1                ; L * SEG (tabla: sin mulu)
         move.l  V_LB(a5),a0
         add.l   d1,a0                       ; a0 = segmento
         move.w  d0,d1
-        mulu    #SHSZ,d1
+        add.w   d1,d1
+        lea     shoff(pc),a6
+        move.w  (a6,d1.w),d1                ; L * SHSZ
         move.l  V_SHB(a5),a6
-        add.l   d1,a6                       ; a6 = sombra
+        add.w   d1,a6                       ; a6 = sombra
         lea     lo_tab(pc),a4
         move.w  d0,d1
         lsl.w   #2,d1
@@ -492,7 +522,7 @@ build_mid:
         sub.w   d6,d2
         bpl.s   .fp
         moveq   #0,d2
-.fp:    addq.w  #3,d2                       ; la h va de 4 en 4 px: redondear
+.fp:    add.w   #3+WOFS,d2                  ; la h va de 4 en 4 px: redondear
         and.w   #$fffc,d2                   ; HACIA ARRIBA (nunca antes de que
         cmp.w   #XKNEE,d2                   ; termine el tramo anterior)
         bhi.s   .fk
@@ -602,7 +632,7 @@ build_mid:
         bhs.s   .pw2
         move.w  d1,d0
         add.w   #32,d0
-.pw2:   addq.w  #3,d0                       ; x de 4 en 4 px, hacia arriba
+.pw2:   add.w   #3+WOFS,d0                  ; x de 4 en 4 px, hacia arriba
         and.w   #$fffc,d0
         move.w  d0,d1                       ; T = x del MOVE
         cmp.w   #XKNEE,d0
@@ -1007,6 +1037,8 @@ lo_tab: ds.w    LINES*2                     ; build_mid: (primera carga viva, nx
         even
 shadow_a: ds.b  SHSZ*LINES                  ; build_mid: sombra de cada lista
 shadow_b: ds.b  SHSZ*LINES
+segoff: ds.l    LINES                       ; build_mid: L * SEG y L * SHSZ
+shoff:  ds.w    LINES
 wake_a: ds.w    LINES                       ; build_mid: s desde la que hay que
 wake_b: ds.w    LINES                       ; mirar cada linea (0: siempre)
 gfxname: dc.b   "graphics.library",0

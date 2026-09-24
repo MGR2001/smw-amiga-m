@@ -1628,8 +1628,22 @@ queda son marcas sueltas en bordes de tubería y escalón.
 
 Coste (`-DBENCH`): 33,9 % sin columna, 42,5 % con columna (igual que antes).
 
-**Siguiente (etapa 6):** bajar el coste de `build_mid` (tablas en vez de
-`mulu`, nada si la cámara no se movió); cámara hacia la izquierda;
+**Después (13:58):** el usuario vio en la captura de x = 4500 la piedra
+gris sin su esquina y marcas de colores en la tierra, junto al escalón.
+Causa: **en el scroll, las cargas con WAIT caían ~5 px antes** de lo que
+dice `copcal` (el tramo anterior todavía se veía). Sin explicar (¿el
+retardo de `BPLCON1`? ¿escala de la captura?); corregido de forma empírica
+con `WOFS` = 8 (los WAIT, 8 px más tarde): la piedra sale entera y queda
+un solo punto en la tierra. Fallos que no se explican por un vecino:
+1700 → 98, 2500 → 44, 4500 → 126. **Pendiente:** entender los 5 px con
+`copcal` a distintos retardos de `BPLCON1`.
+También: `build_mid` no hace nada si la cámara no se movió desde la
+última vez que se escribió esa lista, y tablas L·SEG / L·SHSZ en vez de
+`mulu` (coste con scroll continuo: 33 % / 42 %, casi igual).
+**Criterio del usuario: priorizar lo que se nota a simple vista**; el
+magenta del fondo en `scroll_check` es casi todo reescalado.
+
+**Siguiente (etapa 6):** bajar el coste de `build_mid`; cámara hacia la izquierda;
 conectar `mcam.c`. Para dar la imagen por cerrada, comparar en la PC con
 capturas de WinUAE sin reescalar (el ×2,125 de FS-UAE ensucia los bordes).
 
