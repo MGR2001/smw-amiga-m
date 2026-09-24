@@ -461,6 +461,122 @@ static int run_sprload(const char *sprpath)
     return 0;
 }
 
+/* ------------------------------------------------------------------ */
+/* Modo "sprloop" (etapa 9): los Rex en LAZO CERRADO.  Mario y la camara
+   son entradas (del oraculo en cada frame: $94-$97, PlayerXPosLv, $1A-$1D,
+   $55, FrameA, $9D); los sprites los corre el port: temporizadores,
+   HandleSprite, el Rex, y el cargador al final.  Solo se siguen los Rex que
+   nacen a la vista del port (de los que ya estaban no se conocen sus tablas
+   que no se graban); los demas sprites se copian del oraculo.  Se compara
+   cada Rex seguido: estado, X, Y, velocidades, subestado; en la primera
+   diferencia se anota y se resincroniza esa ranura. */
+static int run_sprloop(const char *sprpath, const char *mappath)
+{
+    static u8 spr[1024], map0[0x8000], map[0x8000];
+    static const int cmp[] = { wm_SpriteStatus, wm_SpriteXLo, wm_SpriteXHi, wm_SpriteYLo,
+                               wm_SpriteYHi, wm_SpriteSpeedX, wm_SpriteSpeedY, wm_SpriteState,
+                               wm_SpriteXAcc, wm_SpriteYAcc };
+    static const char *cname[] = { "estado", "xlo", "xhi", "ylo", "yhi", "vx", "vy", "subestado",
+                                   "subx", "suby" };
+#define NCMP 10
+    long i, frames = 0, tracked = 0, okf = 0, badf = 0, cause[NCMP] = {0};
+    int k, c, shown = 0, follow[12] = {0};
+    size_t mlen;
+    FILE *f = fopen(sprpath, "rb");
+    if (!f) { perror(sprpath); return 2; }
+    if (fread(spr, 1, sizeof spr, f) < 4) return 2;
+    fclose(f);
+    f = fopen(mappath, "rb");
+    if (!f) { perror(mappath); return 2; }
+    mlen = fread(map0, 1, sizeof map0, f);
+    fclose(f);
+    spr_level = spr;
+    map16_lo = map;
+    map16_hi = map + mlen / 2;
+    keep_ram = 1;
+    for (i = 0; i + 1 < nrec; i++) {
+        long j = i + 1;
+        int newseg = i == 0 || frame_of(i) != frame_of(i - 1) + 1 || db[(i - 1) * REC + 4] != 0x29;
+        if (db[i * REC + 4] != 0x29) continue;
+        if (newseg) {
+            int y, idx;
+            unsigned cam = orc(i, wm_Bg1HOfs) | orc(i, wm_Bg1HOfs + 1) << 8;
+            memset(ram, 0, sizeof ram);
+            memcpy(map, map0, mlen);
+            load(i);
+            ram[0x1931] = 0x07;
+            ram[wm_SpriteMemory] = spr[0] & 0x3F;
+            ram[wm_LowestSolidSprTile] = ram[wm_HighestSolidSprTile] = 0xFF;   /* tileset 7 */
+            for (k = 0; k < 12; k++) { ram[wm_SprIndexInLvl + k] = 0xFF; follow[k] = 0; }
+            for (y = 1, idx = 0; spr[y] != 0xFF; y += 3, idx++) {
+                unsigned sx = (((spr[y] << 3) & 0x10) | (spr[y + 1] & 0x0F)) << 8 | (spr[y + 1] & 0xF0);
+                if (sx + 0x30 >= cam && sx < cam + 0x120) ram[wm_SprLoadStatus + idx] = 1;
+            }
+        }
+        if (frame_of(j) != frame_of(i) + 1 || db[j * REC + 4] != 0x29) continue;
+        /* entradas: Mario, camara, contador, bloqueo */
+        for (k = 0; k < 4; k++) { take(j, wm_MarioXPos + k); take(j, wm_Bg1HOfs + k); }
+        take(j, wm_PlayerXPosLv); take(j, wm_PlayerXPosLv + 1);
+        take(j, wm_Layer1ScrollDir); take(j, wm_FrameA); take(j, wm_SpritesLocked);
+        take(j, wm_SlopeSteepness); take(j, wm_SlopeSteepness + 1);
+        mario_unsupported = 0;
+        for (k = 11; k >= 0; k--) {
+            if (!follow[k]) {                   /* no seguido: copiar del oraculo (estado de N+1) */
+                for (c = 0; c < NCMP; c++) take(j, cmp[c] + k);
+                take(j, wm_SpriteNum + k);
+                if (orc(j, wm_SpriteStatus + k) == 0) ram[wm_SprIndexInLvl + k] = 0xFF;
+                if (orc(j, wm_SpriteStatus + k) == 1 && orc(i, wm_SpriteStatus + k) != 1)
+                    ram[wm_SpriteStatus + k] = 0;   /* nace en N+1: lo crea el cargador */
+                continue;
+            }
+            mario_unsupported = 0;
+            sprite_run((u8)k);
+            if (mario_unsupported) { follow[k] = 0; continue; }
+        }
+        sprite_load_level();
+        for (k = 0; k < 12; k++)
+            if ((spr_spawned >> k) & 1) {
+                if (ram[wm_SpriteNum + k] == 0xAB) follow[k] = 1;
+            }
+        frames++;
+        for (k = 0; k < 12; k++) {
+            int bad = -1;
+            if (!follow[k]) continue;
+            if (ram[wm_SpriteStatus + k] == 0 && orc(j, wm_SpriteStatus + k) == 0) { follow[k] = 0; continue; }
+            tracked++;
+            for (c = 0; c < NCMP && bad < 0; c++)
+                if (ram[cmp[c] + k] != orc(j, cmp[c] + k)) bad = c;
+            if (bad < 0) { okf++; continue; }
+            badf++; cause[bad]++;
+            if (shown++ < 25)
+                printf("  frame %u ranura %d: %s port %02X oraculo %02X | x %02X%02X/%02X%02X y %02X%02X/%02X%02X vx %02X/%02X vy %02X/%02X mario x %02X%02X y %02X%02X\n",
+                       frame_of(j), k, cname[bad], ram[cmp[bad] + k], orc(j, cmp[bad] + k),
+                       ram[wm_SpriteXHi + k], ram[wm_SpriteXLo + k], orc(j, wm_SpriteXHi + k), orc(j, wm_SpriteXLo + k),
+                       ram[wm_SpriteYHi + k], ram[wm_SpriteYLo + k], orc(j, wm_SpriteYHi + k), orc(j, wm_SpriteYLo + k),
+                       ram[wm_SpriteSpeedX + k], orc(j, wm_SpriteSpeedX + k),
+                       ram[wm_SpriteSpeedY + k], orc(j, wm_SpriteSpeedY + k),
+                       orc(j, wm_MarioXPos + 1), orc(j, wm_MarioXPos), orc(j, wm_MarioYPos + 1), orc(j, wm_MarioYPos));
+            /* el contacto con Mario (MarioSprInteract) no esta portado: si el
+               oraculo muestra un pisoton (subestado +1), se aplica lo que hace
+               el Rex al recibirlo (SmushRex / segundo golpe) */
+            if (orc(j, wm_SpriteState + k) == ram[wm_SpriteState + k] + 1) {
+                if (orc(j, wm_SpriteState + k) == 2) ram[wm_SpriteDecTbl3 + k] = 0x20;
+                else { ram[wm_DisSprCapeContact + k] = 0x0C; ram[wm_Tweaker1662 + k] = 0; }
+            }
+            for (c = 0; c < NCMP; c++) take(j, cmp[c] + k);       /* resincronizar */
+            if (orc(j, wm_SpriteSpeedX + k))    /* la direccion no se graba: la del Rex es el signo de vx */
+                ram[wm_SpriteDir + k] = (orc(j, wm_SpriteSpeedX + k) & 0x80) ? 1 : 0;
+            if (orc(j, wm_SpriteStatus + k) != 8) follow[k] = 0;
+        }
+    }
+    printf("\n[sprloop] frames: %ld  Rex-frames seguidos: %ld  exactos: %ld  con diferencia: %ld\n",
+           frames, tracked, okf, badf);
+    printf("          primer campo distinto:");
+    for (c = 0; c < NCMP; c++) if (cause[c]) printf(" %s:%ld", cname[c], cause[c]);
+    printf("\n");
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     const char *path = argc > 1 ? argv[1] : "work/oracle_yi1.bin";
@@ -485,6 +601,10 @@ int main(int argc, char **argv)
     if (only && !strcmp(only, "full"))
         return run_full(argc > 3 ? argv[3] : "work/yi1_map16.bin",
                         argc > 4 ? argv[4] : NULL, 1);
+    if (only && !strcmp(only, "sprloop"))
+        return run_sprloop(argc > 3 ? argv[3]
+                           : "../smw-src-master/project/mw_e10/levels/data/world_1/1/spr.lv",
+                           "work/yi1_map16.bin");
     if (only && !strcmp(only, "sprload"))
         return run_sprload(argc > 3 ? argv[3]
                            : "../smw-src-master/project/mw_e10/levels/data/world_1/1/spr.lv");
