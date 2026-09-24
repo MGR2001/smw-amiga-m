@@ -56,6 +56,9 @@ MIDMAX      equ 12
 SEG         equ 64+MIDMAX*8+12  ; 172 (tools/mkscroll.py: SEG)
 CL_SIZE     equ CL_LINES+SEG*LINES+4
 HOFS        equ $40             ; posicion h (color clocks) de la x = 0 de pantalla
+        ifnd    TXOFS
+TXOFS       equ 5               ; carga: x = fin del tramo anterior + TXOFS
+        endc
 
 ; cabecera de yi1_s.dat
 D_W     equ 4
@@ -88,7 +91,11 @@ V_NC    equ 36
 V_MAXN  equ 38                  ; ... y sin columna
 V_SUMN  equ 40
 V_NN    equ 44
-V_SIZE  equ 46
+V_LB    equ 46                  ; build_mid: bases de la lista que se escribe
+V_SHB   equ 50
+V_WKB   equ 54
+V_MLXB  equ 58
+V_SIZE  equ 62
 
 CIAB_TALO   equ $bfd400
 CIAB_TAHI   equ $bfd500
@@ -224,6 +231,23 @@ frame:
         move.w  #STOPX,d0
 .ok:    move.w  d0,V_S(a5)
 .same:
+        ; columna nueva (cuando cambia la palabra del puntero), lo primero:
+        ; en el borrado vertical el blitter tiene todo el bus, y la ultima
+        ; copia (672 filas) corre mientras la CPU hace build_mid
+        move.w  V_S(a5),d0
+        subq.w  #1,d0
+        asr.w   #4,d0
+        cmp.w   V_P(a5),d0
+        beq.s   .nocol
+        move.w  d0,V_P(a5)
+        add.w   #SLOTS-1,d0                 ; p + 21: la que entra despues
+        cmp.w   D_COLS(a3),d0
+        bhs.s   .nocol
+        bsr     blit_column
+        ifd     BENCH
+        st      V_COLF(a5)
+        endc
+.nocol:
         bsr     apply_colors
         bsr     set_pointers
         ifnd    NOMID
@@ -235,20 +259,6 @@ frame:
         bne.s   .sw
         move.l  V_COP2(a5),d0
 .sw:    move.l  d0,V_BACK(a5)
-        ; columna nueva: cuando cambia la palabra del puntero
-        move.w  V_S(a5),d0
-        subq.w  #1,d0
-        asr.w   #4,d0
-        cmp.w   V_P(a5),d0
-        beq.s   .w2
-        move.w  d0,V_P(a5)
-        add.w   #SLOTS-1,d0                 ; p + 21: la que entra despues
-        cmp.w   D_COLS(a3),d0
-        bhs.s   .w2
-        bsr     blit_column
-        ifd     BENCH
-        st      V_COLF(a5)
-        endc
 .w2:
         ifd     BENCH
         bsr     bench_frame
@@ -360,6 +370,10 @@ init_lo:                                    ; lo_tab[L] = (MLX[L], nxt = 0)
         move.w  #4,2(a0)
         lea     SHSZ(a0),a0
         dbf     d0,.sh
+        lea     wake_a(pc),a0               ; wake = 0: todas en el 1er frame
+        move.w  #LINES*2-1,d0
+.wk:    clr.w   (a0)+
+        dbf     d0,.wk
         move.l  a3,a0
         add.l   D_MLX(a3),a0
         lea     lo_tab(pc),a1
@@ -383,8 +397,10 @@ init_lo:                                    ; lo_tab[L] = (MLX[L], nxt = 0)
 ;      izquierda, una entra por la derecha o una saltada empieza a verse.
 ;   +2 fin de las entradas (4 = ninguna)
 ;   +4 por cada WAIT escrito: desplazamiento en el segmento, x objetivo
-; Con s < vu solo se recalculan las h de los WAIT (camino rapido). Y una
-; linea sin cargas a la vista ni escritas (s < nxt de lo_tab) se salta.
+; Con s < vu solo se recalculan las h de los WAIT (camino rapido).
+; wake[L] (por lista) = la s desde la que hay que mirar la linea: 0 si
+; tiene cargas escritas, vu si no. Un bucle minimo recorre wake y solo
+; entra en las lineas que hacen falta (de media ~35 de 224).
 ; PROTOTIPO: la camara solo avanza (lo_tab y vu suponen s creciente).
 ;----------------------------------------------------------------------
 SHSZ        equ 4+MIDMAX*4
@@ -393,25 +409,67 @@ build_mid:
         movem.l d2-d7/a2-a6,-(sp)
         move.l  V_BACK(a5),a0
         lea     shadow_a(pc),a6
+        lea     wake_a(pc),a4
         cmp.l   V_COP(a5),a0
         beq.s   .ln
         lea     shadow_b(pc),a6
-.ln:    lea     CL_LINES(a0),a0             ; a0 = segmento de la linea
+        lea     wake_b(pc),a4
+.ln:    lea     CL_LINES(a0),a0
+        move.l  a0,V_LB(a5)                 ; bases, para cada linea visitada
+        move.l  a6,V_SHB(a5)
+        move.l  a4,V_WKB(a5)
         move.l  a3,a1
         add.l   D_MLD(a3),a1                ; a1 = cargas
         move.l  a3,a2
         add.l   D_MLX(a3),a2
-        addq.l  #2,a2                       ; a2 = MLX[L+1] (fin de la linea)
-        lea     lo_tab(pc),a4
+        move.l  a2,V_MLXB(a5)
         move.w  V_S(a5),d6                  ; d6 = s
         move.w  d6,d5
         add.w   #320,d5                     ; d5 = s + 320
-        move.w  #$2c01,d7                   ; WAIT: (v << 8) | 1
-.line:  cmp.w   2(a4),d6                    ; s < nxt: nada entra todavia
-        bhs.s   .notidle
-        cmp.w   #4,2(a6)
-        beq     .next                       ; ...y nada escrito: saltar
-.notidle:
+        move.w  #LINES-1,d3
+.scan:  cmp.w   (a4)+,d6                    ; s >= wake: hay que mirarla
+        bhs.s   .visit
+        dbf     d3,.scan
+        movem.l (sp)+,d2-d7/a2-a6
+        rts
+.visit: movem.l d3/a4,-(sp)
+        move.l  a4,d0
+        sub.l   V_WKB(a5),d0
+        lsr.w   #1,d0
+        subq.w  #1,d0                       ; d0 = linea
+        move.w  d0,d1
+        mulu    #SEG,d1
+        move.l  V_LB(a5),a0
+        add.l   d1,a0                       ; a0 = segmento
+        move.w  d0,d1
+        mulu    #SHSZ,d1
+        move.l  V_SHB(a5),a6
+        add.l   d1,a6                       ; a6 = sombra
+        lea     lo_tab(pc),a4
+        move.w  d0,d1
+        lsl.w   #2,d1
+        add.w   d1,a4                       ; a4 = (lo, nxt)
+        move.l  V_MLXB(a5),a2
+        move.w  d0,d1
+        add.w   d1,d1
+        lea     2(a2,d1.w),a2               ; a2 = MLX[L+1]
+        move.w  d0,d7
+        add.w   #$2c,d7
+        lsl.w   #8,d7
+        or.w    #1,d7                       ; d7 = WAIT (v << 8) | 1
+        bsr     .do_line
+        moveq   #0,d0                       ; wake: 0 si hay cargas escritas
+        cmp.w   #4,2(a6)                    ; (sus h cambian cada frame);
+        bne.s   .wk                         ; si no, vu
+        move.w  (a6),d0
+.wk:    movem.l (sp)+,d3/a4
+        move.w  d0,-2(a4)
+        dbf     d3,.scan
+        movem.l (sp)+,d2-d7/a2-a6
+        rts
+
+; una linea: a0 segmento, a2 = MLX[L+1], a4 = lo_tab[L], a6 = sombra, d7
+.do_line:
         cmp.w   (a6),d6
         bhs     .full
         ;--- camino rapido: la misma estructura, otras h ---------------
@@ -495,10 +553,10 @@ build_mid:
         bhs     .next_ld
         move.w  d0,(a6)
         bra     .next_ld
-.vis:   add.w   (a5),d0
-        addq.w  #1,d0
-        lsr.w   #1,d0                       ; mitad de la ventana
-        sub.w   #8,d0                       ; un poco antes: el MOVE llega tarde
+.vis:   move.w  (a5),d0                     ; al principio de la ventana: si
+        addq.w  #TXOFS,d0                   ; cambian varios registros juntos,
+                                            ; cada MOVE llega 16 px despues del
+                                            ; anterior (ventanas >= 48 px)
         move.w  d0,-(sp)                    ; x objetivo
         sub.w   d6,d0
         bpl.s   .pos
@@ -557,15 +615,7 @@ build_mid:
         swap    d0
         move.w  d0,(a3)+
         move.l  #$008a0000,(a3)+            ; COPJMP2
-.next:  addq.l  #4,a4
-        addq.l  #2,a2
-        lea     SHSZ(a6),a6
-        lea     SEG(a0),a0
-        add.w   #$0100,d7                   ; v + 1 (el byte alto da la vuelta en 256)
-        cmp.w   #($2c01+LINES*$100)&$ffff,d7
-        bne     .line
-        movem.l (sp)+,d2-d7/a2-a6
-        rts
+.next:  rts
 
 ;----------------------------------------------------------------------
 ; --- draw_column ---
@@ -907,5 +957,7 @@ lo_tab: ds.w    LINES*2                     ; build_mid: (primera carga viva, nx
         even
 shadow_a: ds.b  SHSZ*LINES                  ; build_mid: sombra de cada lista
 shadow_b: ds.b  SHSZ*LINES
+wake_a: ds.w    LINES                       ; build_mid: s desde la que hay que
+wake_b: ds.w    LINES                       ; mirar cada linea (0: siempre)
 gfxname: dc.b   "graphics.library",0
         even

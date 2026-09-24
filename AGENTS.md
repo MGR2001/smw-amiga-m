@@ -1599,7 +1599,57 @@ mergearla), y leer "Dónde quedó el trabajo" justo arriba.
    CPU, no contención.** Con esto el scroll no entra en 50 Hz junto al
    jugador.
 
+**Después, en la misma hora (13:00 UTC):**
+
+- **`build_mid` incremental: hecho.** Por lista y por línea una sombra:
+  `vu` (hasta qué `s` vale la estructura: sale la carga más vieja, entra
+  una por la derecha o empieza a verse una saltada) y, por cada WAIT, su
+  posición en el segmento y su x objetivo; con `s < vu` solo se
+  recalculan las h. Más un array `wake[L]` por lista (0 si la línea tiene
+  cargas escritas, `vu` si no) que un bucle mínimo recorre para entrar
+  solo en las líneas que hacen falta (~26 de 224).
+- La columna nueva va **lo primero** del frame, en el borrado vertical:
+  ahí el blitter tiene el bus, y la copia de 672 filas corre mientras la
+  CPU hace `build_mid`.
+- Objetivo de cada carga: **fin del tramo anterior + 5 px** (`TXOFS`), no
+  el centro de la ventana. Si cambian varios registros juntos, cada MOVE
+  llega 16 px después del anterior.
+
+| `build_mid` | Musashi (sin DMA) | FS-UAE, sin columna | con columna |
+|---|---|---|---|
+| recalcular todo | ~80 000 ciclos | 83,5 % | 104,2 % |
+| + atajo de líneas sin cargas | ~72 000 | 73,2 % | 90,1 % |
+| incremental (sombras) | ~37 000 | 35,0 % | 52,9 % |
+| + columna primero | — | 35,0 % | 44,7 % |
+| + `wake` | ~29 000 | **33,0 %** | **43,1 %** |
+
+Imagen: x = 1000 → **268 px de fallo limpio (0,37 %)**; x = 1700 →
+**1025 px (1,43 %)**, casi todo en una **franja de ~16 líneas justo encima
+del suelo**: la parte de abajo de las tuberías lavanda sale verde, el
+arbusto gris, la base de los bloques de cemento mal. **No es del camino
+incremental**: la versión que recalcula todo da lo mismo (1093 px). Ahí
+tres registros cambian dentro de una ventana estrecha (~27 px entre el
+arbusto y la tubería). Sospechas, sin comprobar:
+1. la colocación de las cargas no hace el reparto por plazo en ranuras de
+   16 px que usan `dpfsplit.py`/`render_d.py` (para ellos solo falla el
+   0,018 %): hay que precalcularlo en `mkscroll.py` y guardar la x
+   objetivo en MLD;
+2. el borrado (2 WAIT + 14 MOVE) empieza en h = `$07` de cada línea. En
+   DPF el copper solo tiene libres 14-15 MOVE entre el borde derecho y el
+   izquierdo (§9 punto 8), y así pierde el tramo del borde derecho de la
+   línea anterior: las últimas cargas del borrado caen ya dentro de la
+   pantalla.
+
 **Siguiente (etapa 6), en orden:**
+- La franja de x = 1700 (arriba). Comprobar varias x más con
+  `scroll_check.py --mid`, no solo 1000.
+- Bajar el 33 % de `build_mid`: tablas de desplazamientos por línea en vez
+  de los dos `mulu` de cada visita, y no volver a escribir las h de los
+  WAIT cuando `s` no cambió (Mario quieto).
+- Cámara hacia la izquierda (`lo_tab`, `vu` y la lista de cambios solo
+  avanzan) y conectar `mcam.c`.
+
+**Lo que había escrito antes de hacerlo (referencia):**
 - **`build_mid` incremental.** Entre dos frames, el conjunto de cargas de
   una línea solo cambia cuando la cámara cruza un umbral (una carga entra
   por la derecha, sale por la izquierda o se pega al borde). Si no, todas
@@ -1831,7 +1881,7 @@ iba a existir en la Amiga, y ponía la prueba de rendimiento en cuarto lugar.
 |---|---|---|---|
 | **4** | **Prueba de viabilidad en `a500.uae`** (cycle-exact) | Tabla de costes medida en la Amiga + cómo se mueve la capa 2 | **HECHO** (2026-09-22) — ver "Etapa 4 — resultados" en §9. Cerró D1 y D9; D8 queda para el usuario con los datos. El scroll del **nivel real** no se hizo aquí (hace falta el conversor de la etapa 5): pasa a la etapa 6. `player/bench.s` + `tools/bench_read.py` |
 | 5 | **Conversor de nivel → Amiga, formato (d)** | Capa 1: 3 planos con la asignación de índices de `dpfsplit.py` (244 variantes de bloque) + tablas del copper por línea del nivel (cargas en el borrado y a mitad de línea con su ventana). Capa 2: bitmap de 3 planos de período 512 px + paleta por línea. `render_dat.py` renderiza el blob en el PC aplicando las tablas y se compara contra `d8d_g48m8_nivel.png` y la referencia con `cmp_ref.py` | **HECHO en cloud** (2026-09-24): `tools/mkd8in.py` → `tools/mkleveld.py` → `work/yi1_d.dat` (199 KB) → `tools/render_d.py`. Todo sale de los datos del ROM (la capa 2 también: `tools/mkbg.py`). Colores cuantizados a 12 bits (OCS) antes de repartir registros. 244 bloques, 9575 eventos, derrame 357 px (0,1 %). El render **solo desde el blob** = la imagen ideal (0 px distintos); moviendo la cámara cada 4 px, 0,018 % de píxeles mal (peor encuadre 132 px). **Falta en la PC**: `cmp_ref.py` contra `SuperMarioWorldMap02.png` |
-| 6 | Scroll del nivel real en la Amiga | PF1 con `BPLCON1` bits 0-3 + columna nueva; PF2 con bits 4-7 a media velocidad (paralaje); lista del copper por frame (segmentos por línea encadenados, §9 punto 10). Recorre las 20 pantallas a 50 Hz; captura de WinUAE = render del PC en varios puntos; coste medido con el método de `bench2.s` | **Primer prototipo** (2026-09-24, cloud): `tools/mkscroll.py` → `work/yi1_s.dat`, `player/scroll.s` (ver el handoff). Nivel real en DPF, PF1 con buffer circular + columna nueva, PF2 con paralaje por hardware, colores por línea con cargas en el borrado **y a mitad de línea** (segmentos de copper encadenados, dos listas), columna nueva por blitter. Fallos limpios contra el esperado: 0,38 %. **Coste medido: 73-90 % de un frame** (casi todo `build_mid`, CPU): falta hacerlo incremental, la cámara hacia la izquierda y conectar `mcam.c` |
+| 6 | Scroll del nivel real en la Amiga | PF1 con `BPLCON1` bits 0-3 + columna nueva; PF2 con bits 4-7 a media velocidad (paralaje); lista del copper por frame (segmentos por línea encadenados, §9 punto 10). Recorre las 20 pantallas a 50 Hz; captura de WinUAE = render del PC en varios puntos; coste medido con el método de `bench2.s` | **Primer prototipo** (2026-09-24, cloud): `tools/mkscroll.py` → `work/yi1_s.dat`, `player/scroll.s` (ver el handoff). Nivel real en DPF, PF1 con buffer circular + columna nueva, PF2 con paralaje por hardware, colores por línea con cargas en el borrado **y a mitad de línea** (segmentos de copper encadenados, dos listas, `build_mid` incremental), columna nueva por blitter. Fallos limpios contra el esperado: 0,37 % en x = 1000, 1,43 % en x = 1700 (una franja sobre el suelo, sin resolver). **Coste medido: 33 % de un frame sin columna, 43 % con columna.** Falta: la franja, bajar el coste, cámara hacia la izquierda y conectar `mcam.c` |
 | 7 | **Capa 2** | En (d) la hacen las etapas 5 y 6 (PF2 con scroll por hardware). Queda la verificación: recortes apilados contra `SuperMarioWorldMap02.png`, el diff tiene que bajar del 25.5 % | — |
 | 8 | **Mario**, por partes verificadas bit a bit contra el oráculo `work/oracle_yi1.txt` (partida real grabada en `smwrecomp`: joypad + WRAM `$0000-$00FF` y `$13C0-$14FF` + OAM por frame): **8a** velocidad horizontal, gravedad y saltos; **8b** colisiones con bloques (en SMW el "acts like" es el propio índice Map16); **8c** pendientes de 45° (hace falta grabar las colinas: a toda carrera, en las dos direcciones, parado encima y deslizándose); **8d** coste medido en la Amiga | Cada parte: el estado de Mario del port = el del oráculo en todos los frames de sus tramos | **8a, 8b, animación, gráficos y cámara HECHOS** (2026-09-24): 6510/6547 pares exactos, los 37 restantes son sprites (etapa 9); OAM 6869/6869; lazo cerrado solo con el joypad. 8c: las pendientes de la partida salen exactas, falta la grabación de las colinas. **8d medida: 31,6-32,9 % de un frame** (FS-UAE cycle-exact, tras la 1.ª optimización) |
 | 9 | **Sprites del nivel** (D3): Rex, Banzai Bill, Jumping Piranha; después Chuck, Sliding Koopa, bloque volador, Info Box, meta | Aparecen en las posiciones de `spr.lv` y se comportan como en la SNES | — |
