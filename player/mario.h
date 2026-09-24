@@ -73,4 +73,9 @@ void camera_F6DB(void);
 void sprites_begin(void);
 void level_frame(void);
 
+/* msprite.c: etapa 9 */
+extern const u8 *spr_level;     /* spr.lv del nivel */
+extern u8 spr_spawned;          /* ranuras creadas por el cargador en este frame */
+void sprite_load_level(void);   /* LoadSprFromLevel */
+
 #endif

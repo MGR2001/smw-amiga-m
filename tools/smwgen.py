@@ -32,7 +32,7 @@ OUT = os.path.join(HERE, "..", "player", "gen")
 def parse_ram():
     out = []
     for ln in open(os.path.join(SRC, "equates", "memory.i"), encoding="latin-1"):
-        m = re.match(r"^(m\d+|wm_\w+)\s+(?:DB|DW|DL|DS\b[^;]*)\s*;\s*\$([0-9A-Fa-f]+)", ln)
+        m = re.match(r"^(m\d+|wm_\w+)\s+(?:DB|DW|DL|DS\b[^;]*|INSTANCEOF\b[^;]*)\s*;\s*\$([0-9A-Fa-f]+)", ln)
         if m:
             out.append((m.group(1), int(m.group(2), 16)))
     return out

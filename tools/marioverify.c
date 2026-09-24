@@ -14,12 +14,13 @@
  * Los frames donde aterriza, choca un techo o pisa un enemigo fallan por
  * construccion hasta la 8b; se cuentan aparte (columna "suelo/aire").
  *
- *   gcc -O2 -Iplayer -o work/marioverify tools/marioverify.c player/mario.c player/mcoll.c player/manim.c player/mgfx.c player/mcam.c player/gen/smwrom00.c
+ *   gcc -O2 -Iplayer -o work/marioverify tools/marioverify.c player/mario.c player/mcoll.c player/manim.c player/mgfx.c player/mcam.c player/msprite.c player/gen/smwrom00.c
  *   work/marioverify work/oracle_yi1.bin
  *   work/marioverify work/oracle_yi1.bin full [work/yi1_map16.bin [CAMPO]]   (8b)
  *   work/marioverify work/oracle_yi1.bin fulldump FRAME salida.bin   (estado para logicbench)
  *   work/marioverify work/oracle_yi1.bin gfx [work/oracle_yi1_oam.bin]   (graficos de Mario)
  *   work/marioverify work/oracle_yi1.bin loop   (lazo cerrado: solo el joypad)
+ *   work/marioverify work/oracle_yi1.bin sprload [spr.lv]   (cargador de sprites, etapa 9)
  *   FULL_FRAME=N work/mvtrace ... full   (un solo frame; mvtrace = -DMCOLL_TRACE)
  */
 #include <stdio.h>
@@ -374,6 +375,92 @@ static int run_loop(const char *mappath)
     return 0;
 }
 
+/* ------------------------------------------------------------------ */
+/* Modo "sprload" (etapa 9): el cargador de sprites (LoadSprFromLevel).
+   En N+1 el juego lo corre al final del frame con la camara de N+1 y las
+   ranuras como quedaron tras los sprites: se toman del oraculo, quitando
+   las que nacen en N+1 (estado 1 en N+1 y no en N).  El port tiene que
+   crear exactamente esas: misma ranura, numero, X e Y.  wm_SprLoadStatus
+   (no se graba) lo lleva el port; al empezar un tramo se marcan cargados
+   los sprites a la vista, y cuando uno desaparece de 8 a 0 (salio de
+   pantalla) se libera su indice, como hace el juego. */
+static int run_sprload(const char *sprpath)
+{
+    static u8 spr[1024];
+    long i, frames = 0, want = 0, got = 0, ok = 0, bad = 0;
+    int k, shown = 0;
+    FILE *f = fopen(sprpath, "rb");
+    if (!f) { perror(sprpath); return 2; }
+    if (fread(spr, 1, sizeof spr, f) < 4) return 2;
+    fclose(f);
+    spr_level = spr;
+    keep_ram = 1;
+    memset(ram, 0, sizeof ram);
+    for (i = 0; i + 1 < nrec; i++) {
+        long j = i + 1;
+        int newseg = i == 0 || frame_of(i) != frame_of(i - 1) + 1 || db[(i - 1) * REC + 4] != 0x29;
+        u8 expect = 0;
+        if (db[i * REC + 4] != 0x29) continue;
+        if (newseg) {
+            int y, idx;
+            unsigned cam = orc(i, wm_Bg1HOfs) | orc(i, wm_Bg1HOfs + 1) << 8;
+            memset(ram, 0, sizeof ram);
+            for (k = 0; k < 12; k++) ram[wm_SprIndexInLvl + k] = 0xFF;
+            for (y = 1, idx = 0; spr[y] != 0xFF; y += 3, idx++) {
+                unsigned sx = (((spr[y] << 3) & 0x10) | (spr[y + 1] & 0x0F)) << 8 | (spr[y + 1] & 0xF0);
+                if (sx + 0x30 >= cam && sx < cam + 0x120) ram[wm_SprLoadStatus + idx] = 1;
+            }
+        }
+        if (frame_of(j) != frame_of(i) + 1 || db[j * REC + 4] != 0x29) continue;
+        load(i);
+        ram[wm_SpriteMemory] = spr[0] & 0x3F;
+        for (k = 0; k < 4; k++) take(j, wm_Bg1HOfs + k);
+        take(j, wm_Layer1ScrollDir); take(j, wm_FrameA);
+        for (k = 0; k < 12; k++) {
+            int si = orc(i, wm_SpriteStatus + k), sj = orc(j, wm_SpriteStatus + k);
+            if (si == 8 && sj == 0 && ram[wm_SprIndexInLvl + k] != 0xFF) {
+                /* salio de pantalla (y no murio a la vista: un salto con
+                   giro mata de 8 a 0 y el indice queda cargado) */
+                int sx = orc(i, wm_SpriteXLo + k) | orc(i, wm_SpriteXHi + k) << 8;
+                int cx = orc(i, wm_Bg1HOfs) | orc(i, wm_Bg1HOfs + 1) << 8;
+                if (sx < cx - 0x20 || sx > cx + 0x110)
+                    ram[wm_SprLoadStatus + ram[wm_SprIndexInLvl + k]] = 0;
+            }
+            ram[wm_SpriteStatus + k] = (u8)sj;
+            if (sj == 1 && si != 1) { expect |= (u8)(1 << k); ram[wm_SpriteStatus + k] = 0; }
+        }
+        mario_unsupported = 0;
+        sprite_load_level();
+        frames++;
+        for (k = 0; k < 8; k++) {
+            int e = (expect >> k) & 1, p = (spr_spawned >> k) & 1, m = e == p;
+            want += e; got += p;
+            if (e && p)
+                m = ram[wm_SpriteNum + k] == orc(j, wm_SpriteNum + k)
+                    && ram[wm_SpriteXLo + k] == orc(j, wm_SpriteXLo + k)
+                    && ram[wm_SpriteXHi + k] == orc(j, wm_SpriteXHi + k)
+                    && ram[wm_SpriteYLo + k] == orc(j, wm_SpriteYLo + k)
+                    && ram[wm_SpriteYHi + k] == orc(j, wm_SpriteYHi + k);
+            if (!e && !p) continue;
+            if (m) ok++;
+            else {
+                bad++;
+                if (shown++ < 30)
+                    printf("  frame %u ranura %d: oraculo %s num %02X x %02X%02X y %02X%02X | port %s num %02X x %02X%02X y %02X%02X (camara %02X%02X dir %d)\n",
+                           frame_of(j), k, e ? "nace" : "-", orc(j, wm_SpriteNum + k),
+                           orc(j, wm_SpriteXHi + k), orc(j, wm_SpriteXLo + k),
+                           orc(j, wm_SpriteYHi + k), orc(j, wm_SpriteYLo + k),
+                           p ? "nace" : "-", ram[wm_SpriteNum + k], ram[wm_SpriteXHi + k],
+                           ram[wm_SpriteXLo + k], ram[wm_SpriteYHi + k], ram[wm_SpriteYLo + k],
+                           orc(j, wm_Bg1HOfs + 1), orc(j, wm_Bg1HOfs), orc(j, wm_Layer1ScrollDir));
+            }
+        }
+    }
+    printf("\n[sprload] frames: %ld  nacimientos en el oraculo: %ld  del port: %ld  exactos: %ld  distintos: %ld\n",
+           frames, want, got, ok, bad);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     const char *path = argc > 1 ? argv[1] : "work/oracle_yi1.bin";
@@ -398,6 +485,9 @@ int main(int argc, char **argv)
     if (only && !strcmp(only, "full"))
         return run_full(argc > 3 ? argv[3] : "work/yi1_map16.bin",
                         argc > 4 ? argv[4] : NULL, 1);
+    if (only && !strcmp(only, "sprload"))
+        return run_sprload(argc > 3 ? argv[3]
+                           : "../smw-src-master/project/mw_e10/levels/data/world_1/1/spr.lv");
     if (only && !strcmp(only, "loop"))
         return run_loop(argc > 3 ? argv[3] : "work/yi1_map16.bin");
     if (only && !strcmp(only, "gfx"))

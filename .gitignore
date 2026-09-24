@@ -22,3 +22,4 @@ __pycache__/
 
 # bytes de la ROM volcados a C (tools/smwgen.py los regenera)
 player/gen/smwrom00.c
+player/gen/smwtabx.h
