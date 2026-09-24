@@ -480,6 +480,7 @@ static int run_sprloop(const char *sprpath, const char *mappath)
                                    "subx", "suby" };
 #define NCMP 10
     long i, frames = 0, tracked = 0, okf = 0, badf = 0, cause[NCMP] = {0};
+    long bounce_port = 0, bounce_orc = 0, bounce_ok = 0;
     int k, c, shown = 0, follow[12] = {0};
     size_t mlen;
     FILE *f = fopen(sprpath, "rb");
@@ -519,6 +520,16 @@ static int run_sprloop(const char *sprpath, const char *mappath)
         take(j, wm_PlayerXPosLv); take(j, wm_PlayerXPosLv + 1);
         take(j, wm_Layer1ScrollDir); take(j, wm_FrameA); take(j, wm_SpritesLocked);
         take(j, wm_SlopeSteepness); take(j, wm_SlopeSteepness + 1);
+        for (k = 0; k < 2; k++) { take(j, wm_PlayerYPosLv + k); }
+        take(j, wm_IsDucking); take(j, wm_MarioPowerUp); take(j, wm_IsSpinJump);
+        take(j, wm_IsClimbing); take(j, wm_StarPowerTimer); take(j, wm_PlayerHurtTimer);
+        take(j, wm_MarioAnimation); take(j, wm_IsBehindScenery); take(j, 0x15);
+        /* la SpeedY de Mario ANTES de los sprites: la de N+1 salvo que un
+           sprite la cambie (pisoton $D0/$A8): se reconstruye del oraculo */
+        {
+            int vy = orc(j, wm_MarioSpeedY);
+            ram[wm_MarioSpeedY] = (u8)((vy == 0xD0 || vy == 0xA8) ? 0x20 : vy);
+        }
         mario_unsupported = 0;
         for (k = 11; k >= 0; k--) {
             if (!follow[k]) {                   /* no seguido: copiar del oraculo (estado de N+1) */
@@ -532,6 +543,11 @@ static int run_sprloop(const char *sprpath, const char *mappath)
             mario_unsupported = 0;
             sprite_run((u8)k);
             if (mario_unsupported) { follow[k] = 0; continue; }
+        }
+        {   /* rebote de Mario: lo hace el Rex (BoostMarioSpeed) */
+            int pv = ram[wm_MarioSpeedY], ov = orc(j, wm_MarioSpeedY);
+            int pb = pv == 0xD0 || pv == 0xA8, ob = ov == 0xD0 || ov == 0xA8;
+            bounce_port += pb; bounce_orc += ob; bounce_ok += pb && ob && pv == ov;
         }
         sprite_load_level();
         for (k = 0; k < 12; k++)
@@ -571,6 +587,8 @@ static int run_sprloop(const char *sprpath, const char *mappath)
     }
     printf("\n[sprloop] frames: %ld  Rex-frames seguidos: %ld  exactos: %ld  con diferencia: %ld\n",
            frames, tracked, okf, badf);
+    printf("          rebotes de Mario sobre un Rex: port %ld, oraculo %ld, coinciden %ld\n",
+           bounce_port, bounce_orc, bounce_ok);
     printf("          primer campo distinto:");
     for (c = 0; c < NCMP; c++) if (cause[c]) printf(" %s:%ld", cname[c], cause[c]);
     printf("\n");

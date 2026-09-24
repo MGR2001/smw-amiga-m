@@ -386,8 +386,66 @@ static void sub_offscreen3(u8 x)
     SETSPR(wm_SpriteStatus, x, 0);
 }
 
-/* RexMainRt, sin el contacto con Mario ni con otros sprites (pendiente:
-   MarioSprInteract, SprSprInteract) */
+/* GetMarioClipping + GetSpriteClippingA + CheckForContact: 1 si las cajas
+   de Mario y del sprite se tocan. */
+static int spr_mario_contact(u8 x)
+{
+    u8 k = 0, i, c;
+    u16 mx, my, sx, sy;
+    u8 mw = 0x0C, mh, sw, sh;
+    if (!(R8(wm_IsDucking) == 0 && R8(wm_MarioPowerUp)))
+        k = 1;
+    if (R8(wm_OnYoshi))
+        k += 2;
+    mx = (u16)(R16(wm_MarioXPos) + 2);
+    my = (u16)(R16(wm_MarioYPos) + tx_MarioClipDispY[k]);
+    mh = tx_MarioClipH[k];
+    c = SPR(wm_Tweaker1662, x) & 0x3F;
+    sx = (u16)((SPR(wm_SpriteXLo, x) | SPR(wm_SpriteXHi, x) << 8) + (s8)tx_ClipDispX[c]);
+    sy = (u16)((SPR(wm_SpriteYLo, x) | SPR(wm_SpriteYHi, x) << 8) + (s8)tx_ClipDispY[c]);
+    sw = tx_ClipWidth[c];
+    sh = tx_ClipHeight[c];
+    for (i = 0; i < 2; i++) {               /* X = 1 (Y), X = 0 (X) */
+        u16 a = i ? mx : my, b = i ? sx : sy;
+        u8 wa = i ? mw : mh, wb = i ? sw : sh;
+        if ((u16)(a - b + 0x80) >= 0x100)
+            return 0;
+        if ((u8)(wa + wb) < (u8)((u8)b - (u8)a + wb))
+            return 0;
+    }
+    return 1;
+}
+
+/* MarioSprInteractRt, hasta el contacto (el Rex tiene Tweaker167A bit 7:
+   la reaccion la hace el propio sprite) */
+static int mario_spr_interact(u8 x)
+{
+    if (!(SPR(wm_Tweaker167A, x) & 0x20)
+        && (((x ^ R8(wm_FrameA)) & 1) | SPR(wm_OffscreenHorz, x)))
+        return 0;
+    (void)sub_horiz_pos(x);
+    if ((u8)(R8(m15) + 0x50) >= 0xA0)
+        return 0;
+    {   /* CODE_01AD42 */
+        u16 d = (u16)(R16(wm_PlayerYPosLv) - (SPR(wm_SpriteYLo, x) | SPR(wm_SpriteYHi, x) << 8));
+        W8(m14, (u8)d);
+        if ((u8)((u8)d + 0x60) >= 0xC0)
+            return 0;
+    }
+    if (R8(wm_MarioAnimation) >= 1)
+        return 0;
+    if (!(R8(wm_LevelMode) & 0x40) && (R8(wm_IsBehindScenery) ^ SPR(wm_SprBehindScrn, x)))
+        return 0;
+    if (!spr_mario_contact(x))
+        return 0;
+    if (!NEG(SPR(wm_Tweaker167A, x))) {
+        spr_unsup();                        /* DefaultInteractR: otros sprites */
+        return 0;
+    }
+    return 1;
+}
+
+/* RexMainRt (sin SprSprInteract: pendiente) */
 static void rex_main(u8 x)
 {
     u8 a, y;
@@ -420,6 +478,36 @@ static void rex_main(u8 x)
         spr_update_pos(x);
     if (SPR(wm_SprObjStatus, x) & 0x03)
         SETSPR(wm_SpriteDir, x, SPR(wm_SpriteDir, x) ^ 1);
+    /* SprSprInteract: pendiente */
+    if (!mario_spr_interact(x))
+        return;
+    if (R8(wm_StarPowerTimer)) { spr_unsup(); return; }     /* RexStarKill */
+    if (SPR(wm_SpriteDecTbl2, x))
+        return;
+    SETSPR(wm_SpriteDecTbl2, x, 0x08);
+    if (NEG((u8)(R8(wm_MarioSpeedY) - 0x10))) {             /* RexWins */
+        if (R8(wm_PlayerHurtTimer) | R8(wm_OnYoshi))
+            return;
+        mario_events |= MEV_HURT;
+        spr_unsup();                        /* HurtMario */
+        return;
+    }
+    mario_events |= MEV_SPRITE;             /* RexPoints, DisplayContactGfx */
+    if (!R8(wm_IsClimbing))                 /* BoostMarioSpeed */
+        W8(wm_MarioSpeedY, NEG(R8(wm_JoyPadA)) ? 0xA8 : 0xD0);
+    if (R8(wm_IsSpinJump) | R8(wm_OnYoshi)) {   /* RexSpinKill */
+        SETSPR(wm_SpriteStatus, x, 0x04);
+        SETSPR(wm_SpriteDecTbl1, x, 0x1F);
+        W8(wm_SoundCh1, 0x08);
+        return;
+    }
+    SETSPR(wm_SpriteState, x, SPR(wm_SpriteState, x) + 1);
+    if (SPR(wm_SpriteState, x) == 2) {
+        SETSPR(wm_SpriteDecTbl3, x, 0x20);
+        return;
+    }
+    SETSPR(wm_DisSprCapeContact, x, 0x0C);  /* SmushRex */
+    SETSPR(wm_Tweaker1662, x, 0);
 }
 
 /* CODE_0180D2 (los temporizadores) + HandleSprite, para una ranura */
