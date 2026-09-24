@@ -53,9 +53,13 @@ CL_LINES    equ 92
 ; (COP2LCH, COP2LCL, COPJMP2). Tamano fijo, contenido de largo variable:
 ; los huecos no le cuestan tiempo al copper.
 MIDMAX      equ 12
-SEG         equ 64+MIDMAX*8+12  ; 172 (tools/mkscroll.py: SEG)
+SEG         equ 64+MIDMAX*12+12 ; 220 (tools/mkscroll.py: SEG). Una carga
+                                ; ocupa hasta 12 bytes: 2 rellenos + MOVE
 CL_SIZE     equ CL_LINES+SEG*LINES+4
-HOFS        equ $40             ; posicion h (color clocks) de la x = 0 de pantalla
+HOFS        equ $38             ; h de un WAIT = HOFS + x / 2 (medido, copcal.py)
+LASTX       equ 312             ; ninguna carga despues de esta x
+BLANKH      equ $e2             ; el borrado empieza en esta h de la linea
+                                ; ANTERIOR: 7 + k MOVE terminan antes de x = 0
         ifnd    TXOFS
 TXOFS       equ 5               ; carga: x = fin del tramo anterior + TXOFS
         endc
@@ -95,7 +99,8 @@ V_LB    equ 46                  ; build_mid: bases de la lista que se escribe
 V_SHB   equ 50
 V_WKB   equ 54
 V_MLXB  equ 58
-V_SIZE  equ 62
+V_DATA  equ 62                  ; .l datos (build_copper usa a3)
+V_SIZE  equ 66
 
 CIAB_TALO   equ $bfd400
 CIAB_TAHI   equ $bfd500
@@ -350,9 +355,10 @@ apply_colors:
         move.w  V_S(a5),d0
 .l:     cmp.w   (a0),d0
         blo.s   .done                       ; x > s ($FFFF: fin)
-        move.w  2(a0),d1
-        move.w  4(a0),(a1,d1.w)             ; en las dos listas
-        move.w  4(a0),(a2,d1.w)
+        moveq   #0,d1                       ; desplazamiento SIN signo: pasa
+        move.w  2(a0),d1                    ; de 32 767 desde la linea 149
+        move.w  4(a0),(a1,d1.l)             ; en las dos listas
+        move.w  4(a0),(a2,d1.l)
         addq.l  #6,a0
         bra.s   .l
 .done:  move.l  a0,V_CHG(a5)
@@ -379,7 +385,7 @@ init_lo:                                    ; lo_tab[L] = (MLX[L], nxt = 0)
         lea     lo_tab(pc),a1
         move.w  #LINES-1,d0
 .l:     move.w  (a0)+,(a1)+
-        clr.w   (a1)+
+        addq.l  #2,a1                       ; +2: inicio de las cargas (build_copper)
         dbf     d0,.l
         rts
 
@@ -506,38 +512,38 @@ build_mid:
         move.w  (a2),d3                     ; d3 = fin de la linea
 .adv:   cmp.w   d3,d2
         bhs.s   .adv_done
+        moveq   #0,d0
         move.w  d2,d0
-        lsl.w   #3,d0
-        cmp.w   (a1,d0.w),d6                ; fin del tramo anterior < s?
+        lsl.l   #4,d0                       ; 16 bytes por carga
+        cmp.w   (a1,d0.l),d6                ; fin del tramo anterior < s?
         bls.s   .adv_done
         addq.w  #1,d2
         bra.s   .adv
 .adv_done:
         move.w  d2,(a4)
-        move.w  #$ffff,d0                   ; nxt = fin de la carga d2 - 319
         move.w  #$ffff,(a6)                 ; vu = fin de la carga d2 + 1
         cmp.w   d3,d2
         bhs.s   .nx
-        move.w  d2,d0
-        lsl.w   #3,d0
-        move.w  (a1,d0.w),d0
-        move.w  d0,(a6)
-        addq.w  #1,(a6)
-        sub.w   #319,d0
-        bcc.s   .nx
         moveq   #0,d0
-.nx:    move.w  d0,2(a4)
-        lea     64(a0),a3                   ; a3 = donde van las cargas
+        move.w  d2,d0
+        lsl.l   #4,d0
+        move.w  (a1,d0.l),d0
+        addq.w  #1,d0
+        move.w  d0,(a6)
+.nx:    move.w  2(a4),d0                    ; inicio de las cargas (build_copper)
+        lea     (a0,d0.w),a3                ; a3 = donde van las cargas
         moveq   #0,d4                       ; d4 = cargas escritas
-        moveq   #0,d1                       ; d1 = ultima h
+        moveq   #0,d1                       ; d1 = T: x en que el copper puede
+                                            ; escribir (el borrado ya termino)
 .ld:    cmp.w   d3,d2
         bhs     .ld_done
+        moveq   #0,d0
         move.w  d2,d0
-        lsl.w   #3,d0
-        lea     (a1,d0.w),a5                ; OJO: a5 prestado (vars)
-        cmp.w   (a5),d5                     ; fin anterior >= s + 320: ya no
+        lsl.l   #4,d0
+        lea     (a1,d0.l),a5                ; OJO: a5 prestado (vars)
+        cmp.w   8(a5),d5                    ; x planificada >= s + 320: ya no
         bhi.s   .in
-        move.w  (a5),d0                     ; entra cuando s > fin - 320
+        move.w  8(a5),d0                    ; entra cuando s > x - 320
         sub.w   #319,d0
         bcc.s   .vu1
         moveq   #0,d0
@@ -553,33 +559,41 @@ build_mid:
         bhs     .next_ld
         move.w  d0,(a6)
         bra     .next_ld
-.vis:   move.w  (a5),d0                     ; al principio de la ventana: si
-        addq.w  #TXOFS,d0                   ; cambian varios registros juntos,
-                                            ; cada MOVE llega 16 px despues del
-                                            ; anterior (ventanas >= 48 px)
-        move.w  d0,-(sp)                    ; x objetivo
+        ; modelo medido (tools/copcal.py, P39): MOVE en T, T += 16; un WAIT
+        ; cuesta 32 px; hasta 32 px de espera, 1-2 MOVE de relleno a $1FE
+.vis:   move.w  (a5),d0                     ; se puede escribir desde fin + 1
+        addq.w  #1,d0
         sub.w   d6,d0
         bpl.s   .pos
         moveq   #0,d0
-.pos:   lsr.w   #1,d0
+.pos:   sub.w   d1,d0                       ; d0 = espera = liberacion - T
+        ble.s   .mv                         ; ya se puede: solo MOVE
+        cmp.w   #32,d0
+        bhi.s   .wait
+.fill:  move.l  #$01fe0000,(a3)+            ; relleno: 16 px
+        add.w   #16,d1
+        sub.w   #16,d0
+        bgt.s   .fill
+        bra.s   .mv
+.wait:  move.w  8(a5),d0                    ; WAIT en la x planificada
+        move.w  d0,-(sp)                    ; (sombra: x objetivo)
+        sub.w   d6,d0
+        bpl.s   .pw
+        moveq   #0,d0
+.pw:    move.w  d1,-(sp)
+        add.w   #32,(sp)                    ; T + 32: lo minimo que cuesta
+        cmp.w   (sp)+,d0
+        bhs.s   .pw2
+        move.w  d1,d0
+        add.w   #32,d0
+.pw2:   move.w  d0,d1                       ; T = x del MOVE
+        lsr.w   #1,d0
         add.w   #HOFS,d0
         and.w   #$fe,d0
-        cmp.w   d1,d0
-        bhs.s   .h
-        move.w  d1,d0
-.h:     cmp.w   #$e2,d0
+        cmp.w   #$e2,d0
         bls.s   .h2
         move.w  #$e2,d0
-.h2:    tst.w   d4                          ; a menos de 16 px de la anterior:
-        beq.s   .wait                       ; sin WAIT (el copper en DPF tiene
-        sub.w   d1,d0                       ; una ranura cada 16 px y un WAIT
-        cmp.w   #8,d0                       ; gasta ranuras como un MOVE)
-        bhi.s   .w0
-        addq.l  #2,sp                       ; sin WAIT: sin sombra
-        bra.s   .mv
-.w0:    add.w   d1,d0
-.wait:  move.w  d0,d1
-        or.w    d7,d0
+.h2:    or.w    d7,d0
         move.w  d0,(a3)                     ; WAIT
         move.w  #$fffe,2(a3)
         move.l  a3,d0
@@ -590,8 +604,13 @@ build_mid:
         move.w  (sp)+,2(a6,d0.w)
         addq.w  #4,2(a6)
         addq.l  #4,a3
-.mv:    move.w  4(a5),(a3)+                 ; MOVE registro, color
+.mv:    cmp.w   #LASTX,d1                   ; mas alla del borde derecho: se
+        bhi.s   .ld_done                    ; escribiria DESPUES del borrado
+                                            ; de la linea siguiente y le
+                                            ; cambiaria el color entera
+        move.w  4(a5),(a3)+                 ; MOVE registro, color
         move.w  6(a5),(a3)+
+        add.w   #16,d1
         addq.w  #1,d4
         cmp.w   #MIDMAX,d4
         beq.s   .ld_done
@@ -733,6 +752,7 @@ bwait:  btst    #6,DMACONR(a4)              ; dos veces: bug del Agnus viejo
 ;----------------------------------------------------------------------
 build_copper:                               ; a0 = lista
         movem.l a2,-(sp)
+        move.l  a3,V_DATA(a5)
         move.l  a0,d4                       ; d4 = principio de la lista
         move.l  #$008e2c81,(a0)+            ; DIWSTRT
         move.l  #$00900cc1,(a0)+            ; DIWSTOP: 224 lineas
@@ -762,18 +782,13 @@ build_copper:                               ; a0 = lista
         moveq   #0,d2                       ; d2 = linea
 .line:  move.l  a0,d5                       ; d5 = principio del segmento
         move.w  d2,d0
-        add.w   #$2c,d0                     ; posicion vertical
-        move.w  d0,d3
-        lsl.w   #8,d3
-        or.w    #$0007,d3
-        cmp.w   #$100,d0
-        bne.s   .nowrap
-        move.l  #$ffdffffe,(a0)+            ; cruzar la linea 255
-        bra.s   .w
-.nowrap:
-        move.w  d3,(a0)+
+        add.w   #$2c-1,d0                   ; el borrado, en el borde derecho
+        move.w  d0,d3                       ; de la linea anterior (medido: con
+        lsl.w   #8,d3                       ; 7-9 MOVE termina antes de x = 0;
+        or.w    #BLANKH|1,d3                ; en la 255, $FFE3 tambien cruza
+        move.w  d3,(a0)+                    ; a la 256)
         move.w  #$fffe,(a0)+
-.w:     move.w  d3,(a0)+
+        move.w  d3,(a0)+
         move.w  #$fffe,(a0)+
         move.w  #$0182,d0                   ; COLOR01..07: capa 1
         moveq   #7-1,d1
@@ -781,12 +796,25 @@ build_copper:                               ; a0 = lista
         move.w  (a1)+,(a0)+
         addq.w  #2,d0
         dbf     d1,.c1
-        move.w  #$0192,d0                   ; COLOR09..15: capa 2
-        moveq   #7-1,d1
-.c2:    move.w  d0,(a0)+
-        move.w  (a2)+,(a0)+
+        move.w  #$0192,d0                   ; COLOR09..15: capa 2, solo los que
+        moveq   #7-1,d1                     ; cambian respecto de la linea
+.c2:    tst.w   d2                          ; anterior (casi nunca)
+        beq.s   .c2w
+        move.w  -14(a2),d4
+        cmp.w   (a2),d4
+        beq.s   .c2n
+.c2w:   move.w  d0,(a0)+
+        move.w  (a2),(a0)+
+.c2n:   addq.l  #2,a2
         addq.w  #2,d0
         dbf     d1,.c2
+        move.l  a0,d0                       ; inicio de las cargas de la linea
+        sub.l   d5,d0                       ; -> lo_tab[L] + 2 (build_mid)
+        lea     lo_tab(pc),a3
+        move.w  d2,d1
+        lsl.w   #2,d1
+        move.w  d0,2(a3,d1.w)
+        move.l  V_DATA(a5),a3
         move.l  d5,d0                       ; salto al segmento siguiente
         add.l   #SEG,d0
         move.w  #$0084,(a0)+

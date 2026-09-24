@@ -26,17 +26,18 @@ Formato (big-endian):
   INI  224 lineas x 7 colores: la capa 1 con cam_x = 0
   CHG  cambios: u16 x, u16 desplazamiento del valor en la lista del copper
        por lineas (linea*SEG + 8 + (registro-1)*4 + 2: cada segmento de
-       linea empieza con 2 WAIT + 7 MOVE de la capa 1 + 7 de la capa 2),
+       linea empieza con 2 WAIT + 7 MOVE de la capa 1),
        u16 color; ordenados por x; termina en x = $FFFF
   L2B  capa 2, 224 lineas x 3 planos x 106 bytes (848 px: el periodo de
        512 mas 336, para que el puntero no tenga que dar la vuelta)
   L2P  224 lineas x 7 colores (registros 9..15)
   MLX  225 x u16: primera carga de cada linea en MLD
-  MLD  cargas a mitad de linea de la capa 1, en coordenadas del nivel:
-       u16 fin del tramo anterior del registro, u16 principio del nuevo,
-       u16 registro ($182..$18E), u16 color; por linea, ordenadas por el
-       fin del tramo anterior. Hacen falta cuando el tramo anterior todavia
-       se ve (fin >= cam_x) y el nuevo empieza en pantalla
+  MLD  cargas a mitad de linea de la capa 1, en coordenadas del nivel, 16
+       bytes: u16 fin del tramo anterior del registro, u16 principio del
+       nuevo, u16 registro ($182..$18E), u16 color, u16 x planificada
+       (plan(): modelo medido del copper), 3 x u16 0; por linea, en el orden
+       del plan. Hacen falta cuando el tramo anterior todavia se ve y el
+       nuevo empieza en pantalla
 
     python3 tools/mkscroll.py
 """
@@ -52,7 +53,44 @@ import render_d                                 # noqa: E402
 
 WORK = os.path.join(HERE, "..", "work")
 Y0, LINES, VIS = 192, 224, 320
-SEG = 172                   # bytes por linea en la lista del copper (scroll.s: SEG)
+SEG = 220                   # bytes por linea en la lista del copper (scroll.s: SEG)
+
+
+def plan(loads):
+    """Planifica las cargas de una linea con el modelo MEDIDO del copper en
+    DPF (tools/copcal.py, P39): tiempo T en px de pantalla; un MOVE escribe
+    en T y T += 16; un WAIT cuesta 32 px (T = max(T + 32, x)); hasta 32 px
+    de espera salen mejor con 1-2 MOVE de relleno. Orden: por plazo (EDF)
+    entre las liberadas. Carga = (fin anterior, principio nuevo, reg,
+    color): se libera en fin + 1 y vence en principio.
+    Devuelve [(x en que se escribe, carga)] y cuantas llegan tarde."""
+    pend = sorted(loads)
+    out, ready, i, late = [], [], 0, 0
+    T = -10 ** 6
+    while i < len(pend) or ready:
+        if not ready and pend[i][0] + 1 > T:
+            nxt = pend[i][0] + 1
+            while i < len(pend) and pend[i][0] + 1 <= nxt:
+                ready.append(pend[i])
+                i += 1
+        while i < len(pend) and pend[i][0] + 1 <= T:
+            ready.append(pend[i])
+            i += 1
+        ready.sort(key=lambda e: e[1])
+        e = ready.pop(0)
+        r = e[0] + 1
+        g = r - T
+        if g <= 0:
+            land = T
+        elif g <= 32:
+            land = T + 16 * ((g + 15) // 16)
+        else:
+            land = max(T + 32, r)
+        if land > e[1]:
+            late += 1
+        out.append((land, e))
+        T = land + 16
+    return out, late
 L2W = 848
 
 
@@ -76,11 +114,16 @@ def main():
                     mld[L].append((prev[1], cur[0], 0x180 + 2 * r, cur[3]))
     chg.sort()
     mlx, mldb = [], bytearray()
+    late = 0
     for L in range(LINES):
-        mlx.append(len(mldb) // 8)
-        for e in sorted(mld[L]):
-            mldb += struct.pack(">HHHH", *e)
-    mlx.append(len(mldb) // 8)
+        mlx.append(len(mldb) // 16)
+        out, lt = plan(mld[L])
+        late += lt
+        for tx, (pe, cs, r, c) in out:
+            mldb += struct.pack(">HHHHHHHH", pe, cs, r, c, tx, 0, 0, 0)
+    mlx.append(len(mldb) // 16)
+    print("cargas a mitad de linea que llegan tarde en el plan (modelo medido): %d de %d"
+          % (late, len(mldb) // 16))
     rows0 = Y0 // 16
     mp = bytearray()
     for c in range(cols):
