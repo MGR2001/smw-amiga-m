@@ -62,6 +62,7 @@ LASTX       equ 316             ; ninguna carga despues de esta x
 WOFS        equ 8               ; los WAIT, 8 px mas tarde: en el scroll las cargas
                                 ; caian ~5 px antes que en copcal (sin explicar)
         endc
+VMARG       equ 4               ; margen de validez de una escritura fija (px)
 XKNEE       equ 304             ; medido (copcal.py): hasta h = $D0, x = 2 (h - $38);
 HKNEE       equ $d0             ; despues, 1 px por unidad de h ($D4 -> 307, $DC -> 315)
 BLANKH      equ $e2             ; el borrado empieza en esta h de la linea
@@ -496,11 +497,8 @@ build_mid:
         lsl.w   #8,d7
         or.w    #1,d7                       ; d7 = WAIT (v << 8) | 1
         bsr     .do_line
-        moveq   #0,d0                       ; wake: 0 si hay cargas escritas
-        cmp.w   #4,2(a6)                    ; (sus h cambian cada frame);
-        bne.s   .wk                         ; si no, vu
-        move.w  (a6),d0
-.wk:    movem.l (sp)+,d3/a4
+        move.w  (a6),d0                     ; wake = vu: la linea no se vuelve
+.wk:    movem.l (sp)+,d3/a4                 ; a mirar hasta que haga falta
         move.w  d0,-2(a4)
         dbf     d3,.scan
         movem.l (sp)+,d2-d7/a2-a6
@@ -560,15 +558,7 @@ build_mid:
         bra.s   .adv
 .adv_done:
         move.w  d2,(a4)
-        move.w  #$ffff,(a6)                 ; vu = fin de la carga d2 + 1
-        cmp.w   d3,d2
-        bhs.s   .nx
-        moveq   #0,d0
-        move.w  d2,d0
-        lsl.l   #4,d0
-        move.w  (a1,d0.l),d0
-        addq.w  #1,d0
-        move.w  d0,(a6)
+        move.w  #$ffff,(a6)                 ; vu: lo minimo de cada carga (.mv)
 .nx:    move.w  2(a4),d0                    ; inicio de las cargas (build_copper)
         lea     (a0,d0.w),a3                ; a3 = donde van las cargas
         moveq   #0,d4                       ; d4 = cargas escritas
@@ -590,14 +580,11 @@ build_mid:
         bhs     .ld_done
         move.w  d0,(a6)
         bra     .ld_done
-.in:    move.w  (a5),d0                     ; el orden es por x planificada,
-        cmp.w   d0,d6                       ; no por fin anterior: saltar las
-        bhi     .next_ld                    ; que ya caducaron (fin < s: las
-        addq.w  #1,d0                       ; pone el borrado) y vu = el primer
-        cmp.w   (a6),d0                     ; fin + 1 de las que quedan
-        bhs.s   .in2
-        move.w  d0,(a6)
-.in2:   move.w  2(a5),d0                    ; principio del nuevo
+.in:    cmp.w   (a5),d6                     ; el orden es por x planificada,
+        bhi     .next_ld                    ; no por fin anterior: saltar las
+                                            ; que ya caducaron (las pone el
+                                            ; borrado)
+        move.w  2(a5),d0                    ; principio del nuevo
         cmp.w   d0,d5
         bhi.s   .vis
         sub.w   #319,d0                     ; empieza fuera: se vera cuando
@@ -663,7 +650,20 @@ build_mid:
                                             ; cambiaria el color entera
         move.w  4(a5),(a3)+                 ; MOVE registro, color
         move.w  6(a5),(a3)+
-        add.w   #16,d1
+        ; la escritura queda FIJA en pantalla (x = d1): vale mientras el
+        ; principio del tramo nuevo, que se corre a la izquierda con la
+        ; camara, siga despues de ella: s <= principio - d1 - VMARG
+        move.w  2(a5),d0
+        sub.w   d1,d0
+        sub.w   #VMARG-1,d0
+        cmp.w   d6,d0
+        bhi.s   .vm
+        move.w  d6,d0                       ; ya llega tarde: no reconstruir
+        add.w   #16,d0                      ; la linea en cada frame
+.vm:    cmp.w   (a6),d0
+        bhs.s   .vm2
+        move.w  d0,(a6)
+.vm2:   add.w   #16,d1
         addq.w  #1,d4
         cmp.w   #MIDMAX,d4
         beq.s   .ld_done
