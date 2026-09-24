@@ -11,7 +11,9 @@ a mitad de linea, lo que tiene que dar el scroll definitivo).
 
 El origen de la captura (x0, y0) se busca por ajuste. Los bordes de 1 px
 y los puntos de la tierra salen distintos por el reescalado x2,125 de la
-captura, no por la Amiga: el % no llega a 0 aunque este todo bien.
+captura, no por la Amiga: el % no llega a 0 aunque este todo bien. Los
+"fallos limpios" (el color capturado es un color OCS exacto, no una
+mezcla) son la medida util.
 """
 import argparse
 import os
@@ -74,12 +76,24 @@ def main():
             if best is None or ok > best[0]:
                 best = (ok, x0, y0)
     _, x0, y0 = best
+    for fx in np.arange(x0 - 0.5, x0 + 0.5, 0.125):     # afinar
+        for fy in np.arange(y0 - 0.5, y0 + 0.5, 0.125):
+            xs = (fx + (np.arange(W) + 0.5) * SC).astype(int)
+            ys = (fy + (np.arange(LINES) + 0.5) * SC).astype(int)
+            ok = (np.abs(cap[ys][:, xs] - e).max(axis=2) <= 8).mean()
+            if ok > best[0]:
+                best = (ok, fx, fy)
+    _, x0, y0 = best
     xs = (x0 + (np.arange(W) + 0.5) * SC).astype(int)
     ys = (y0 + (np.arange(LINES) + 0.5) * SC).astype(int)
     got = cap[ys][:, xs]
     bad = np.abs(got - e).max(axis=2) > 8
-    print("origen de la captura (%.1f, %.1f); %d px distintos de %d (%.2f %%)"
-          % (x0, y0, bad.sum(), bad.size, 100 * bad.mean()))
+    # un color que no es del OCS (canales multiplos de 17) es una mezcla de
+    # dos pixeles del reescalado: no cuenta como fallo de la Amiga
+    clean = bad & (got % 17 == 0).all(axis=2)
+    print("origen de la captura (%.3f, %.3f); %d px distintos de %d (%.2f %%); "
+          "fallos limpios (color OCS exacto y distinto): %d (%.2f %%)"
+          % (x0, y0, bad.sum(), bad.size, 100 * bad.mean(), clean.sum(), 100 * clean.mean()))
     img = np.vstack([e, got, np.where(bad[..., None], [255, 0, 255], got // 2 + 64)])
     Image.fromarray(img.astype(np.uint8)).resize((960, 2016), 0).save(a.png)
     print("-> %s (esperado / captura / fallos en magenta)" % a.png)
