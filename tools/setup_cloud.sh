@@ -25,6 +25,10 @@ mkdir -p "$VBCC/bin" "$B"
 
 command -v gcc >/dev/null || { echo "falta gcc"; exit 1; }
 command -v cmake >/dev/null || apt-get install -y -q cmake >/dev/null
+# FS-UAE sin pantalla para correr los ADF (tools/fsuae_shot.sh); si apt falla,
+# todo lo demas sigue sirviendo
+command -v fs-uae >/dev/null || { apt-get update -q >/dev/null 2>&1;
+    apt-get install -y -q fs-uae xvfb x11-apps netpbm >/dev/null 2>&1 || echo "AVISO: sin FS-UAE"; }
 
 # --- vasm (68000, sintaxis Motorola) --------------------------------------
 if [ ! -x "$VBCC/bin/vasmm68k_mot" ]; then

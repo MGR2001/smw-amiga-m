@@ -1437,30 +1437,41 @@ de OAM (`e45d`) ≈ 12 %, `E2BD` ≈ 9 %, los bucles de temporizadores de
 a byte en `ram[]` little-endian): hay margen de optimización, y el
 verificador asegura que no se rompe nada.
 
-**Paso siguiente en la PC local, 8d:** medir el frame del jugador en
-WinUAE cycle-exact.
+**8d, MEDIDA (2026-09-24, en cloud con FS-UAE cycle-exact):** un frame de
+nivel sin sprites (`level_frame`: cámara + gráficos + jugador + bloques),
+con la pantalla DPF de 6 planos encendida y el código en chip RAM:
+
+| estado | ticks CIA | ciclos | % de un frame PAL |
+|---|---|---|---|
+| corriendo (frame 5410) | 4857 | ~48 600 | **34,2 %** |
+| empieza un salto (frame 10983) | 5065 | ~50 700 | **35,6 %** |
+
+Musashi, sin DMA, estimaba 24,3 % de media: el resto es contención (DMA de
+6 planos, código en chip RAM). **Es mucho**: con los sprites de la etapa 9
+por delante, D1 (50 Hz) exige optimizar (ver el perfil) o mover el código a
+slow RAM no ayuda (P29). Se repite con:
 
 ```bash
-sh tools/logicbench_build.sh           # work/logicbench.adf (57 KB)
-```
-```powershell
-.\tools\shot.ps1 -Exact -Adf work\logicbench.adf -Out work\logicbench.png -Wait 80
-```
-```bash
-python tools/logicbench_read.py        # coste = W2-W1 (corriendo), W3-W1 (salto)
+sh tools/logicbench_build.sh && sh tools/fsuae_shot.sh work/logicbench.adf work/logicbench.png 30
+python3 tools/logicbench_read.py --shot work/logicbench.png --auto
 ```
 
-- W2/W3 = `mario_E2BD` + `mario_player` + `blocks_update` con el mapa del
-  nivel, desde los estados de los frames 5410 y 10983 (`marioverify ...
-  fulldump`). Anotar el resultado en §9 y compararlo con la estimación de
-  Musashi de arriba (la diferencia es el DMA).
-- `logicbench_read.py` no se corrió nunca contra una captura; se revisó
-  contra el arnés (mismo `show_results`/`measure` que `bench2.s`).
+**FS-UAE en cloud (`tools/fsuae_shot.sh`) sustituye a WinUAE para medir.**
+A500 por defecto de FS-UAE = cycle-exact (`cpu_cycle_exact`,
+`blitter_cycle_exact`, `cpu_speed=real`, `immediate_blits=false`), 512 KB
+chip + 512 KB slow; sin Kickstart propio usa el AROS que trae dentro, que
+arranca nuestro bootblock (lo que se mide toma la máquina después).
+Validación: `bench2.s` da W1 5,5-6,2 %, W2 38,1 %, W3 47,5/33,7 %, contra
+5,6-6,4 / 38,1 / 47,6-33,8 % en WinUAE; la calibración, 14 210 ticks por
+frame, es la misma. Las capturas salen a ×2,125: los `*_read.py` tienen
+`--auto`, que encuentra la rejilla de bits por las palabras de sincronía.
+**Lo que no sirve para probar en FS-UAE+AROS: el arranque en KS 1.2.**
 
-**Después (se puede hacer en cloud):**
+**Después (todo se puede hacer en cloud):**
 
-1. Optimizar el frame del jugador con el verificador como red: sondas,
-   `e45d`, temporizadores.
+1. Optimizar el frame del jugador con el verificador como red (`marioverify
+   full/loop`, `m68kverify`) y midiendo con FS-UAE: sondas de colisión,
+   `e45d`, temporizadores, cámara.
 2. Etapa 6: el scroll en la Amiga con el blob de la etapa 5
    (`work/yi1_d.dat`, formato en la cabecera de `tools/mkleveld.py`) y la
    cámara ya portada (`player/mcam.c`).
@@ -1511,9 +1522,10 @@ suelo) y `logicbench_build.sh` arma el ADF.
   ROM, los `.bin` del oráculo, los ADF y los renders.
 - `player/gen/smwrom00.c` tampoco. Se regenera con `python tools/smwgen.py`,
   que necesita la ROM (U).
-- En Claude cloud no hay WinUAE ni Kickstart, ni `smwrecomp`: **se puede
-  compilar y verificar contra el oráculo, pero no medir ni grabar.** 8d y la
-  grabación de las colinas tienen que correr en la PC local.
+- En Claude cloud no hay WinUAE, ni KS 1.2, ni `smwrecomp`: se compila, se
+  verifica contra el oráculo y **se mide con FS-UAE + AROS**; lo que queda
+  para la PC local es grabar partidas (8c: las colinas) y probar el
+  arranque en KS 1.2.
 - El grabador tiene límites que ya costaron partidas: 1024 caracteres por
   valor, 16 valores por respuesta y una sola conexión TCP. **Probar siempre
   el grabador antes de pedirle al usuario que juegue.**
@@ -1543,7 +1555,7 @@ iba a existir en la Amiga, y ponía la prueba de rendimiento en cuarto lugar.
 | 5 | **Conversor de nivel → Amiga, formato (d)** | Capa 1: 3 planos con la asignación de índices de `dpfsplit.py` (244 variantes de bloque) + tablas del copper por línea del nivel (cargas en el borrado y a mitad de línea con su ventana). Capa 2: bitmap de 3 planos de período 512 px + paleta por línea. `render_dat.py` renderiza el blob en el PC aplicando las tablas y se compara contra `d8d_g48m8_nivel.png` y la referencia con `cmp_ref.py` | **HECHO en cloud** (2026-09-24): `tools/mkd8in.py` → `tools/mkleveld.py` → `work/yi1_d.dat` (199 KB) → `tools/render_d.py`. Todo sale de los datos del ROM (la capa 2 también: `tools/mkbg.py`). Colores cuantizados a 12 bits (OCS) antes de repartir registros. 244 bloques, 9575 eventos, derrame 357 px (0,1 %). El render **solo desde el blob** = la imagen ideal (0 px distintos); moviendo la cámara cada 4 px, 0,018 % de píxeles mal (peor encuadre 132 px). **Falta en la PC**: `cmp_ref.py` contra `SuperMarioWorldMap02.png` |
 | 6 | Scroll del nivel real en la Amiga | PF1 con `BPLCON1` bits 0-3 + columna nueva; PF2 con bits 4-7 a media velocidad (paralaje); lista del copper por frame (segmentos por línea encadenados, §9 punto 10). Recorre las 20 pantallas a 50 Hz; captura de WinUAE = render del PC en varios puntos; coste medido con el método de `bench2.s` | — |
 | 7 | **Capa 2** | En (d) la hacen las etapas 5 y 6 (PF2 con scroll por hardware). Queda la verificación: recortes apilados contra `SuperMarioWorldMap02.png`, el diff tiene que bajar del 25.5 % | — |
-| 8 | **Mario**, por partes verificadas bit a bit contra el oráculo `work/oracle_yi1.txt` (partida real grabada en `smwrecomp`: joypad + WRAM `$0000-$00FF` y `$13C0-$14FF` + OAM por frame): **8a** velocidad horizontal, gravedad y saltos; **8b** colisiones con bloques (en SMW el "acts like" es el propio índice Map16); **8c** pendientes de 45° (hace falta grabar las colinas: a toda carrera, en las dos direcciones, parado encima y deslizándose); **8d** coste medido en la Amiga | Cada parte: el estado de Mario del port = el del oráculo en todos los frames de sus tramos | **8a, 8b, animación y gráficos HECHOS** (2026-09-24): 6510/6547 pares exactos, los 37 restantes son sprites (etapa 9); OAM 6869/6869. 8c: las pendientes de la partida salen exactas, falta la grabación de las colinas. 8d: ADF listo, sin medir (estimado 18,8 % de frame sin DMA) |
+| 8 | **Mario**, por partes verificadas bit a bit contra el oráculo `work/oracle_yi1.txt` (partida real grabada en `smwrecomp`: joypad + WRAM `$0000-$00FF` y `$13C0-$14FF` + OAM por frame): **8a** velocidad horizontal, gravedad y saltos; **8b** colisiones con bloques (en SMW el "acts like" es el propio índice Map16); **8c** pendientes de 45° (hace falta grabar las colinas: a toda carrera, en las dos direcciones, parado encima y deslizándose); **8d** coste medido en la Amiga | Cada parte: el estado de Mario del port = el del oráculo en todos los frames de sus tramos | **8a, 8b, animación, gráficos y cámara HECHOS** (2026-09-24): 6510/6547 pares exactos, los 37 restantes son sprites (etapa 9); OAM 6869/6869; lazo cerrado solo con el joypad. 8c: las pendientes de la partida salen exactas, falta la grabación de las colinas. **8d medida: 34-36 % de un frame** (FS-UAE cycle-exact) |
 | 9 | **Sprites del nivel** (D3): Rex, Banzai Bill, Jumping Piranha; después Chuck, Sliding Koopa, bloque volador, Info Box, meta | Aparecen en las posiciones de `spr.lv` y se comportan como en la SNES | — |
 | 10 | HUD | Barra de estado con su propia paleta (copper) | — |
 | 11 | Audio (D5) | Música del nivel + efectos, 4 canales | — |

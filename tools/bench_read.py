@@ -39,18 +39,57 @@ NAMES = [
 ]
 
 
-def read_words(path, ox, oy, sc):
+def read_words(path, ox, oy, sc, scy=None):
     im = Image.open(path).convert("L")
     px = im.load()
+    scy = sc if scy is None else scy
     words = []
     for i in range(NROWS):
-        y = oy + (8 + 12 * i + 4) * sc
+        y = int(round(oy + (8 + 12 * i + 4) * scy))
         v = 0
         for k in range(16):
-            x = ox + ((2 + k) * 16 + 8) * sc
+            x = int(round(ox + ((2 + k) * 16 + 8) * sc))
             v = (v << 1) | (1 if px[x, y] > 128 else 0)
         words.append(v)
     return words
+
+
+def autodetect(path):
+    """(ox, oy, sx, sy) de una captura con cualquier escala (FS-UAE en cloud
+    escala x2.125, WinUAE x2): las filas de bits son las bandas blancas y la
+    fila 0 es la sincronia $A55A (bits 0 y 14 a 1)."""
+    im = Image.open(path).convert("L")
+    w, h = im.size
+    px = im.load()
+    rows = [y for y in range(h) if any(px[x, y] > 128 for x in range(0, w, 2))]
+    bands, start = [], None
+    rows_set = set(rows)
+    for y in range(h + 1):
+        if y in rows_set and start is None:
+            start = y
+        elif y not in rows_set and start is not None:
+            bands.append((start, y - 1))
+            start = None
+    if len(bands) < NROWS:
+        raise SystemExit("autodetect: %d bandas blancas, esperaba %d" % (len(bands), NROWS))
+    bands = bands[:NROWS]
+    c0 = (bands[0][0] + bands[0][1]) / 2.0
+    c18 = (bands[NROWS - 1][0] + bands[NROWS - 1][1]) / 2.0
+    sy = (c18 - c0) / (12.0 * (NROWS - 1))
+    oy = c0 - 12 * sy
+    yc = int(round(c0))
+    runs, x = [], 0
+    while x < w:
+        if px[x, yc] > 128:
+            x0 = x
+            while x < w and px[x, yc] > 128:
+                x += 1
+            runs.append((x0, x - 1))
+        x += 1
+    # $A55A = 1010 0101 0101 1010: el primer tramo es el bit 0, el ultimo el 14
+    sx = (runs[-1][0] - runs[0][0]) / (14.0 * 16)
+    ox = runs[0][0] - 32 * sx
+    return ox, oy, sx, sy
 
 
 def main():
@@ -58,9 +97,14 @@ def main():
     ap.add_argument("--shot", default=os.path.join(_WORK, "shot.png"))
     ap.add_argument("--x", type=int, default=SHOT_X)
     ap.add_argument("--y", type=int, default=SHOT_Y)
+    ap.add_argument("--auto", action="store_true", help="detectar escala y origen (FS-UAE)")
     a = ap.parse_args()
 
-    w = read_words(a.shot, a.x, a.y, SCALE)
+    if a.auto:
+        ox, oy, sx, sy = autodetect(a.shot)
+        w = read_words(a.shot, ox, oy, sx, sy)
+    else:
+        w = read_words(a.shot, a.x, a.y, SCALE)
     if w[0] != 0xA55A or w[18] != 0x5AA5:
         print("FALLO: sincronia %04X / %04X (esperaba A55A / 5AA5)" % (w[0], w[18]))
         print("       la captura no es la pantalla de resultados de bench.s")

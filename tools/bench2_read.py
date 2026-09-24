@@ -10,7 +10,7 @@ import argparse
 import os
 import sys
 
-from bench_read import read_words, SHOT_X, SHOT_Y, SCALE, E_CLOCK, LINES_PER_FRAME
+from bench_read import read_words, autodetect, SHOT_X, SHOT_Y, SCALE, E_CLOCK, LINES_PER_FRAME
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 NAMES = [
@@ -24,8 +24,13 @@ NAMES = [
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--shot", default=os.path.join(HERE, "..", "work", "bench2.png"))
+    ap.add_argument("--auto", action="store_true", help="detectar escala y origen (FS-UAE)")
     a = ap.parse_args()
-    w = read_words(a.shot, SHOT_X, SHOT_Y, SCALE)
+    if a.auto:
+        ox, oy, sx, sy = autodetect(a.shot)
+        w = read_words(a.shot, ox, oy, sx, sy)
+    else:
+        w = read_words(a.shot, SHOT_X, SHOT_Y, SCALE)
     if w[0] != 0xA55A or w[18] != 0x5AA5:
         print("FALLO: sincronia %04X / %04X" % (w[0], w[18]))
         return 1
