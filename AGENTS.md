@@ -1621,6 +1621,11 @@ Fallos limpios contra el esperado, en 6 puntos del nivel (FS-UAE):
 | 3500 | — | 163 (0,23 %) |
 | 4500 | — | 635 (0,89 %): a la vista iguales; son bordes verticales de las montañas de la capa 2 (muestreo de la captura ×2,125) |
 
+Descontando el muestreo (`scroll_check.py` imprime también los fallos que
+no se explican por un vecino, ±1 px, ±1 línea): 500 → 74, 1000 → 45,
+1700 → 113, 2500 → 18, 3500 → 72, 4500 → 172. **Todos < 0,25 %.** Lo que
+queda son marcas sueltas en bordes de tubería y escalón.
+
 Coste (`-DBENCH`): 33,9 % sin columna, 42,5 % con columna (igual que antes).
 
 **Siguiente (etapa 6):** bajar el coste de `build_mid` (tablas en vez de

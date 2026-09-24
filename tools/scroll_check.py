@@ -13,7 +13,8 @@ El origen de la captura (x0, y0) se busca por ajuste. Los bordes de 1 px
 y los puntos de la tierra salen distintos por el reescalado x2,125 de la
 captura, no por la Amiga: el % no llega a 0 aunque este todo bien. Los
 "fallos limpios" (el color capturado es un color OCS exacto, no una
-mezcla) son la medida util.
+mezcla) son la medida util; los "que no se explican por un vecino"
+(+-1 px, +-1 linea) descuentan ademas el muestreo de los bordes.
 """
 import argparse
 import os
@@ -94,6 +95,14 @@ def main():
     print("origen de la captura (%.3f, %.3f); %d px distintos de %d (%.2f %%); "
           "fallos limpios (color OCS exacto y distinto): %d (%.2f %%)"
           % (x0, y0, bad.sum(), bad.size, 100 * bad.mean(), clean.sum(), 100 * clean.mean()))
+    # ademas: fallos que no se explican por un vecino (+-1 px, +-1 linea):
+    # descuenta el muestreo de los bordes en la captura reescalada
+    nb = clean.copy()
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            en = np.roll(np.roll(e, dy, 0), dx, 1)
+            nb &= np.abs(got - en).max(axis=2) > 8
+    print("fallos que no se explican por un vecino: %d (%.3f %%)" % (nb.sum(), 100 * nb.mean()))
     img = np.vstack([e, got, np.where(bad[..., None], [255, 0, 255], got // 2 + 64)])
     Image.fromarray(img.astype(np.uint8)).resize((960, 2016), 0).save(a.png)
     print("-> %s (esperado / captura / fallos en magenta)" % a.png)
