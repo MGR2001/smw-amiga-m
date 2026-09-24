@@ -1580,6 +1580,44 @@ Esta sesión de Claude cloud trabajó en la rama `claude/agents-md-x4v1di`.
 Antes de nada: `git fetch && git checkout claude/agents-md-x4v1di` (o
 mergearla), y leer "Dónde quedó el trabajo" justo arriba.
 
+**Actualización (2026-09-24, 14:10 UTC) — optimización (cierre de sesión, LEER PRIMERO)**
+
+Hecho y **commiteado**:
+- `build_mid`: las cargas a mitad de línea quedan **fijas en pantalla**
+  mientras valen (`vu` = mínimo de `principio del tramo nuevo − x − VMARG`,
+  `wake` = `vu`; sin camino rápido por frame). Musashi: **29 800 → 16 300
+  ciclos** por frame, imagen igual o mejor (fallos que no se explican por
+  un vecino: 1000: 31, 1700: 91, 2500: 46, 4500: 127).
+
+En el árbol **SIN commitear** (`player/scroll.s`; ensambla, **sin
+verificar en imagen ni medir en FS-UAE**):
+- escaneo de `wake` por bloques de 16 líneas con su mínimo (`gmin_a/b`):
+  Musashi 16 300 → **13 400** ciclos;
+- `blit_steps`: la columna nueva repartida entre frames (`BLITS` = 4 pasos
+  por frame; paso 14 = la segunda copia). Busca bajar el pico de los
+  frames con columna (hoy 42 % contra 33 %). `blit_column` quedó sin uso.
+- Para cerrarlo: `scroll_check.py --mid` en x = 1000/1700/2500/4500 y
+  `-DBENCH -DSPEED=4` + `scroll_read.py --auto`; si todo está bien,
+  commit. Perfil por zonas de `build_mid` en Musashi: el script estaba en
+  `/tmp/b/me_prof.py` (se pierde con el contenedor; rehacerlo con
+  `tools/m68kverify.MusashiCPU` y el listado `-L`).
+
+**Dos subagentes quedaron trabajando al cerrar** (sus cambios están en el
+árbol, **sin commitear y sin revisar**):
+1. Optimización del frame de Mario + sprites en C (`player/manim.c`,
+   `mario.c`, `mcam.c`, `mcoll.c`, `mgfx.c`, `msprite.c`, `smwmac.h`).
+   Criterio de aceptación: `marioverify` full/gfx/loop/game/sprloop
+   idénticos a la base (full 3557/3573 2953/2974, gfx 6869/6869, loop 37,
+   game 1 resincronización) y `m68kverify --mode loop` (37) y
+   `--sprites` (4) iguales; base de ciclos: 31 100 / 44 400 (Musashi).
+   **Revisar con `git diff` y correr todo eso antes de commitear**; si algo
+   no cuadra, `git checkout` de esos ficheros.
+2. La causa del adelanto de ~5 px de las cargas con WAIT en el scroll
+   (hoy tapado con `WOFS` = 8), con `player/copcal.s` + `tools/copcal.py`
+   (modificados en el árbol): hipótesis, el retardo de `BPLCON1` o la
+   escala de la captura. Si no dejó conclusión, repetir el experimento
+   (bandas con distinto `BPLCON1` y contenido de franjas de 1 px).
+
 **Actualización (2026-09-24, 13:40 UTC) — etapa 6: copper calibrado, franja arreglada**
 
 1. **Calibración del copper** (`player/copcal.s` + `tools/copcal.py`, en la
