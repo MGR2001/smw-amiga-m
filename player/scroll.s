@@ -78,7 +78,22 @@ V_BUF1  equ 8                   ; .l buffer de PF1
 V_COP   equ 12                  ; .l lista del copper A
 V_COP2  equ 16                  ; .l lista del copper B
 V_BACK  equ 20                  ; .l la que se escribe este frame
-V_SIZE  equ 24
+; BENCH: medidas con el timer A de CIA-B (ticks de 1,41 us)
+V_T0    equ 24                  ; cuenta al empezar el trabajo del frame
+V_COLF  equ 26                  ; este frame dibujo una columna
+V_TPF   equ 28                  ; ticks por frame (calibracion)
+V_MAXC  equ 30                  ; max / suma / n, frames con columna
+V_SUMC  equ 32
+V_NC    equ 36
+V_MAXN  equ 38                  ; ... y sin columna
+V_SUMN  equ 40
+V_NN    equ 44
+V_SIZE  equ 46
+
+CIAB_TALO   equ $bfd400
+CIAB_TAHI   equ $bfd500
+CIAB_ICR    equ $bfdd00
+CIAB_CRA    equ $bfde00
 
         bra.w   entry
         dc.b    "A5PL"
@@ -178,7 +193,10 @@ entry:
         move.w  #$7fff,DMACON(a4)
         move.l  V_COP(a5),COP1LC(a4)
         move.w  #0,COPJMP1(a4)
-        move.w  #$8380,DMACON(a4)           ; MASTER|BPLEN|COPEN
+        move.w  #$83c0,DMACON(a4)           ; MASTER|BPLEN|COPEN|BLTEN
+        ifd     BENCH
+        bsr     bench_init
+        endc
 
 ;----------------------------------------------------------------------
 ; Bucle por frame: todo despues de la ultima linea visible ($10C).
@@ -189,8 +207,16 @@ frame:
         and.w   #$1ff,d0
         cmp.w   #$110,d0
         blo.s   .w1
+        ifd     BENCH
+        bsr     readtimer
+        move.w  d0,V_T0(a5)
+        clr.w   V_COLF(a5)
+        endc
         move.w  V_S(a5),d0
         cmp.w   #STOPX,d0
+        ifd     BENCH
+        bhs     show_results
+        endc
         bhs.s   .same
         addq.w  #SPEED,d0
         cmp.w   #STOPX,d0
@@ -200,7 +226,9 @@ frame:
 .same:
         bsr     apply_colors
         bsr     set_pointers
+        ifnd    NOMID
         bsr     build_mid
+        endc
         move.l  V_BACK(a5),COP1LC(a4)       ; se usa desde el proximo frame
         move.l  V_COP(a5),d0                ; la otra, para el frame siguiente
         cmp.l   V_BACK(a5),d0
@@ -217,13 +245,20 @@ frame:
         add.w   #SLOTS-1,d0                 ; p + 21: la que entra despues
         cmp.w   D_COLS(a3),d0
         bhs.s   .w2
-        bsr     draw_column
-.w2:    move.l  VPOSR(a4),d0                ; esperar a que empiece otro frame
+        bsr     blit_column
+        ifd     BENCH
+        st      V_COLF(a5)
+        endc
+.w2:
+        ifd     BENCH
+        bsr     bench_frame
+        endc
+.w2l:    move.l  VPOSR(a4),d0                ; esperar a que empiece otro frame
         lsr.l   #8,d0
         and.w   #$1ff,d0
         cmp.w   #$110,d0
-        bhs.s   .w2
-        bra.s   frame
+        bhs.s   .w2l
+        bra     frame
 
 ;----------------------------------------------------------------------
 ; --- set_pointers ---
@@ -318,12 +353,13 @@ apply_colors:
 ; --- init_lo ---
 ; lo_tab[L] = primera carga a mitad de linea de la linea L (MLX)
 ;----------------------------------------------------------------------
-init_lo:
+init_lo:                                    ; lo_tab[L] = (MLX[L], nxt = 0)
         move.l  a3,a0
         add.l   D_MLX(a3),a0
         lea     lo_tab(pc),a1
         move.w  #LINES-1,d0
 .l:     move.w  (a0)+,(a1)+
+        clr.w   (a1)+
         dbf     d0,.l
         rts
 
@@ -335,6 +371,10 @@ init_lo:
 ;           segmento siguiente. Una linea sin cargas ahora ni la ultima vez
 ;           que se escribio esta lista no se toca.
 ; registros destruidos: d0-d1/a0-a1 (guarda el resto)
+; Atajo: lo_tab guarda por linea (primera carga viva, nxt = la s desde la
+; que esa carga entra en pantalla). Con s < nxt y ninguna carga escrita en
+; esta lista la linea se salta (~90 ciclos en vez de ~290: de media solo
+; 24 de las 224 lineas tienen cargas a la vista).
 ; PROTOTIPO: la camara solo avanza (lo_tab no retrocede).
 ;----------------------------------------------------------------------
 build_mid:
@@ -355,7 +395,19 @@ build_mid:
         move.w  d6,d5
         add.w   #320,d5                     ; d5 = s + 320
         move.w  #$2c01,d7                   ; WAIT: (v << 8) | 1
-.line:  move.w  (a4),d2                     ; d2 = primera carga viva
+.line:  cmp.w   2(a4),d6                    ; s < nxt: nada entra todavia
+        bhs.s   .full
+        tst.b   (a6)
+        bne.s   .full                       ; hay cargas viejas que borrar
+        addq.l  #4,a4
+        addq.l  #2,a2
+        addq.l  #1,a6
+        lea     SEG(a0),a0
+        add.w   #$0100,d7
+        cmp.w   #($2c01+LINES*$100)&$ffff,d7
+        bne.s   .line
+        bra     .end
+.full:  move.w  (a4),d2                     ; d2 = primera carga viva
         move.w  (a2)+,d3                    ; d3 = fin de la linea
 .adv:   cmp.w   d3,d2
         bhs.s   .adv_done
@@ -367,6 +419,16 @@ build_mid:
         bra.s   .adv
 .adv_done:
         move.w  d2,(a4)+
+        move.w  #$ffff,d0                   ; nxt: fin de la carga d2 - 319
+        cmp.w   d3,d2
+        bhs.s   .nx
+        move.w  d2,d0
+        lsl.w   #3,d0
+        move.w  (a1,d0.w),d0
+        sub.w   #319,d0
+        bcc.s   .nx
+        moveq   #0,d0
+.nx:    move.w  d0,(a4)+
         lea     64(a0),a3                   ; a3 = donde van las cargas
         moveq   #0,d4                       ; d4 = cargas escritas
         moveq   #0,d1                       ; d1 = ultima h
@@ -434,7 +496,7 @@ build_mid:
         add.w   #$0100,d7                   ; v + 1 (el byte alto da la vuelta en 256)
         cmp.w   #($2c01+LINES*$100)&$ffff,d7
         bne     .line
-        movem.l (sp)+,d2-d7/a2-a6
+.end:   movem.l (sp)+,d2-d7/a2-a6
         rts
 
 ;----------------------------------------------------------------------
@@ -478,6 +540,72 @@ draw_column:
         lea     LINEB1(a2),a2
         dbf     d2,.row
         dbf     d3,.blk
+        rts
+
+;----------------------------------------------------------------------
+; --- blit_column ---
+; entrada:  d0.w = columna de bloques del nivel
+; salida:   la columna en sus dos copias del buffer circular de PF1, con el
+;           blitter: un blit por bloque (1 palabra x 48 filas: 16 lineas x
+;           3 planos, que en el buffer entrelazado estan a ROWB1 bytes) y
+;           la segunda copia de una vez (1 palabra x 672 filas). No espera
+;           al ultimo blit.
+; registros destruidos: d0-d3/a0-a2
+;----------------------------------------------------------------------
+BLTCON0R    equ $040
+BLTCON1R    equ $042
+BLTAFWMR    equ $044
+BLTALWMR    equ $046
+BLTAPTR     equ $050
+BLTDPTR     equ $054
+BLTSIZER    equ $058
+BLTAMODR    equ $064
+BLTDMODR    equ $066
+
+blit_column:
+        move.w  d0,d1
+        mulu    #15,d1
+        move.l  a3,a1
+        add.l   D_MAP(a3),a1
+        add.l   d1,a1                       ; a1 = MAP[c * 15]
+        moveq   #0,d1
+        move.w  d0,d1
+        divu    #SLOTS,d1
+        swap    d1
+        add.w   d1,d1
+        move.l  V_BUF1(a5),a2
+        add.w   d1,a2                       ; a2 = columna en el buffer
+        move.l  a2,-(sp)
+        move.l  a3,d2
+        add.l   D_BLK(a3),d2                ; d2 = bloques
+        bsr.s   bwait
+        move.l  #$09f00000,BLTCON0R(a4)     ; A -> D, BLTCON1 = 0
+        move.l  #$ffffffff,BLTAFWMR(a4)
+        move.w  #0,BLTAMODR(a4)
+        move.w  #ROWB1-2,BLTDMODR(a4)
+        moveq   #LINES/16-1,d3
+.blk:   moveq   #0,d0
+        move.b  (a1)+,d0
+        mulu    #96,d0
+        add.l   d2,d0
+        bsr.s   bwait
+        move.l  d0,BLTAPTR(a4)
+        move.l  a2,BLTDPTR(a4)
+        move.w  #(48<<6)|1,BLTSIZER(a4)
+        lea     16*LINEB1(a2),a2
+        dbf     d3,.blk
+        move.l  (sp)+,a2                    ; segunda copia, 44 bytes despues
+        bsr.s   bwait
+        move.w  #ROWB1-2,BLTAMODR(a4)
+        move.l  a2,BLTAPTR(a4)
+        lea     SLOTS*2(a2),a2
+        move.l  a2,BLTDPTR(a4)
+        move.w  #((LINES*3)<<6)|1,BLTSIZER(a4)
+        rts
+
+bwait:  btst    #6,DMACONR(a4)              ; dos veces: bug del Agnus viejo
+.w:     btst    #6,DMACONR(a4)
+        bne.s   .w
         rts
 
 ;----------------------------------------------------------------------
@@ -559,13 +687,155 @@ build_copper:                               ; a0 = lista
         movem.l (sp)+,a2
         rts
 
+        ifd     BENCH
+;----------------------------------------------------------------------
+; Medida (-DBENCH). Mismo formato de salida que bench2.s: palabras como
+; bits en un plano, filas cada 12 lineas desde la 8, palabra 2 en
+; adelante. tools/scroll_read.py las lee.
+;   w0 $A55A  w1 ticks/frame  w2-w4 con columna: max, media, n
+;   w5-w7 sin columna: max, media, n   w8-w17 $8001   w18 $5AA5
+;----------------------------------------------------------------------
+readtimer:
+.r:     moveq   #0,d0
+        move.b  CIAB_TAHI,d0
+        move.b  CIAB_TALO,d1
+        move.b  CIAB_TAHI,d2
+        cmp.b   d0,d2
+        bne.s   .r
+        lsl.w   #8,d0
+        move.b  d1,d0
+        rts
+
+waitline:                                   ; d0 = linea (< 256)
+        move.w  d0,d3
+.w:     move.l  VPOSR(a4),d1
+        lsr.l   #8,d1
+        and.w   #$1ff,d1
+        cmp.w   d3,d1
+        bne.s   .w
+        rts
+
+bench_init:
+        move.b  #$7f,CIAB_ICR
+        move.b  #0,CIAB_CRA
+        move.b  #$ff,CIAB_TALO
+        move.b  #$ff,CIAB_TAHI
+        move.b  #$11,CIAB_CRA               ; START | LOAD, continuo
+        move.w  #$40,d0
+        bsr     waitline
+        move.w  #$41,d0
+        bsr     waitline
+        move.w  #$40,d0
+        bsr     waitline
+        bsr     readtimer
+        move.w  d0,d4
+        move.w  #$41,d0
+        bsr     waitline
+        move.w  #$40,d0
+        bsr     waitline
+        bsr     readtimer
+        sub.w   d0,d4
+        move.w  d4,V_TPF(a5)
+        rts
+
+; el trabajo del frame termina cuando termina el blitter
+bench_frame:
+        bsr     bwait
+        bsr     readtimer
+        move.w  V_T0(a5),d1
+        sub.w   d0,d1                       ; cuenta hacia abajo
+        lea     V_MAXC(a5),a0
+        tst.b   V_COLF(a5)
+        bne.s   .c
+        lea     V_MAXN(a5),a0
+.c:     cmp.w   (a0),d1
+        bls.s   .m
+        move.w  d1,(a0)
+.m:     moveq   #0,d0
+        move.w  d1,d0
+        add.l   d0,2(a0)
+        addq.w  #1,6(a0)
+        rts
+
+show_results:
+        bsr     bwait
+        move.l  V_BUF1(a5),a0               ; pantalla de 1 plano, 40 bytes/linea
+        move.w  #BUF1/4-1,d0
+.clr:   clr.l   (a0)+
+        dbf     d0,.clr
+        lea     res(pc),a2
+        move.w  #$a55a,(a2)
+        move.w  V_TPF(a5),2(a2)
+        lea     V_MAXC(a5),a0
+        lea     4(a2),a1
+        bsr     .stat
+        lea     V_MAXN(a5),a0
+        lea     10(a2),a1
+        bsr     .stat
+        lea     16(a2),a0                   ; w8..w17: relleno para que
+        moveq   #10-1,d0                    ; scroll_read (autodetect) vea
+.fil:   move.w  #$8001,(a0)+                ; las 19 filas
+        dbf     d0,.fil
+        move.w  #$5aa5,36(a2)
+        move.l  V_BUF1(a5),a3
+        add.l   #8*40+4,a3
+        moveq   #19-1,d7
+.row:   move.w  (a2)+,d0
+        move.l  a3,a0
+        moveq   #16-1,d6
+.bit:   add.w   d0,d0
+        bcc.s   .zero
+        move.l  a0,a1
+        moveq   #8-1,d5
+.fill:  move.w  #$ffff,(a1)
+        lea     40(a1),a1
+        dbf     d5,.fill
+.zero:  addq.w  #2,a0
+        dbf     d6,.bit
+        lea     12*40(a3),a3
+        dbf     d7,.row
+        move.l  V_COP(a5),a0                ; lista del resultado
+        move.l  #$008e2c81,(a0)+
+        move.l  #$00902cc1,(a0)+
+        move.l  #$00920038,(a0)+
+        move.l  #$009400d0,(a0)+
+        move.l  #$01001200,(a0)+
+        move.l  #$01020000,(a0)+
+        move.l  #$01040000,(a0)+
+        move.l  #$01080000,(a0)+
+        move.l  V_BUF1(a5),d0
+        move.w  #$00e0,(a0)+
+        swap    d0
+        move.w  d0,(a0)+
+        move.w  #$00e2,(a0)+
+        swap    d0
+        move.w  d0,(a0)+
+        move.l  #$01800000,(a0)+
+        move.l  #$01820fff,(a0)+
+        move.l  #$fffffffe,(a0)+
+        move.l  V_COP(a5),COP1LC(a4)
+        move.w  #0,COPJMP1(a4)
+.forever:
+        bra.s   .forever
+.stat:  move.w  (a0),(a1)+                  ; max
+        move.l  2(a0),d0
+        move.w  6(a0),d1
+        beq.s   .z
+        divu    d1,d0
+.z:     move.w  d0,(a1)+                    ; media
+        move.w  6(a0),(a1)+                 ; n
+        rts
+
+res:    ds.w    19
+        endc
+
 fail:   lea     CUSTOM,a4
 .l:     move.w  #$0f00,COLOR00(a4)
         bra.s   .l
 
         even
 vars:   ds.b    V_SIZE
-lo_tab: ds.w    LINES                       ; build_mid: primera carga viva
+lo_tab: ds.w    LINES*2                     ; build_mid: (primera carga viva, nxt)
 lastn_a: ds.b   LINES                       ; cargas escritas en cada lista
 lastn_b: ds.b   LINES
 gfxname: dc.b   "graphics.library",0
