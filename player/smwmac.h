@@ -13,4 +13,14 @@
 #define T16(a)      ((u16)(rom00[(a) - ROM00_BASE] | (rom00[(a) - ROM00_BASE + 1] << 8)))
 #define NEG(v)      ((v) & 0x80)
 
+/* Tabla + indice de 8 bits: T8X(DATA_00E89C, x) == T8(DATA_00E89C + x).
+   El puntero (rom00 + desplazamiento POSITIVO) queda relativo a a4 y el
+   indice entra en el modo (d8,An,Dn.w): vbcc genera mucho menos codigo que
+   con T8(a + x). OJO: no restar ROM00_BASE al puntero (rom00 - $C000):
+   vbcc lo convierte en una direccion absoluta (tools/logicbench_build.sh
+   lo detecta y para). */
+#define T8X(t, i)   ((rom00 + ((t) - ROM00_BASE))[(u8)(i)])
+#define T16X(t, i)  ((u16)((rom00 + ((t) - ROM00_BASE))[(u8)(i)] \
+                           | ((rom00 + ((t) - ROM00_BASE + 1))[(u8)(i)] << 8)))
+
 #endif

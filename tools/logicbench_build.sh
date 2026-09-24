@@ -45,6 +45,15 @@ for f in mario mcoll manim mgfx mcam gen/smwrom00; do
     ' $CC/$b.s
     touch $CC/$b.data.s $CC/$b.code.s
 done
+# El binario se carga en cualquier direccion: el codigo del C solo puede
+# llegar a sus datos por (a4) y a su codigo por (pc)/bsr. vbcc puede emitir
+# una referencia ABSOLUTA sin avisar (paso con rom00 - $C000 en smwmac.h:
+# "lea 108592+_rom00,a0"), y vasm -Fbin la acepta: aca se para.
+if grep -nE '(^|[^(])\b[0-9]*\+?_[A-Za-z_][A-Za-z0-9_]*(\+[0-9]+)?,' $CC/*.code.s \
+        | grep -vE '\((a4|pc)\)|_[A-Za-z0-9_]*\(a4\)|,(d[0-7]|a[0-7])\)' \
+        | grep -E '\b(lea|move|pea|add|sub|cmp|and|or|tst|clr)' ; then
+    echo "ERROR: referencia absoluta a un simbolo en el codigo del C (ver arriba)"; exit 1
+fi
 [ -f work/yi1_map16.bin ] || python tools/mkmapbin.py
 # el arnes incluye work/cc/*.s: en PROF, una copia que apunta a work/prof/cc
 HARNESS=player/logicbench.s
