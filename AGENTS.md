@@ -3,6 +3,11 @@
 > Este fichero define **cómo trabajar** en este proyecto. Es el contrato entre
 > quien implementa (persona o agente de IA) y el hardware objetivo.
 > Para el *porqué* de cada decisión, lee primero **`PLAN.md`**.
+>
+> **Qué hacer ahora y en qué orden: `ROADMAP.md`** (plan a futuro por etapas
+> y handoff vigente, 2026-09-26). Las secciones "Dónde quedó el trabajo" y
+> "Handoff cloud → sesión local" de abajo son el detalle histórico del
+> 2026-09-24.
 
 ---
 
@@ -1415,7 +1420,10 @@ es lo que muestra la referencia. Detalle en P28.
 
 ---
 
-## Dónde quedó el trabajo (2026-09-24, tarde) — leer primero
+## Dónde quedó el trabajo (2026-09-24, tarde)
+
+> Superado por `ROADMAP.md` §1 (handoff del 2026-09-26). Se deja como detalle
+> de lo medido y de los comandos.
 
 **Etapa 8: el frame entero del jugador está portado y verificado contra el
 oráculo**, en el PC y en el binario 68000 real. Todo corre en Claude cloud
@@ -2011,6 +2019,9 @@ El usuario eligió: optimizar en C nativo verificando contra el oráculo
   antes.
 
 ## 10. Roadmap
+
+> El plan detallado de lo que falta (pasos, criterios de hecho, presupuesto del
+> frame y decisiones D10-D14) está en `ROADMAP.md`.
 
 Reordenado el 2026-09-22 con un criterio: **primero se mide en el hardware lo
 que puede tumbar el proyecto, después se pule la fidelidad.** La versión
