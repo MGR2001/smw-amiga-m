@@ -1093,7 +1093,7 @@ justo lo que hace la SNES con CGRAM.
 
 ---
 
-## 9. Decisiones abiertas
+## 9. Decisiones
 
 | ID | Decisión | Opciones | Estado |
 |---|---|---|---|
@@ -1101,11 +1101,16 @@ justo lo que hace la SNES con CGRAM.
 | D2 | Nivel objetivo | **Yoshi's Island 1** (`world_1/1/`) | cerrado |
 | **D3** | Enemigos del demo | Los que tiene el nivel de verdad (`spr.lv`, ver abajo). **Goomba y Koopa Troopa NO aparecen en Yoshi's Island 1** | **corregido** — mínimo: Rex + Banzai Bill + Jumping Piranha |
 | D4 | Lenguaje principal | C para lógica + asm para hardware | cerrado |
-| D5 | Música | MOD 4 canales propio vs. motor existente | abierto |
+| **D5** | Música | **secuenciador propio** sobre las secuencias N-SPC convertidas offline (no MOD), sin mezcla por CPU, 3 voces de música + 1 de efectos, ≤ 64 KB de muestras, ≤ 3 % de CPU | **cerrado** (usuario, 2026-09-26); detalle en `ROADMAP.md` §3 |
 | D6 | Arranque | **bootblock propio** leyendo sectores crudos; funciona en KS 1.2 y 1.3 | cerrado |
 | D7 | Color de las tuberías verticales | — | **cerrado**: depende de la pantalla (`MAP16AppTable`), ver P28 |
 | **D8** | Cómo existe la capa 2 (fondo) en la Amiga | **(d) dual playfield + recarga de colores a mitad de línea con el copper**: capa 1 = PF1 (3 planos, índices fijos por línea del nivel), capa 2 = PF2 (3 planos, paralaje por hardware), Mario y enemigos = sprites de hardware con colores 17-31 recargados por línea, bob en PF1 cuando hay más de 4 columnas. Las demás opciones y sus medidas, en §9 "Etapa 4 — resultados" puntos 4-10 | **cerrado** (usuario, 2026-09-23) |
 | D9 | Presupuesto de color | Vista real: **25 colores por línea, 40 por pantalla** (capas + sprites) | **cerrado**: 5 planos + paleta recargada por bandas con el copper. Ojo con P32 (los sprites comparten los colores 16-31) |
+| **D10** | Ancho de pantalla | **256 px**, como la SNES (el scroll de hoy muestra 320) | **cerrado** (usuario, 2026-09-26): encuadre y aparición de enemigos 1:1, vuelve el sprite 7, 20 % menos de DMA |
+| **D11** | HUD | **superpuesto (overlay)** con el copper sobre PF1 | **cerrado** (usuario, 2026-09-26), "si se puede": ver `ROADMAP.md` Etapa 10 |
+| **D12** | Power-ups | **todos los de Yoshi's Island 1**: seta, flor + bolas de fuego, estrella, 1-UP, luna 3-UP, champiñón invisible (no hay pluma en el nivel) | **cerrado** (usuario, 2026-09-26) |
+| **D13** | Carga y memoria | loader propio con `trackdisk`; lo que lee el chipset a chip RAM y el código y los datos de CPU a `$C00000`, todo en **direcciones fijas enlazadas en absoluto** (vlink) | **cerrado** (usuario, 2026-09-26); esquema en `ROADMAP.md` §3 |
+| **D14** | Controles | **teclado primero** (flechas, Z = B, X = A, A = Y, S = X, Return = Start, Shift der. = Select), joystick como alternativa | **cerrado** (usuario, 2026-09-26) |
 
 ### D3 — los sprites reales de Yoshi's Island 1
 

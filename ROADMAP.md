@@ -46,12 +46,12 @@
 
 | rama | commit | contenido |
 |---|---|---|
-| `master` | `f24ee9a` | **atrasada**: termina en el handoff del 24/09 temprano (solo la 8a) |
-| `claude/agents-md-x4v1di` | `e66cfc0` | todo el trabajo de la sesión cloud del 24/09: etapas 5, 6, 8 y parte de la 9 |
-| `claude/agents-future-plan-hsy1gm` | esta | `claude/agents-md-x4v1di` (avance rápido, sin cambios) + este plan |
+| `master` | la cabeza | **base de trabajo**. Desde el 2026-09-26 contiene todo: la sesión cloud del 24/09, el plan, los scripts de §8 y las decisiones de §3 |
+| `claude/agents-md-x4v1di` | `e66cfc0` | la sesión cloud del 24/09 (etapas 5, 6, 8 y parte de la 9); ya incluida en `master` |
+| `claude/agents-future-plan-hsy1gm` | = `master` | donde se escribió este plan; mergeada a `master` por avance rápido |
 
-- **Base de trabajo:** esta rama. Pendiente **[usuario]**: mergearla a
-  `master` con un PR, para que las sesiones nuevas arranquen de ahí.
+- **Base de trabajo: `master`.** Cada sesión nueva trabaja en su propia rama
+  a partir de `master`.
 - Los dos últimos commits de código de la otra sesión (`45e3857`,
   `e66cfc0`) eran **WIP sin revisar**: optimizaciones de dos subagentes y
   cambios en `scroll.s`. El 2026-09-26 se verificó en cloud casi toda la
@@ -128,16 +128,18 @@ se pierde la medida cycle-exact.
 
 ### 1.6 Pendiente del usuario o de la PC (juntarlo en una sola sesión)
 
-1. **[usuario]** Mergear esta rama a `master` (PR).
-2. **PC:** confirmar la 8d en WinUAE con KS 1.2 (esperado ~31,6 % / ~32,9 %).
+1. **PC:** confirmar la 8d en WinUAE con KS 1.2 (esperado ~26,5 % / ~26,9 %,
+   lo que da FS-UAE después de la optimización).
    También prueba que el ADF de 58 KB arranca en KS 1.2. Comandos en
    `AGENTS.md`, "Qué hay que hacer en la PC", punto 1.
-3. **PC:** Etapa 7 (`cmp_ref.py` del blob de la etapa 5 contra la referencia).
-4. **PC + usuario, una única sesión de grabación** (Etapa 8.1). Se agrupa
+2. **PC:** Etapa 7 (`cmp_ref.py` del blob de la etapa 5 contra la referencia).
+3. **PC + usuario, una única sesión de grabación** (Etapa 8.1). Se agrupa
    todo lo que hace falta grabar para no pedirle al usuario que juegue varias
-   veces: colinas (8c), cobertura de sprites (9), contadores del HUD (10) y
-   audio de referencia (11).
-5. **[usuario]** Las decisiones abiertas de §3 (D10-D14).
+   veces: colinas (8c), cobertura de sprites (9), power-ups (D12), contadores
+   del HUD (10) y audio de referencia (11).
+
+Las decisiones D5 y D10-D14 están cerradas (§3), y la rama está mergeada a
+`master`. Solo queda abierta la compuerta D1.
 
 ---
 
@@ -154,7 +156,7 @@ salvo donde se indica:
 | dibujo de sprites (sprites de hardware + copper) | sin medir | ≤ 10 % | — |
 | bobs en PF1 (solo si un objeto pasa a bob) | 22,7-33,8 % (Banzai + 4 Rex, `bench2.s` W3) | caso raro, ver 9.2 | `bench2.s` |
 | HUD | sin medir | ≤ 2 % | — |
-| audio | sin medir | ≤ 5 % | — |
+| audio | sin medir | ≤ 3 % (D5) | — |
 | **margen** | — | **≥ 10 %** | — |
 
 **Hoy no entra a 50 Hz con margen.** De media, scroll (25 %) + lógica
@@ -173,17 +175,77 @@ slow RAM **no** acelera (P29).
 
 ---
 
-## 3. Decisiones abiertas
+## 3. Decisiones
 
-| ID | Decisión | Opciones | Recomendación | Hace falta en |
+Cerradas por el usuario el 2026-09-26: se aceptan las recomendaciones, con
+el **teclado primero** en los controles. El criterio general es el mejor
+equilibrio entre 1:1 y coste. Solo queda abierta la compuerta D1.
+
+| ID | Decisión | Qué se hace | Consecuencias | Etapa |
 |---|---|---|---|---|
-| D1 | 50 Hz o no | ver la compuerta de §2 | seguir con 50 Hz y medir | después de la 6b |
-| D5 | Música | (a) convertir a MOD + replayer estándar; (b) secuenciador propio que lea las secuencias N-SPC convertidas offline | **(b)**: conserva los glissandos, el vibrato y el tempo por timer; un MOD obliga a cuantizar a filas | Etapa 11 |
-| **D10** | Ancho de la pantalla | 320 px (lo que hace `scroll.s` hoy) o **256 px, como la SNES** | **256 px**, por cuatro motivos: (1) encuadre 1:1: la cámara (`mcam.c`) y el cargador de sprites trabajan con una pantalla de 256, y a 320 los enemigos **aparecen de golpe** dentro de la zona visible; (2) con `DDFSTRT $30` se pierde el sprite 7 (R5) y quedan 3 columnas adosadas en vez de las 4 que suponen `oamstudy`/`d8demote`/`copsim`; a 256 px el fetch empieza más tarde y vuelven las 8; (3) un 20 % menos de DMA de planos, que queda para la CPU y el copper; (4) las simulaciones de la etapa 5 ya usan 256 | Etapa 6.1 |
-| **D11** | Dónde va el HUD | (a) superpuesto como en la SNES: en las líneas del HUD el copper apunta PF1 a un bitmap fijo y PF2 sigue con su paralaje; (b) en las 32 líneas PAL que sobran, fuera de la zona de juego | **(a)** si en Yoshi's Island 1 la capa 1 nunca aparece en esas líneas (medirlo, 10.1); si aparece, elegir con el usuario | Etapa 10 |
-| **D12** | Alcance de power-ups | lo que da el nivel (seta, flor y sus bolas de fuego, estrella, 1-UP, luna) o solo la seta | **lo que da el nivel**, mismo criterio que D3. Antes, confirmar en los objetos del nivel qué da cada bloque | Etapa 9.1 |
-| **D13** | Carga y mapa de memoria | (a) seguir con un binario plano relativo (`-sc -sd`: datos a menos de 32 KB de `a4`, P36); (b) al tomar la máquina, copiar el código y los datos de CPU a direcciones fijas (código y tablas en `$C00000`) y enlazar en absoluto | **(b)** cuando la integración pase de 32 KB de datos de C: `ram[]` (8 KB) + `rom00` (16 KB) + tablas ya rozan el límite. Libera chip RAM (P29: no acelera) y elimina la comprobación de referencias absolutas | Etapa 6b.1 |
-| **D14** | Controles | la A500 trae joystick de 1 botón y SMW necesita salto (B), correr (Y) y giro (A) | joystick de 2 botones (el 2.º botón en `POTGO`/`POTINP`) + teclado como alternativa; arriba + botón para el giro. **Preguntar** | Etapa 6b.3 |
+| D1 | 50 Hz o no | **abierta**: compuerta de §2 | se decide con el peor frame del juego integrado | después de la 6b |
+| **D5** | Música | **secuenciador propio** que lee las secuencias N-SPC de SMW convertidas offline a un formato compacto de eventos (no MOD) | Conserva glissandos, vibrato, envolventes (ADSR aproximado por tick) y el tempo del SPC700 (tick por timer de CIA). **Sin mezcla por CPU**: cada voz va directa a un canal de Paula, 3 de música + 1 de efectos, con prioridad por tema; el eco se omite. Límites: ≤ 64 KB de muestras en chip RAM y **≤ 3 % de CPU** medido | 11 |
+| **D10** | Ancho de pantalla | **256 px**, como la SNES | DIW centrada; el fetch empieza más tarde, así que vuelve el sprite 7 (4 columnas adosadas); 20 % menos de DMA de planos; la cámara y la aparición de enemigos quedan 1:1 | 6.1 |
+| **D11** | HUD | **superpuesto (overlay)**, como la SNES | En las líneas del HUD el copper apunta PF1 a un bitmap fijo del HUD y PF2 sigue con su paralaje. Si en esas líneas aparece capa 1 del nivel, antes de renunciar al overlay se busca otra variante que lo conserve (10.1) y se consulta | 10 |
+| **D12** | Power-ups | **todos los de Yoshi's Island 1** | ver la lista abajo | 9.1 |
+| **D13** | Carga y memoria | **direcciones fijas, enlazado absoluto**; lo que lee el chipset en chip RAM y el resto en `$C00000` | ver el esquema abajo | 6b.1 |
+| **D14** | Controles | **teclado primero**, joystick como alternativa | ver la asignación abajo | 6b.3 |
+
+**D12 — qué hay en el nivel** (`lvparse.py --dump` de `obj.lv` y `spr.lv`):
+
+| objeto | cantidad | da |
+|---|---|---|
+| bloque `?` (flor) | 1 | seta si Mario es chico; flor de fuego si es grande. Hay que portar las **bolas de fuego** (hoy `MARIO_UNSUP_FIRE`) |
+| bloque giratorio "estrella 2 / 1-UP / enredadera" | 1 | lo decide el ROM según el estado: transcribir la rutina del golpe, no suponer. Incluye la **estrella** (invencibilidad, música propia) |
+| luna 3-UP | 1 | 3 vidas |
+| monedas de Yoshi | 4 | puntos; la 5.ª del recuento da 1-UP |
+| bloques `!` amarillos | 5 | dependen del palacio amarillo: mirar en el oráculo si son sólidos, y si lo son, portar su contenido (seta) |
+| champiñón invisible (sprite `$C7`) | 1 | 1-UP escondido |
+| monedas (100) | — | 1-UP |
+
+Estados de Mario: chico, grande y fuego, más la caja de reserva del HUD. En
+el nivel no hay pluma: la capa queda fuera por el propio nivel, no por
+recorte.
+
+**D13 — esquema de carga** (lo más rápido de programar y de ejecutar dentro
+de las reglas de la A500):
+1. El bootblock carga con `trackdisk.device`, mientras el SO todavía está
+   vivo, un **stage 2 pequeño** (el loader). En KS 1.x trackdisk solo lee a
+   chip RAM.
+2. El loader lee el resto del disco en bloques comprimidos a un buffer de
+   chip, con un compresor LZ simple y rápido de descomprimir en 68000.
+   Descomprime:
+   - lo que lee el chipset (planos, `BLK`, `L2B`, listas del copper, frames
+     de sprites, muestras) a **direcciones fijas de chip RAM**, con la
+     alineación de §7 de `AGENTS.md`;
+   - el código y los datos de CPU (`ram[]`, `rom00`, tablas, `MAP`, `CHG`,
+     `MLX`, `MLD`, `INI`) a **direcciones fijas de `$C00000`**, después de
+     comprobar que responde (P8).
+3. Toma la máquina y salta al código.
+
+Todo se enlaza en absoluto con **vlink**, en esas direcciones. Así
+desaparecen el límite de 32 KB de datos relativos a `a4` (P36) y la
+comprobación de referencias absolutas de `logicbench_build.sh`, y vbcc puede
+usar direccionamiento absoluto corto donde convenga. El slow RAM no acelera
+(P29): sirve para liberar chip RAM. **Medir** el tiempo de carga (con y sin
+compresión) y dejar el que sea más corto.
+
+**D14 — teclado** (códigos raw del Amiga, por posición física, válidos para
+cualquier distribución nacional):
+
+| SNES | tecla | raw |
+|---|---|---|
+| cruz | flechas: arriba / abajo / derecha / izquierda | `$4C` / `$4D` / `$4E` / `$4F` |
+| B (salto) | Z | `$31` |
+| A (salto con giro) | X | `$32` |
+| Y (correr, agarrar, disparar) | A | `$20` |
+| X (igual que Y en SMW) | S | `$21` |
+| Start (pausa) | Return | `$44` |
+| Select | Shift derecho | `$61` |
+
+Joystick de alternativa: botón 1 = B, botón 2 (`POTGO`/`POTINP`) = Y, y
+arriba + botón = A. Las dos entradas se combinan con un OR. Asignación
+cambiable en un solo lugar (una tabla).
 
 ---
 
@@ -308,7 +370,7 @@ de `vars`).
 `tools/mkscroll.py` y el formato `yi1_s.dat` (documentado en la cabecera de
 `mkscroll.py`).
 
-6.1 **Pantalla de 256 px** (si D10 = 256).
+6.1 **Pantalla de 256 px** (D10).
 - DIW centrada, por ejemplo `DIWSTRT $2CA1` / `DIWSTOP $0CA1`, y fetch
   `DDFSTRT $40` (una palabra antes de `$48`) / `DDFSTOP $C0`. **Comprobar
   estos valores con una captura antes de construir encima.**
@@ -443,9 +505,20 @@ de las constantes actuales (320 px):
 
 Unos 340 KB antes de sprites y audio. En `yi1_s.dat`, `BLK` y `L2B` las lee
 el chipset y se quedan en chip; `MAP`, `CHG`, `MLX`, `MLD` e `INI` las lee
-solo la CPU y pueden ir a slow RAM. Comprobar que `$C00000` responde (P8)
-antes de usarla. **Hecho cuando** hay un mapa de memoria escrito en
-`AGENTS.md` §4, con cifras medidas, y el loader lo respeta.
+solo la CPU y van a slow RAM.
+
+Pasos, con el esquema de D13 (§3):
+1. `tools/mkgame.py` (nuevo): parte los datos en secciones "chip" y "CPU",
+   las comprime y escribe la tabla de carga (dirección destino, tamaño,
+   alineación), que el loader recorre.
+2. Script de enlace de vlink con las direcciones fijas.
+3. Loader nuevo (`player/loader.s`), que reemplaza la carga de `demo.s` y
+   `scroll.s`, y `tools/mkadf.py` extendido para varios bloques.
+4. `tools/memmap.py` (§8.2) comprueba el mapa.
+
+**Hecho cuando** hay un mapa de memoria escrito en `AGENTS.md` §4, con
+cifras medidas, el loader lo respeta, el tiempo de carga está medido y
+V1 pasa sobre el binario enlazado en absoluto.
 
 6b.2 **Bucle del frame.** Latencia de un frame, como la SNES, que sube en el
 NMI lo que calculó el frame anterior:
@@ -456,14 +529,29 @@ VBL: cambiar a la lista del copper preparada → lanzar el blit de la columna
      → preparar la lista siguiente (build_mid, punteros de planos y sprites) → esperar el VBL
 ```
 
-Juntar `scroll.s` y el arnés del C: se construye como `logicbench_build.sh`,
-o enlazado en absoluto si D13 = (b). Después de juntarlos, correr V1 sobre
+Juntar `scroll.s` y el arnés del C, enlazados en absoluto con vlink (D13).
+`m68kverify`/`abcheck` tienen que aprender a cargar el binario en su
+dirección fija, en vez de en `BASE`. Después de juntarlos, correr V1 sobre
 el binario nuevo.
 
-6b.3 **Entrada (D14).** Leer `JOY1DAT`, el botón de fuego (CIA-A `PRA`
-bit 7) y el 2.º botón (`POTGO`/`POTINP`), más el teclado si se decide.
-Convertir al formato de la SNES en `$15-$18`: `JoyPadA/B` = mantenido y
-`JoyFrameA/B` = recién apretado, que es lo que espera el port.
+6b.3 **Entrada (D14), teclado primero.**
+- **Teclado.** Al tomar la máquina, el SO ya no lee el teclado: hace falta
+  un manejador propio.
+  - Interrupción de nivel 2 (`PORTS`, CIA-A `ICR` bit `SP`).
+  - Leer `CIA-A SDR`; el código raw es `~byte` rotado un bit a la derecha
+    (`not.b` + `ror.b #1`); el bit 7 = tecla soltada.
+  - **Handshake:** poner `CIA-A CRA` bit 6 (`SPMODE` salida) durante
+    ≥ 85 µs (unas 2 líneas; medir con `VHPOSR`, no con un bucle) y volverlo
+    a entrada. Sin handshake, el teclado reintenta y se pierden teclas.
+  - Mantener un mapa de 128 bits de teclas apretadas.
+- Asignación de §3 (D14) en una tabla.
+- **Joystick** (alternativa): `JOY1DAT`, fuego en CIA-A `PRA` bit 7 y 2.º
+  botón en `POTGO`/`POTINP`; se combina con el teclado con un OR.
+- Convertir al formato de la SNES en `$15-$18`: `JoyPadA/B` = mantenido y
+  `JoyFrameA/B` = recién apretado (`nuevo & ~anterior`), que es lo que
+  espera el port.
+- Teclas de depuración reservadas, que no usa el juego: pausa por frames y
+  modo replay.
 
 6b.4 **Mario en sprites de hardware.**
 - Herramienta nueva `tools/mkmario.py`: toma las poses que aparecen en el
@@ -501,7 +589,11 @@ presentado al usuario.
   5. caparazón rojo (`$DB` → `$05`, estado 9);
   6. cinta de meta (`$7B`);
   7. warp hole (`$8E`) y champiñón invisible (`$C7`);
-  8. lo que sale de los bloques según D12, monedas y puntos.
+  8. lo que sale de los bloques (D12, §3): seta, flor y **bolas de fuego**
+     (`MARIO_UNSUP_FIRE`), estrella (invencibilidad + música), 1-UP, luna
+     3-UP, champiñón invisible, monedas, monedas de Yoshi y puntos. Más la
+     caja de reserva y el crecer / encoger de Mario (animación `$71`, hoy
+     "sin física normal").
 - Método (P27): transcribir `sprite_*.s` instrucción por instrucción, sobre
   `ram[]` como el Rex; tablas de otros bancos con `tools/smwtabx.py`.
 - Verificar con `marioverify game` / `sprloop` y `m68kverify --sprites`
@@ -538,12 +630,14 @@ coste entra en §2.
 ### Etapa 10 — HUD
 
 1. Medir en `yi1_d` con la cámara Y final cuántas líneas ocupa el HUD de la
-   SNES y si en ellas aparece alguna vez la capa 1 → D11.
-2. Si D11 = (a): en esas líneas, el copper apunta PF1 a un bitmap fijo del
+   SNES y si en ellas aparece alguna vez la capa 1. Si aparece, buscar una
+   variante que conserve el overlay antes de consultar (D11). Por ejemplo:
+   el HUD en PF1 con los colores 1-7 del HUD y la capa 1 de esas líneas
+   compuesta en el mismo bitmap, que es barato si son pocas líneas.
+2. Overlay (D11): en esas líneas, el copper apunta PF1 a un bitmap fijo del
    HUD (retardo de PF1 = 0, colores 1-7 del HUD) y PF2 sigue igual. Gráficos
    de la barra: tiles de capa 3 a 2 bpp (los `gb-*`; `gb-1` es el juego de
-   caracteres). Números y reserva: se blitean
-   solo cuando cambian.
+   caracteres). Los números y la reserva se blitean solo cuando cambian.
 3. Lógica: portar la actualización de la barra de `game.s` (tiempo,
    monedas, vidas, puntuación, monedas de Yoshi, estrellas, reserva).
    Verificar contra los contadores de la grabación 8.1.
@@ -555,15 +649,23 @@ grabados, y el coste es ≤ 2 %.
 
 1. `tools/brr2pcm.py`: BRR (ADPCM) → PCM de 8 bits **con signo** (P7), sin
    sesgo DC. Verificar contra el WAV de `smwrecomp` (8.1).
-2. Si D5 = (b): convertir offline las secuencias de `sound/` a un formato
-   compacto de eventos, y escribir un secuenciador 68000 que maneje Paula.
-   El tick sale de un timer de CIA, no del VBL: el tempo del SPC700 no
-   depende de 50/60 Hz.
+2. D5: convertir offline las secuencias de `sound/` (N-SPC) a un formato
+   compacto de eventos con los efectos ya resueltos:
+   - notas con periodo de Paula precalculado;
+   - glissando y vibrato como tablas de deltas por tick;
+   - envolvente ADSR como tabla de volumen por tick.
+
+   El secuenciador 68000 solo recorre eventos y escribe `AUDxPER`/`AUDxVOL`/
+   `AUDxLC`/`AUDxLEN`: nada de mezcla ni de cálculo por muestra. El tick sale
+   de un timer de CIA, no del VBL: el tempo del SPC700 no depende de 50/60 Hz.
 3. 8 voces → 3 de música + 1 de efectos. Elegir las voces por prioridad en
-   cada tema. El eco no existe: se omite.
+   cada tema (y la de la estrella). El eco no existe: se omite. Cuando suena
+   un efecto, la voz de música que comparte canal se silencia, como en la
+   SNES con prioridades.
 4. Efectos: el port ya escribe los disparadores (`wm_SoundCh1/2/3`, por
    ejemplo en `mario.c`): engancharlos ahí.
-5. Presupuesto: ≤ 64 KB de muestras en chip RAM y ≤ 5 % de CPU (medido).
+5. Presupuesto: ≤ 64 KB de muestras en chip RAM y **≤ 3 %** de CPU
+   (medido con el método de `bench2.s`).
 
 **Hecho cuando** el tema del nivel y los efectos principales (salto,
 moneda, pisotón, power-up, 1-UP) suenan reconocibles contra el WAV de
@@ -597,7 +699,7 @@ cerrado.
 | Picos escondidos | un frame suelto muy caro (hoy: 307 % en s = 4504 en el scroll) que la media no muestra | medir siempre el máximo **y dónde ocurre**; los bancos descartan solo los frames de arranque |
 | Faltan columnas de sprites | con `DDFSTRT $30` solo quedan 3 adosadas | D10 = 256 px; bob en PF1 (`d8demote`) |
 | vbcc compila mal | `m68kverify` llega al tope de 10 M ciclos o difiere de `marioverify` | V1 siempre (P38) |
-| Datos del C > 32 KB con `-sd` | `logicbench_build.sh` falla o hay referencias absolutas | D13 = (b) |
+| Datos del C > 32 KB con `-sd` | `logicbench_build.sh` falla o hay referencias absolutas | D13: enlazado absoluto con vlink (6b.1) |
 | Índices de 16 bits con signo | escrituras 64 KB antes a partir de 32 KB | `(An,Dn.l)` con `moveq #0` antes (P40) |
 | El modelo de tiempos del copper | cargas corridas unos píxeles | calibrar con `copcal` en cada pantalla nueva (0.4, 6.1); los WAIT cuestan ranura (P39) |
 | El oráculo no cubre un caso | un sprite o una pendiente sin frames que verificar | sesión de grabación única (8.1) |
