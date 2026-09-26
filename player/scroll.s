@@ -116,7 +116,10 @@ V_GMB   equ 70                  ; .l build_mid: minimos por bloque de la lista
 V_GI    equ 74                  ; bloque actual
 V_CCOL  equ 76                  ; columna que se esta dibujando (-1: ninguna)
 V_CBLK  equ 78                  ; su siguiente paso (0..13 bloques, 14 copia)
-V_SIZE  equ 80
+V_BSKIP equ 80                  ; BENCH: frames que todavia no se cuentan
+V_MSC   equ V_MAXC+52           ; BENCH: s del peor frame con columna (82)
+V_MSN   equ V_MAXN+52           ; ... y sin columna (90)
+V_SIZE  equ 92
 
 CIAB_TALO   equ $bfd400
 CIAB_TAHI   equ $bfd500
@@ -1041,10 +1044,18 @@ bench_init:
         move.w  d4,V_TPF(a5)
         rts
 
-; el trabajo del frame termina cuando termina el blitter
+; el trabajo del frame termina cuando termina el blitter. Los primeros
+; BSKIP frames (arranque) no se cuentan, y cada maximo guarda la s donde
+; ocurrio: el pico de ~300 % que se atribuia al primer frame esta en
+; s = 4504 (ROADMAP.md, Etapa 0.3).
+BSKIP   equ 8
 bench_frame:
         bsr     bwait
-        bsr     readtimer
+        cmp.w   #BSKIP,V_BSKIP(a5)
+        bhs.s   .go
+        addq.w  #1,V_BSKIP(a5)
+        rts
+.go:    bsr     readtimer
         move.w  V_T0(a5),d1
         sub.w   d0,d1                       ; cuenta hacia abajo
         lea     V_MAXC(a5),a0
@@ -1054,6 +1065,7 @@ bench_frame:
 .c:     cmp.w   (a0),d1
         bls.s   .m
         move.w  d1,(a0)
+        move.w  V_S(a5),52(a0)              ; V_MSC / V_MSN: donde fue
 .m:     moveq   #0,d0
         move.w  d1,d0
         add.l   d0,2(a0)
@@ -1079,6 +1091,14 @@ show_results:
         moveq   #10-1,d0                    ; scroll_read (autodetect) vea
 .fil:   move.w  #$8001,(a0)+                ; las 19 filas
         dbf     d0,.fil
+        move.w  V_MSC(a5),d0                ; w8, w9: s de los dos maximos,
+        add.w   d0,d0                       ; en los bits 1-14 (el 15 y el 0
+        or.w    #$8001,d0                   ; siguen a 1 para autodetect)
+        move.w  d0,16(a2)
+        move.w  V_MSN(a5),d0
+        add.w   d0,d0
+        or.w    #$8001,d0
+        move.w  d0,18(a2)
         move.w  #$5aa5,36(a2)
         move.l  V_BUF1(a5),a3
         add.l   #8*40+4,a3

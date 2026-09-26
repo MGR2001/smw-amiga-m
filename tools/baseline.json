@@ -1,0 +1,219 @@
+{
+ "_meta": {
+  "commit": "7aa2e6b+cambios",
+  "fecha": "2026-09-26",
+  "nota": "tools/regress.py; las medidas emu.* dependen del emulador"
+ },
+ "emu.logic.corriendo_pct": {
+  "how": "min",
+  "value": 26.46
+ },
+ "emu.logic.salto_pct": {
+  "how": "min",
+  "value": 26.88
+ },
+ "emu.scroll.con_col_max_pct": {
+  "how": "min",
+  "value": 307.5
+ },
+ "emu.scroll.con_col_max_s": {
+  "how": "info",
+  "value": 4504
+ },
+ "emu.scroll.con_col_media_pct": {
+  "how": "min",
+  "value": 25.2
+ },
+ "emu.scroll.sin_col_max_pct": {
+  "how": "min",
+  "value": 6.5
+ },
+ "emu.scroll.sin_col_max_s": {
+  "how": "info",
+  "value": 4792
+ },
+ "emu.scroll.sin_col_media_pct": {
+  "how": "min",
+  "value": 4.5
+ },
+ "emu.scrollimg.x1000_fallos": {
+  "how": "min",
+  "value": 31
+ },
+ "emu.scrollimg.x1700_fallos": {
+  "how": "min",
+  "value": 94
+ },
+ "emu.scrollimg.x2500_fallos": {
+  "how": "min",
+  "value": 46
+ },
+ "emu.scrollimg.x3500_fallos": {
+  "how": "min",
+  "value": 72
+ },
+ "emu.scrollimg.x4500_fallos": {
+  "how": "min",
+  "value": 127
+ },
+ "emu.scrollimg.x500_fallos": {
+  "how": "min",
+  "value": 74
+ },
+ "m68k.full.ciclos_max": {
+  "how": "min",
+  "value": 42046
+ },
+ "m68k.full.ciclos_media": {
+  "how": "min",
+  "value": 20019
+ },
+ "m68k.full.ok": {
+  "how": "max",
+  "value": 6510
+ },
+ "m68k.loop.ciclos_max": {
+  "how": "min",
+  "value": 48194
+ },
+ "m68k.loop.ciclos_media": {
+  "how": "min",
+  "value": 25909
+ },
+ "m68k.loop.ciclos_p99": {
+  "how": "min",
+  "value": 28172
+ },
+ "m68k.loop.resync": {
+  "how": "min",
+  "value": 37
+ },
+ "m68k.loop.tramo": {
+  "how": "max",
+  "value": 1240
+ },
+ "m68k.spr.ciclos_max": {
+  "how": "min",
+  "value": 53002
+ },
+ "m68k.spr.ciclos_media": {
+  "how": "min",
+  "value": 35779
+ },
+ "m68k.spr.ciclos_p99": {
+  "how": "min",
+  "value": 52180
+ },
+ "m68k.spr.resync": {
+  "how": "min",
+  "value": 4
+ },
+ "m68k.spr.tramo": {
+  "how": "max",
+  "value": 2859
+ },
+ "nivel.encuadres_px_mal": {
+  "how": "min",
+  "value": 3966
+ },
+ "nivel.render_vs_ideal_px": {
+  "how": "min",
+  "value": 0
+ },
+ "pc.8a.aire.ok": {
+  "how": "max",
+  "value": 2989
+ },
+ "pc.8a.aire.tot": {
+  "how": "eq",
+  "value": 3497
+ },
+ "pc.8a.suelo.ok": {
+  "how": "max",
+  "value": 2962
+ },
+ "pc.8a.suelo.tot": {
+  "how": "eq",
+  "value": 3050
+ },
+ "pc.full.aire.ok": {
+  "how": "max",
+  "value": 3557
+ },
+ "pc.full.aire.tot": {
+  "how": "eq",
+  "value": 3573
+ },
+ "pc.full.suelo.ok": {
+  "how": "max",
+  "value": 2953
+ },
+ "pc.full.suelo.tot": {
+  "how": "eq",
+  "value": 2974
+ },
+ "pc.game.resync": {
+  "how": "min",
+  "value": 1
+ },
+ "pc.game.rex_exactos": {
+  "how": "max",
+  "value": 3192
+ },
+ "pc.game.rex_seguidos": {
+  "how": "info",
+  "value": 3194
+ },
+ "pc.game.tramo": {
+  "how": "max",
+  "value": 3824
+ },
+ "pc.gfx.frames": {
+  "how": "eq",
+  "value": 6869
+ },
+ "pc.gfx.oam_ok": {
+  "how": "max",
+  "value": 6869
+ },
+ "pc.gfx.scr_ok": {
+  "how": "max",
+  "value": 6869
+ },
+ "pc.loop.resync": {
+  "how": "min",
+  "value": 37
+ },
+ "pc.loop.tramo": {
+  "how": "max",
+  "value": 1240
+ },
+ "pc.sprload.distintos": {
+  "how": "min",
+  "value": 0
+ },
+ "pc.sprload.exactos": {
+  "how": "max",
+  "value": 20
+ },
+ "pc.sprload.oraculo": {
+  "how": "eq",
+  "value": 20
+ },
+ "pc.sprloop.diferencia": {
+  "how": "min",
+  "value": 1
+ },
+ "pc.sprloop.exactos": {
+  "how": "max",
+  "value": 2593
+ },
+ "pc.sprloop.rebotes_ok": {
+  "how": "max",
+  "value": 12
+ },
+ "pc.sprloop.seguidos": {
+  "how": "info",
+  "value": 2594
+ }
+}

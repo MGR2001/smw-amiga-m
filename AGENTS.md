@@ -1009,6 +1009,14 @@ desplazamientos que pueden pasar de 32 KB: `moveq #0,d1` + `move.w` +
 `(a1,d1.l)`. Lo mismo con un array de registros de 16 bytes indexado por
 un número de registro de más de 2047.
 
+**P41 — Una captura de FS-UAE con tiempo fijo puede no estar donde se cree.**
+AROS tarda ~35 s en arrancar y `scroll.s` avanza 2 px por frame: con 60 s de
+espera, `-DSTOPX=3500` y `4500` se capturaban **antes de llegar** y
+`scroll_check` daba ~35 000 fallos (la imagen era de otra parte del nivel).
+Esperar **≥ 50 + STOPX/100 s**. `tools/regress.py` ya lo hace, y avisa si
+una captura difiere en más del 20 % (posición equivocada, no fallo de
+imagen). Descubierto el 2026-09-26; ver `ROADMAP.md` §8.
+
 **P8 — El slow RAM de la A501 no está disponible si el software lo desactiva.**
 Algunas rutinas de arranque desactivan `/EXRAM`. Verifica que `$C00000`
 responde antes de usarlo.
@@ -2087,6 +2095,9 @@ lugar exacto y fallaban tres cosas distintas de la indirección a la vez.
 ### Comprobaciones rápidas
 
 ```bash
+# ANTES DE CADA COMMIT (ROADMAP.md §8): reglas estáticas + regresión completa
+python3 tools/lint_port.py && python3 tools/regress.py
+
 # ¿la capa 1 sigue 1:1?  (regresion: tiene que dar 100 % y 0 erroneos)
 $PY tools/mklvl.py --out work/level_final.png && $PY tools/m16diff.py
 $PY tools/cmp_ref.py --mask none --bits 5      # hoy 25.52 %; baja solo con capa 2

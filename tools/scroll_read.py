@@ -34,10 +34,13 @@ def main():
         return 1
     tpf = w[1]
     print("ticks por frame: %d" % tpf)
-    for base, name in ((2, "con columna nueva"), (5, "sin columna")):
+    # w8/w9: la s (x del nivel) del peor frame de cada grupo, en los bits
+    # 1-14 (scroll.s ignora los primeros BSKIP frames)
+    for base, name, ws in ((2, "con columna nueva", 8), (5, "sin columna", 9)):
         mx, av, n = w[base], w[base + 1], w[base + 2]
-        print("  %-18s %4d frames  media %5d ticks = %5.1f %%   max %5d = %5.1f %%  (%.2f ms)"
-              % (name, n, av, 100.0 * av / tpf, mx, 100.0 * mx / tpf, 1000.0 * mx / E_CLOCK))
+        print("  %-18s %4d frames  media %5d ticks = %5.1f %%   max %5d = %5.1f %%  (%.2f ms) en s=%d"
+              % (name, n, av, 100.0 * av / tpf, mx, 100.0 * mx / tpf, 1000.0 * mx / E_CLOCK,
+                 (w[ws] & 0x7FFE) >> 1))
     return 0
 
 
