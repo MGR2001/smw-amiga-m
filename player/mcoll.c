@@ -30,7 +30,15 @@ u8 *map16_lo;               /* $7E:C800: byte bajo del indice Map16 */
 u8 *map16_hi;               /* $7F:C800: pagina */
 unsigned mario_events;
 
-static u8 rX, rY;
+/* build de la Amiga (vbcc sin NOASM): lo que player/logic68k.s lee o escribe
+   deja de ser static (MCS); en el PC todo sigue static */
+#if defined(__VBCC__) && !defined(NOASM)
+#define LOGIC68K 1
+#define MCS
+#else
+#define MCS static
+#endif
+MCS u8 rX, rY;
 
 #define TILESET     0x1931  /* wm_LvHeadTileset (fuera de la RAM grabada) */
 #define SCR_BYTES   0x1B0
@@ -162,12 +170,12 @@ static u8 f461(void) { return f461_xy(R16(wm_BlockYPos), R16(wm_BlockXPos)); }
 /* Desplazamientos de las sondas (DATA_00E832-2 / DATA_00E89C por X/2),
    en tablas nativas de 16 bits que se arman una vez desde la ROM: leerlos
    de rom00 byte a byte costaba ~50 ciclos por valor en el 68000. */
-static u16 probe_dx[64], probe_dy[64];
+MCS u16 probe_dx[64], probe_dy[64];
 static u8 probe_ok;
 /* La posicion de Mario para las sondas: eb77 la carga al empezar y la
    actualiza donde la cambia antes de otra sonda (CODE_00ED28). Asi F44D
    no relee MarioXPos/YPos de ram[] (4 bytes) en cada una de las 6. */
-static u16 probe_mx, probe_my;
+MCS u16 probe_mx, probe_my;
 static void probe_init(void)
 {
     int k;
@@ -178,7 +186,21 @@ static void probe_init(void)
     probe_ok = 1;
 }
 
+#ifdef LOGIC68K
+u8 f44d_c(void);                /* la referencia; f44d_asm cae aca con wm_8E */
+u8 f44d_asm(void);
+/* f44d_asm, con un bloque de los interruptores P: lo que hace el C */
+u8 f44d_tail(u8 a);
+u8 f44d_tail(u8 a)
+{
+    a = f545(a);
+    rY = R8(wm_Map16NumLo);
+    return a;
+}
+u8 f44d_c(void)
+#else
 static u8 f44d(void)
+#endif
 {
     u8 a, k, xs, lo;
     u16 x, y;
@@ -221,6 +243,9 @@ out:
 #endif
     return a;
 }
+#ifdef LOGIC68K
+#define f44d f44d_asm            /* player/logic68k.s */
+#endif
 
 /* CODE_00F443: carry = ((XPos + 4) & $0F) >= 8 */
 static int f443(void) { return ((u8)(R8(wm_MarioXPos) + 4) & 0x0F) >= 8; }

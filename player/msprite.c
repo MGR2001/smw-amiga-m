@@ -75,7 +75,7 @@ static int spawn(u8 y, u8 index, u8 col, u8 scr, u8 state)
    que empezar ahi da lo mismo aunque la lista no estuviera ordenada, y no
    recorre el nivel entero cada 2 frames (~3 000 ciclos en el 68000). Se
    arma una vez por nivel (cuando cambia spr_level). */
-static const u8 *sll_for;
+const u8 *sll_for;              /* global: logicbench -DWORST lo corrige */
 static u8 sll_y[33], sll_i[33];
 static void sll_build(void)
 {

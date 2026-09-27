@@ -134,6 +134,9 @@ def main():
     ap.add_argument("--mode", choices=("full", "loop"), default="full",
                     help="full: estado de N + entradas de N+1 (como marioverify full); "
                          "loop: lazo cerrado con _level_frame, solo el joypad")
+    ap.add_argument("--dump", type=int, default=None,
+                    help="loop: guardar ram[] y el mapa justo antes del level_frame de este frame "
+                         "(work/cc/worst_ram.bin, worst_map.bin: para logicbench -DWORST)")
     ap.add_argument("--sprites", action="store_true",
                     help="loop con _level_sprites = 1: los sprites del nivel los corre el "
                          "binario (como marioverify game, pero TODOS: los sin portar no hacen nada)")
@@ -307,7 +310,17 @@ def run_loop(a, cpu, call, rec, orc, n, RAM, MAP, map0, syms):
             cur = 0
             continue
         cpu.write(RAM + 0x15, r[2][0x15:0x19])
+        if a.dump is not None and r[0] == a.dump:
+            open(os.path.join(WORK, "cc", "worst_ram.bin"), "wb").write(cpu.read(RAM, 0x2000))
+            open(os.path.join(WORK, "cc", "worst_map.bin"), "wb").write(cpu.read(MAP, len(map0)))
+            c0, c1 = BASE + syms["cdata0"], BASE + syms["cdata1"]
+            open(os.path.join(WORK, "cc", "worst_cdata.bin"), "wb").write(cpu.read(c0, c1 - c0))
         costs.append((call("_level_frame"), r[0]))
+        if a.dump is not None and r[0] == a.dump:
+            c0, c1 = BASE + syms["cdata0"], BASE + syms["cdata1"]
+            open(os.path.join(WORK, "cc", "worst_after.bin"), "wb").write(cpu.read(c0, c1 - c0))
+            print("estado del frame %d guardado (work/cc/worst_*.bin); level_frame: %d ciclos"
+                  % (r[0], costs[-1][0]))
         frames += 1
         ram = cpu.read(RAM, 0x2000)
         ok = all(bytes(ram[adr:adr + w]) == bytes(orc(r, adr + t) for t in range(w))

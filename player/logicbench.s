@@ -349,6 +349,37 @@ work1:
         bra     copystate
 
 ; W2: estado "corriendo" + el frame entero del jugador
+        ifd     WORST
+; -DWORST (8.2, paso 5): el PEOR frame con sprites del lazo cerrado.
+; W2 = restaurar ram[] entera (8 KB, m68kverify --dump) + level_frame con
+; los sprites; W3 = solo restaurar. level_frame = W2 - W3.
+work2:
+        bsr     copyworst
+        bra     callframe
+work3:
+        bra     copyworst
+; Restaura TODOS los datos del C que cambian (cdata0..cdata1: ram[] y los
+; static del C, m68kverify --dump) y corrige los punteros, que guardan
+; direcciones de Musashi: el mapa lo pone callframe, spr_clip_x/y
+; level_frame (logic68k_init), y spr_level / sll_for aca.
+; La copia va al FINAL del binario (despues del mapa): delante de los datos
+; del C los correria mas alla de 32 KB de a4 (P36).
+copyworst:
+        move.l  a4,-(sp)                    ; a4 = CUSTOM en measure
+        lea     binstart(pc),a4
+        lea     cdata0(a4),a1
+        move.l  a4,a0
+        add.l   #worst_cdata-binstart,a0
+        move.w  #(cdata1-cdata0)/2-1,d0
+.c:     move.w  (a0)+,(a1)+
+        dbf     d0,.c
+        move.l  a4,a0
+        add.l   #worst_spr-binstart,a0      ; spr.lv del nivel
+        move.l  a0,_spr_level(a4)
+        move.l  a0,_sll_for(a4)
+        move.l  (sp)+,a4
+        rts
+        else
 work2:
         lea     state_run(pc),a0
         bsr     copystate
@@ -359,6 +390,7 @@ work3:
         lea     state_jump(pc),a0
         bsr     copystate
         bra     callframe
+        endc
 
 ; build_tab: lo llama el arranque heredado de bench2.s; aca no hace falta.
 build_tab:
@@ -534,12 +566,16 @@ vars:   ds.b    V_SIZE
 ; despues el codigo y el mapa
         cnop    0,4
         include "work/cc/smwrom00.data.s"
+        even                                ; -DWORST copia de a palabras: una
+cdata0:                                     ; palabra impar cuelga el 68000
         include "work/cc/mario.data.s"
         include "work/cc/mcoll.data.s"
         include "work/cc/manim.data.s"
         include "work/cc/mgfx.data.s"
         include "work/cc/mcam.data.s"
         include "work/cc/msprite.data.s"
+        even
+cdata1:
         cnop    0,4
         include "work/cc/mario.code.s"
         include "work/cc/mcoll.code.s"
@@ -553,4 +589,15 @@ vars:   ds.b    V_SIZE
         even
 MAPHALF     equ 20*$1B0                     ; 20 pantallas de Yoshi's Island 1
 map16:
+        ifd     WORST
+        incbin  "work/cc/worst_map.bin"     ; el mapa en ese frame
+        even
+worst_cdata:
+        incbin  "work/cc/worst_cdata.bin"
+        even
+worst_spr:
+        incbin  "work/cc/spr.lv"
+        even
+        else
         incbin  "work/yi1_map16.bin"
+        endc

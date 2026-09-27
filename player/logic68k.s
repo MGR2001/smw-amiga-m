@@ -118,3 +118,83 @@ _spr_tile_asm:
         rts
 .inc:   movem.l (sp)+,d2-d4/a2              ; los argumentos siguen en la pila
         jmp     _spr_tile_c
+
+;----------------------------------------------------------------------
+; u8 f44d_asm(void) = f44d de mcoll.c (CODE_00F44D): la sonda siguiente
+; (rX += 2) respecto de la posicion de Mario (probe_mx/my), el bloque que
+; toca y su pagina. Deja BlockYPos/XPos, Map16NumLo y rY como el C. Con
+; wm_8E (capa 2) salta al C; con un bloque de los interruptores P llama a
+; f44d_tail (f545 en C).
+;----------------------------------------------------------------------
+        public  _f44d_asm
+_f44d_asm:
+        tst.b   _ram+wm_8E(a4)
+        bne     .c
+        movem.l d2-d3/a2,-(sp)
+        lea     _ram(a4),a2
+        move.b  _rX(a4),d0
+        addq.b  #2,d0
+        move.b  d0,_rX(a4)
+        moveq   #$7e,d1
+        and.b   d0,d1                       ; k = 2 * ((rX >> 1) & 63)
+        lea     _probe_dx(a4),a0
+        move.w  (a0,d1.w),d2
+        add.w   _probe_mx(a4),d2            ; x
+        lea     _probe_dy(a4),a0
+        move.w  (a0,d1.w),d3
+        add.w   _probe_my(a4),d3            ; y
+        move.b  d2,wm_BlockYPos(a2)         ; (el ROM pone x en BlockYPos)
+        move.w  d2,d0
+        lsr.w   #8,d0                       ; d0 = xs = pantalla
+        move.b  d0,wm_BlockYPos+1(a2)
+        move.b  d3,wm_BlockXPos(a2)
+        move.w  d3,d1
+        lsr.w   #8,d1
+        move.b  d1,wm_BlockXPos+1(a2)
+        clr.b   wm_WhichSwitchPressed(a2)
+        cmp.w   #$1b0,d3
+        bhs.s   .off
+        cmp.b   wm_ScreensInLvl(a2),d0
+        bhs.s   .off
+        and.w   #$1f,d0
+        add.w   d0,d0
+        lea     _scr_ofs(a4),a0
+        move.w  (a0,d0.w),d0
+        and.w   #$1f0,d3
+        add.w   d3,d0
+        moveq   #0,d1
+        move.b  d2,d1
+        lsr.b   #4,d1
+        add.w   d1,d0                       ; o (< $3600)
+        move.l  _map16_lo(a4),a0
+        move.b  (a0,d0.w),d1                ; lo
+        move.l  _map16_hi(a4),a0
+        move.b  (a0,d0.w),d0                ; pagina
+        move.b  d1,wm_Map16NumLo(a2)
+        move.b  d1,_rY(a4)
+        tst.b   d0
+        beq.s   .p0
+        cmp.b   #$32,d1
+        beq.s   .sw
+        cmp.b   #$2f,d1
+        beq.s   .sw
+        bra.s   .ret
+.p0:    cmp.b   #$29,d1
+        beq.s   .sw
+        cmp.b   #$2b,d1
+        beq.s   .sw
+        sub.b   #$ec,d1
+        cmp.b   #$10,d1
+        bhs.s   .ret
+.sw:    and.l   #$ff,d0                     ; interruptores P: f545 en C
+        move.l  d0,-(sp)
+        jsr     _f44d_tail
+        addq.l  #4,sp
+.ret:   and.l   #$ff,d0
+        movem.l (sp)+,d2-d3/a2
+        rts
+.off:   move.b  #$25,_rY(a4)                ; CODE_00F4A0: fuera del nivel
+        moveq   #0,d0
+        movem.l (sp)+,d2-d3/a2
+        rts
+.c:     jmp     _f44d_c
