@@ -512,3 +512,125 @@ _spr_mario_contact_asm:
 .no:    moveq   #0,d0
         movem.l (sp)+,d2-d7/a2
         rts
+
+;----------------------------------------------------------------------
+; void rex_main_asm(u8 x) = rex_main de msprite.c (el Rex, sprite $AB):
+; pose, temporizadores, velocidad, movimiento e interacciones. Las rutinas
+; de sprite siguen en C (o en este fichero) y el contacto con Mario, que
+; es raro, es rex_contact (C). a3 = ram + x: SPR(t, x) = t(a3).
+;----------------------------------------------------------------------
+CALLX   macro                               ; \1(x), x en d2
+        move.l  d2,-(sp)
+        jsr     \1
+        addq.l  #4,sp
+        endm
+
+        public  _rex_main_asm
+_rex_main_asm:
+        movem.l d2/a2-a3,-(sp)
+        moveq   #0,d2
+        move.b  12+7(sp),d2                 ; x
+        lea     _ram(a4),a2
+        lea     (a2,d2.w),a3
+        tst.b   wm_SpriteDecTbl3(a3)        ; RexGfxRt
+        beq.s   .g1
+        move.b  #5,wm_SpriteGfxTbl(a3)
+.g1:    tst.b   wm_DisSprCapeContact(a3)
+        beq.s   .g2
+        move.b  #2,wm_SpriteGfxTbl(a3)
+.g2:    CALLX   _get_draw_info_asm
+        cmp.b   #$08,wm_SpriteStatus(a3)
+        bne     .ret
+        tst.b   wm_SpritesLocked(a2)
+        bne     .ret
+        move.b  wm_SpriteDecTbl3(a3),d0
+        beq.s   .alive
+        move.b  d0,wm_SpriteEatenTbl(a3)
+        cmp.b   #1,d0
+        bne     .ret
+        clr.b   wm_SpriteStatus(a3)
+        bra     .ret
+.alive: CALLX   _sub_offscreen3
+        addq.b  #1,wm_SpriteMiscTbl6(a3)
+        move.b  wm_SpriteMiscTbl6(a3),d0
+        lsr.b   #2,d0
+        tst.b   wm_SpriteState(a3)
+        beq.s   .s0
+        and.b   #1,d0
+        addq.b  #3,d0
+        bra.s   .s1
+.s0:    lsr.b   #1,d0
+        and.b   #1,d0
+.s1:    move.b  d0,wm_SpriteGfxTbl(a3)
+        btst    #2,wm_SprObjStatus(a3)
+        beq.s   .n2
+        move.b  #$10,wm_SpriteSpeedY(a3)
+        moveq   #0,d0
+        move.b  wm_SpriteDir(a3),d0
+        tst.b   wm_SpriteState(a3)
+        beq.s   .d
+        addq.b  #2,d0
+.d:     move.l  _rex_speed(a4),a0
+        move.b  (a0,d0.w),wm_SpriteSpeedX(a3)
+.n2:    tst.b   wm_DisSprCapeContact(a3)
+        bne.s   .n3
+        CALLX   _spr_update_pos_asm
+.n3:    moveq   #3,d0
+        and.b   wm_SprObjStatus(a3),d0
+        beq.s   .n4
+        eor.b   #1,wm_SpriteDir(a3)
+.n4:    CALLX   _spr_spr_interact
+        CALLX   _mario_spr_interact
+        tst.l   d0
+        beq.s   .ret
+        CALLX   _rex_contact
+.ret:   movem.l (sp)+,d2/a2-a3
+        rts
+
+;----------------------------------------------------------------------
+; void spr_update_pos_asm(u8 x) = spr_update_pos de msprite.c
+; (SubUpdateSprPos): Y con gravedad, X, y la interaccion con los bloques
+; (spr_obj_interact, C). Las dos constantes de la ROM, por puntero.
+;----------------------------------------------------------------------
+        public  _spr_update_pos_asm
+_spr_update_pos_asm:
+        movem.l d2-d3/a3,-(sp)
+        moveq   #0,d2
+        move.b  12+7(sp),d2                 ; x
+        lea     _ram(a4),a3
+        add.w   d2,a3                       ; a3 = ram + x
+        clr.l   -(sp)                       ; spr_pos_axis(x, 0)
+        move.l  d2,-(sp)
+        bsr     _spr_pos_axis_asm
+        addq.l  #8,sp
+        tst.b   wm_SprInWaterTbl(a3)
+        bne.s   .unsup
+        move.l  _upd_grav(a4),a0
+        move.b  wm_SpriteSpeedY(a3),d0
+        add.b   (a0),d0                     ; v = SpeedY + gravedad
+        bmi.s   .v
+        move.l  _upd_max(a4),a0
+        cmp.b   (a0),d0
+        blo.s   .v
+        move.b  (a0),d0                     ; tope de caida
+.v:     move.b  d0,wm_SpriteSpeedY(a3)
+        move.b  wm_SpriteSpeedX(a3),d3      ; keep
+        pea     $0c.w                       ; spr_pos_axis(x, $0C)
+        move.l  d2,-(sp)
+        bsr     _spr_pos_axis_asm
+        addq.l  #8,sp
+        move.b  d3,wm_SpriteSpeedX(a3)
+        tst.b   wm_SpriteInterTbl(a3)
+        beq.s   .obj
+        clr.b   wm_SprObjStatus(a3)
+        bra.s   .ret
+.obj:   move.l  d2,-(sp)
+        jsr     _spr_obj_interact
+        addq.l  #4,sp
+.ret:   movem.l (sp)+,d2-d3/a3
+        rts
+.unsup: tst.l   _mario_unsupported(a4)      ; spr_unsup (agua: sin portar)
+        bne.s   .ret
+        moveq   #MARIO_UNSUP_TILE,d0
+        move.l  d0,_mario_unsupported(a4)
+        bra.s   .ret

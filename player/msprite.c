@@ -17,9 +17,13 @@
 #include "gen/smwtabx.h"
 #include "smwmac.h"
 
-/* build de la Amiga: rutinas de player/logic68k.s en vez del C */
+/* build de la Amiga: rutinas de player/logic68k.s en vez del C; lo que el
+   asm llama deja de ser static (MSS) */
 #if defined(__VBCC__) && !defined(NOASM)
 #define LOGIC68K 1
+#define MSS
+#else
+#define MSS static
 #endif
 const u8 *spr_level;        /* spr.lv del nivel (cabecera incluida) */
 static void init_sprite_tables(u8 x);
@@ -230,7 +234,7 @@ u8 spr_tile_asm(u8 x, u8 y);
    inicializado en la declaracion guardaria la direccion ABSOLUTA del
    ensamblado, y el binario se carga en cualquier sitio (P36) */
 const u8 *spr_clip_x, *spr_clip_y, *gdi_ofs, *gdi_bit;
-const u8 *mcl_dy, *mcl_h, *cl_dx, *cl_dy, *cl_w, *cl_h;
+const u8 *mcl_dy, *mcl_h, *cl_dx, *cl_dy, *cl_w, *cl_h, *rex_speed, *upd_grav, *upd_max;
 u8 logic68k_zero;               /* siempre 0: con "tabla + 0 de la RAM" vbcc
                                    calcula la direccion con lea d16(a4); con
                                    "= tabla" emite move.l #etiqueta (absoluta) */
@@ -250,6 +254,9 @@ void logic68k_init(void)
     cl_dy = tx_ClipDispY + logic68k_zero;
     cl_w = tx_ClipWidth + logic68k_zero;
     cl_h = tx_ClipHeight + logic68k_zero;
+    rex_speed = tx_RexSpeed + logic68k_zero;
+    upd_grav = tx_019030 + logic68k_zero;
+    upd_max = tx_01902E + logic68k_zero;
 }
 u8 spr_tile_c(u8 x, u8 y)
 #else
@@ -381,7 +388,7 @@ l_B8:                                       /* _0193B8 */
 }
 
 /* CODE_019140 (nivel horizontal, capa 1, sin agua) */
-static void spr_obj_interact(u8 x)
+MSS void spr_obj_interact(u8 x)
 {
     u8 a;
     W8(wm_SprMoveDownPixels, 0);
@@ -419,6 +426,10 @@ static void spr_obj_interact(u8 x)
 }
 
 /* SubUpdateSprPos */
+#ifdef LOGIC68K
+void spr_update_pos_asm(u8 x);
+#define spr_update_pos spr_update_pos_asm   /* player/logic68k.s */
+#else
 static void spr_update_pos(u8 x)
 {
     u8 v, keep;
@@ -436,6 +447,7 @@ static void spr_update_pos(u8 x)
     else
         spr_obj_interact(x);
 }
+#endif
 
 /* GetDrawInfoBnk3: solo los flags de fuera de pantalla (el dibujo, en la
    etapa 6). Devuelve 0 si el sprite esta lejos (PLA/PLA: no se dibuja). */
@@ -466,7 +478,7 @@ static int get_draw_info(u8 x)
 #endif
 
 /* SubOffscreen0Bnk3 (nivel horizontal) */
-static void sub_offscreen3(u8 x)
+MSS void sub_offscreen3(u8 x)
 {
     u8 y, e = 0;
     if (!(SPR(wm_OffscreenHorz, x) | SPR(wm_OffscreenVert, x)))
@@ -533,7 +545,7 @@ static int spr_mario_contact(u8 x)
 /* MarioSprInteractRt, hasta el contacto (el Rex tiene Tweaker167A bit 7:
    la reaccion la hace el propio sprite) */
 static int process_interact(u8 x);
-static int mario_spr_interact(u8 x)
+MSS int mario_spr_interact(u8 x)
 {
     if (!(SPR(wm_Tweaker167A, x) & 0x20)
         && (((x ^ R8(wm_FrameA)) & 1) | SPR(wm_OffscreenHorz, x)))
@@ -622,7 +634,7 @@ static void invis_blk(u8 x)
 }
 
 /* FlyingBlock (sprite_1-1.s), el $83: vuela hacia la izquierda en onda */
-static void spr_spr_interact(u8 y);
+MSS void spr_spr_interact(u8 y);
 
 static void flying_block(u8 x)
 {
@@ -673,7 +685,7 @@ static void info_box(u8 x)
 /* SubSprSprInteract: la ranura y (la que corre) contra las de abajo.
    Portado el caso estado 8 contra estado 8 (CODE_01A56D: se dan vuelta);
    el resto marca mario_unsupported. */
-static void spr_spr_interact(u8 y)
+MSS void spr_spr_interact(u8 y)
 {
     int x;
     if (!y || !((y ^ R8(wm_FrameA)) & 1))
@@ -736,6 +748,13 @@ void sprite_tweakers(u8 x)
 }
 
 /* RexMainRt */
+/* el Rex toco a Mario (mario_spr_interact): pisoton, giro o golpe */
+MSS void rex_contact(u8 x);
+
+#ifdef LOGIC68K
+void rex_main_asm(u8 x);
+#define rex_main rex_main_asm               /* player/logic68k.s */
+#else
 static void rex_main(u8 x)
 {
     u8 a, y;
@@ -771,6 +790,12 @@ static void rex_main(u8 x)
     spr_spr_interact(x);
     if (!mario_spr_interact(x))
         return;
+    rex_contact(x);
+}
+#endif
+
+MSS void rex_contact(u8 x)
+{
     if (R8(wm_StarPowerTimer)) { spr_unsup(); return; }     /* RexStarKill */
     if (SPR(wm_SpriteDecTbl2, x))
         return;
