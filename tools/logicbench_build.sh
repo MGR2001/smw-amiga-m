@@ -64,6 +64,7 @@ fi
 # direcciones de ram[] y constantes del C para player/logic68k.s
 mkdir -p work/cc
 sed -nE 's/^#define (m[0-9]+|wm_[A-Za-z0-9_]+) +0x([0-9A-Fa-f]+).*/\1 equ $\2/p' player/gen/smwram.h > work/cc/smwram.i
+sed -nE 's/^#define ([A-Za-z_][A-Za-z0-9_]*) +0x([0-9A-Fa-f]+).*/\1 equ $\2/p' player/gen/smwtab.h >> work/cc/smwram.i
 awk '/^enum \{/{e=1;n=0;next} e&&/^\};/{e=0} e&&match($0,/MARIO_[A-Z_]+/){print substr($0,RSTART,RLENGTH)" equ "n; n++}' player/mario.h >> work/cc/smwram.i
 [ -f work/yi1_map16.bin ] || python tools/mkmapbin.py
 # el arnes incluye work/cc/*.s: en PROF, una copia que apunta a work/prof/cc

@@ -20,8 +20,19 @@
 
 #define S16(v)  ((s16)(u16)(v))
 
+/* build de la Amiga: camera_F6DB en player/logic68k.s, que llama a estas
+   dos (dejan de ser static) */
+#if defined(__VBCC__) && !defined(NOASM)
+#define LOGIC68K 1
+#define MCS
+void f8ab(void);
+u16 f7f4(u16 limit, u16 bg1v);
+#else
+#define MCS static
+#endif
+
 /* CODE_00F8AB: la zona muerta despues de mover la camara con L/R */
-static void f8ab(void)
+MCS void f8ab(void)
 {
     u8 x, y;
     u16 a, v2 = R16(m2);
@@ -45,7 +56,7 @@ static void f8ab(void)
 /* CODE_00F7F4 / CODE_00F7FA: scroll vertical. Entra y sale Bg1VOfs en una
    variable (nativo: en el 68000 cada valor de 16 bits de ram[] cuesta ~50
    ciclos); escribe en la RAM lo mismo que el ROM. */
-static u16 f7f4(u16 limit, u16 bg1v)
+MCS u16 f7f4(u16 limit, u16 bg1v)
 {
     u8 y, x;
     u16 a, v0, v2;
@@ -109,7 +120,12 @@ l_F883:
 }
 
 /* CODE_00F6DB */
+#ifdef LOGIC68K
+void camera_F6DB_c(void);   /* la referencia; el asm cae aca en nivel vertical */
+void camera_F6DB_c(void)
+#else
 void camera_F6DB(void)
+#endif
 {
     u8 y;
     u16 a, v0, v2, pts, bg1h, bg1v, bg2h, bg2v;

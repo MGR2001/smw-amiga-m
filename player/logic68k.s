@@ -309,3 +309,130 @@ _get_draw_info_asm:
 .far:   moveq   #0,d0
         movem.l (sp)+,d2-d4
         rts
+
+;----------------------------------------------------------------------
+; void camera_F6DB(void) = camera_F6DB_c de mcam.c (CODE_00F6DB, nivel
+; horizontal): Bg1/Bg2 a partir de L1/L2NextPos y de Mario respecto de la
+; zona muerta. f7f4 (scroll vertical) y f8ab (L/R) siguen en C. Nivel
+; vertical: el C (lo marca sin portar).
+; d3 = pts  d4 = bg1h  d5 = bg1v  d6 = bg2h  d7 = bg2v  a2 = ram
+;----------------------------------------------------------------------
+RD16    macro                               ; \2.w = ram[\1] (little endian)
+        move.b  \1+1(a2),\2
+        lsl.w   #8,\2
+        move.b  \1(a2),\2
+        endm
+WR16    macro                               ; ram[\1] = \2.w (destruye d0)
+        move.b  \2,\1(a2)
+        move.w  \2,d0
+        lsr.w   #8,d0
+        move.b  d0,\1+1(a2)
+        endm
+
+        public  _camera_F6DB
+_camera_F6DB:
+        btst    #0,_ram+wm_IsVerticalLvl(a4)
+        bne     .vert
+        movem.l d2-d7/a2,-(sp)
+        lea     _ram(a4),a2
+        RD16    wm_PosToScrollScreen,d3
+        move.w  d3,d1
+        sub.w   #$000c,d1
+        WR16    wm_CanScrollScreen,d1
+        add.w   #$0018,d1
+        WR16    wm_CanScrollScreen+2,d1
+        RD16    wm_L1NextPosX,d4
+        RD16    wm_L1NextPosY,d5
+        RD16    wm_L2NextPosX,d6
+        RD16    wm_L2NextPosY,d7
+        WR16    wm_Bg1HOfs,d4
+        moveq   #0,d0                       ; bg1v = f7f4($00C0, bg1v)
+        move.w  d5,d0
+        move.l  d0,-(sp)
+        move.l  #$00c0,-(sp)
+        jsr     _f7f4
+        addq.l  #8,sp
+        move.w  d0,d5
+        tst.b   wm_HorzScrollHead(a2)
+        beq     .l2
+        RD16    wm_MarioXPos,d1
+        sub.w   d4,d1                       ; v0 = MarioXPos - bg1h
+        WR16    m0,d1
+        moveq   #2,d2                       ; y
+        move.w  d1,d0
+        sub.w   d3,d0
+        bpl.s   .y2
+        moveq   #0,d2
+.y2:    move.b  d2,wm_Layer1ScrollDir(a2)
+        move.b  d2,wm_Layer2ScrollDir(a2)
+        move.w  d3,d0                       ; a = v0 - (pts - $0C [+ $18])
+        sub.w   #$000c,d0
+        tst.b   d2
+        beq.s   .y0
+        add.w   #$0018,d0
+.y0:    sub.w   d0,d1                       ; d1 = a
+        beq     .l2
+        lea     _rom00+(DATA_00F6A3-ROM00_BASE)(a4),a0
+        move.w  d1,d0                       ; (a ^ T16X(DATA_00F6A3, y)) & $8000:
+        lsr.w   #8,d0                       ; solo cuenta el bit 15, o sea el
+        move.b  1(a0,d2.w),d2               ; bit 7 de los bytes altos
+        eor.b   d2,d0
+        bpl     .l2
+        WR16    m2,d1
+        jsr     _f8ab
+        RD16    m2,d1                       ; v2
+        add.w   d4,d1                       ; a = v2 + bg1h
+        bpl.s   .pos
+        moveq   #0,d1
+.pos:   move.w  d1,d4
+        moveq   #0,d0
+        move.b  wm_LastScreenHorz(a2),d0
+        subq.b  #1,d0
+        lsl.w   #8,d0                       ; ((LastScreenHorz - 1) & $FF) << 8
+        bpl.s   .lim
+        move.w  #$0080,d0
+.lim:   cmp.w   d4,d0                       ; a - bg1h < 0 (con signo)?
+        bge.s   .l2
+        move.w  d0,d4
+.l2:    moveq   #0,d0                       ; _00F79D: la capa 2
+        move.b  wm_HorzScrollLyr2(a2),d0
+        beq.s   .v2
+        move.w  d4,d6
+        cmp.b   #1,d0
+        beq.s   .v2
+        lsr.w   #1,d6
+.v2:    move.b  wm_VertScrollLyr2(a2),d0
+        beq.s   .wr
+        move.w  d5,d1
+        cmp.b   #1,d0
+        beq.s   .v1
+        cmp.b   #2,d0
+        bne.s   .v5
+        lsr.w   #1,d1
+        bra.s   .v1
+.v5:    lsr.w   #5,d1
+.v1:    RD16    wm_VertL2ScrollLength,d7
+        add.w   d1,d7
+.wr:    WR16    wm_Bg1HOfs,d4
+        WR16    wm_Bg1VOfs,d5
+        WR16    wm_Bg2HOfs,d6
+        WR16    wm_Bg2VOfs,d7
+        move.b  d4,d0                       ; cuanto se movio cada capa
+        sub.b   wm_L1NextPosX(a2),d0
+        move.b  d0,wm_L1CurXChange(a2)
+        move.b  d5,d0
+        sub.b   wm_L1NextPosY(a2),d0
+        move.b  d0,wm_L1CurYChange(a2)
+        move.b  d6,d0
+        sub.b   wm_L2NextPosX(a2),d0
+        move.b  d0,wm_L2CurXChange(a2)
+        move.b  d7,d0
+        sub.b   wm_L2NextPosY(a2),d0
+        move.b  d0,wm_L2CurYChange(a2)
+        WR16    wm_L1NextPosX,d4
+        WR16    wm_L1NextPosY,d5
+        WR16    wm_L2NextPosX,d6
+        WR16    wm_L2NextPosY,d7
+        movem.l (sp)+,d2-d7/a2
+        rts
+.vert:  jmp     _camera_F6DB_c
