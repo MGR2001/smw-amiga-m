@@ -157,6 +157,16 @@ l_E31A:
             a = T8X(DATA_00E2B9, x);
         y = T8X(DATA_00E2B2, x);
         a |= T8X(MarioPalIndex, R8(wm_MarioDirection));
+#ifdef NOOAM
+        /* build de la Amiga: sin las 4 entradas de OAM (la 6b.4 dibuja a
+           Mario con su pose). Solo los efectos que no son OAM: lo que el
+           bucle deja en HidePlayer y en m4-m6 */
+        (void)a; (void)k; (void)o; (void)sy; (void)sx;
+        W8(wm_HidePlayer, R8(wm_HidePlayer) >> 4);
+        W8(m4, (u8)(m4v << 4));
+        W8(m5, (u8)(m5v + 8));
+        W8(m6, (u8)(m6v + 4));
+#else
         o = ram + 0x0300 + y;               /* wm_OamSlot.1,Y: X, Y, tile, prop */
         o[3] = a;
         o[4 + 3] = a;
@@ -197,6 +207,7 @@ l_plus:
         W8(m4, m4v);
         W8(m5, m5v);
         W8(m6, m6v);
+#endif
         if (R8(wm_MarioPowerUp) == 0x02) {
             if (!mario_unsupported) mario_unsupported = MARIO_UNSUP_CAPE;
             return;

@@ -23,6 +23,7 @@ cd "$(dirname "$0")/.."
 VBCC=${VBCC:-/c/Users/JC/vbcc}
 X=; [ -f "$VBCC/bin/vbccm68k.exe" ] && X=.exe
 OUT=work; CC=work/cc; EXTRA=
+CDEFS=${CDEFS--DNOOAM}          # build de la Amiga: sin OAM (8.2); CDEFS= la incluye
 if [ -n "$PROF" ]; then
     OUT=work/prof; CC=work/prof/cc; EXTRA=-inline-size=0
 fi
@@ -34,7 +35,7 @@ for f in mario mcoll manim mgfx mcam msprite gen/smwrom00; do
         sed -E 's/^static ((const )?(void|u8|int|unsigned|u16) \*?[a-z_0-9]+\()/\1/' player/$f.c > $CC/$b.c
         src=$CC/$b.c
     fi
-    "$VBCC/bin/vbccm68k$X" -quiet -c99 -cpu=68000 -O=991 $EXTRA -sc -sd -const-in-data \
+    "$VBCC/bin/vbccm68k$X" -quiet -c99 -cpu=68000 -O=991 $EXTRA $CDEFS -sc -sd -const-in-data \
         -Iplayer -o=$CC/$b.s $src
     # las etiquetas locales de vbcc (l12...) se repiten entre ficheros
     sed -i -E "s/\bl([0-9]+)\b/${b}_l\1/g" $CC/$b.s
