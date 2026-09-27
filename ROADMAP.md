@@ -72,6 +72,7 @@
 | 8a/8b | Física y colisión de Mario | **hecho**: `full` 6510/6547; los 37 que fallan son contactos con sprites | `player/mario.c`, `mcoll.c`, `manim.c` |
 | 8 (gfx, cámara) | Gráficos (OAM) y cámara | **hecho**: `gfx` 6869/6869; lazo cerrado solo con el joypad | `player/mgfx.c`, `mcam.c` |
 | 8c | Pendientes | las de la partida salen exactas; **falta la grabación de las colinas** | — |
+| 8.2 | Optimizar la lógica | **en curso**: peor frame con sprites 52 816 → 51 354 ciclos (Musashi); ~50 % estimado en la Amiga a 256 px, objetivo 40 %. Plan en §5 | `player/msprite.c`, `tools/m68kprof.py` |
 | 8d | Coste en la Amiga | **medido**: 26,5 % corriendo y 26,9 % saltando (FS-UAE, DPF encendido, sin sprites), después de la optimización de los subagentes; antes, 31,6 % y 32,9 % | `player/logicbench.s` |
 | 9 | Sprites: lógica | cargador (20/20), motor mínimo, **Rex**, bloque `?` volador (`$83`) y caja de mensaje (`$B9`). Falta el resto de D3 | `player/msprite.c` |
 | 9 | Sprites: dibujo en la Amiga | no empezado | — |
@@ -569,6 +570,42 @@ camino). Red de seguridad: V1 en cada commit.
 
 **Hecho cuando** la lógica con sprites da ≤ 40 % en el peor frame (FS-UAE,
 DPF encendido) y V1 es idéntica.
+
+**Estado el 2026-09-27 (PC), en curso:**
+- **Dónde estamos.** `logicbench -DVIS256` (la pantalla de la 6.1) en WinUAE
+  KS 1.2: 25,8 % corriendo / 26,3 % saltando. Factor WinUAE/Musashi del
+  mismo trabajo: **1,39** a 256 px (1,50 a 320). Peor frame con sprites en
+  Musashi: 51 354 ciclos → **~50 % estimado** en la Amiga. Objetivo 40 %:
+  falta **~−20 %** en el peor frame (≤ ~40 800 ciclos en Musashi).
+  El paso 5 (medir el peor frame con sprites directamente en cycle-exact)
+  sigue pendiente; esto es una estimación con el factor medido.
+- **Perfil** (`m68kprof.py --sprites --every 1 --worst N --at F --hot N`):
+  **plano**, ninguna instrucción pasa del 1 %. Por familia: `move` con
+  `ram[]` 17 %, `movem`+`jsr`/`rts` ~15 % (llamadas; el build real
+  incorpora en línea parte), `and.l #255` y desplazamientos ~14 %
+  (promoción de `u8` a `int`). El peor frame persistente (7856-7996) es
+  de sprites: `spr_tile` (colisión de sprites con bloques, NO es OAM),
+  `sprite_load_level`, `spr_pos_axis`, `get_draw_info`, `rex_main`,
+  interacciones; el peor absoluto (9670) es un frame con aparición.
+- **Hecho:** `sprite_load_level` sin recorrer el nivel (−2,2 %),
+  `init_sprite_tables` desenrollado, `spr_tile` sin MULU (−0,6 %). Peor
+  frame con sprites 52 816 → **51 354** (−2,8 %), semántica IGUAL.
+- **Descartado:** flags de vbcc. `-speed`, `-inline-size`,
+  `-maxoptpasses`, `-unroll-size` dan el mismo binario; `-O=1023`/`4095`
+  cambian la semántica (433 resincronizaciones en vez de 37: P38).
+- **Lo que queda, por tamaño estimado:**
+  1. **OAM fuera del build de la Amiga** (lo que la 6b.4/9.2 reemplaza):
+     solo las escrituras directas a `$200-$46F` son el 4,6 % de la media
+     (casi todo `ClearOam`); con `e45d` y los gráficos de sprites, ~8-12 %.
+     El verificador (`gfx`) sigue con la OAM. Es diseño de la 6b.4: se
+     consulta antes.
+  2. **Ensamblador a mano** en `f44d`/`f461` (sondas), `spr_tile` y
+     `camera_F6DB` (paso 3): ~12 000 ciclos del peor frame; a la mitad,
+     ~−12 %.
+  3. **Estado nativo** (paso 2): el perfil dice que las rearmadas de 16
+     bits ya son pocas; ganancia estimada ≤ 5-8 %.
+  Con 1 + 2 se llega; con micro-optimizaciones de C (0,5-2 % cada una)
+  no.
 
 ### Etapa 6b — Integración: el primer ADF jugable
 
