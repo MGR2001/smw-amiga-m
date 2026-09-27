@@ -413,17 +413,26 @@ state_jump:
 ;----------------------------------------------------------------------
 build_copper_test:
         move.l  V_COP(a5),a0
+        ifd     VIS256                      ; la pantalla de 256 px (D10, 6.1)
+        move.l  #$008e2ca1,(a0)+            ; DIWSTRT
+        move.l  #$00900ca1,(a0)+            ; DIWSTOP
+        move.l  #$00920040,(a0)+            ; DDFSTRT (una palabra antes)
+        move.l  #$009400c0,(a0)+            ; DDFSTOP
+FETCHB      equ 34
+        else
         move.l  #$008e2c81,(a0)+            ; DIWSTRT
         move.l  #$00902cc1,(a0)+            ; DIWSTOP
         move.l  #$00920030,(a0)+            ; DDFSTRT (una palabra antes)
         move.l  #$009400d0,(a0)+            ; DDFSTOP
+FETCHB      equ 42
+        endc
         move.l  #$01006600,(a0)+            ; BPLCON0: 6 planos, DBLPF, COLOR
         move.l  #$01020000,(a0)+
         move.l  #$01040000,(a0)+
         move.w  #BPL1MOD,(a0)+
-        move.w  #LINEB-42,(a0)+             ; PF1 entrelazado
+        move.w  #LINEB-FETCHB,(a0)+         ; PF1 entrelazado
         move.w  #BPL2MOD,(a0)+
-        move.w  #LINEB-42,(a0)+             ; PF2 igual
+        move.w  #LINEB-FETCHB,(a0)+         ; PF2 igual
         ; impares (1,3,5) = capa 1 en BUFA; pares (2,4,6) = capa 2 en BUFB
         move.w  #BPL1PTH,d1
         moveq   #3-1,d2

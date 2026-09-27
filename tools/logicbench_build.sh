@@ -54,6 +54,12 @@ if grep -nE '(^|[^(])\b[0-9]*\+?_[A-Za-z_][A-Za-z0-9_]*(\+[0-9]+)?,' $CC/*.code.
         | grep -E '\b(lea|move|pea|add|sub|cmp|and|or|tst|clr)' ; then
     echo "ERROR: referencia absoluta a un simbolo en el codigo del C (ver arriba)"; exit 1
 fi
+# lo mismo con las etiquetas locales de vbcc renombradas (msprite_l34): el
+# patron de arriba no las ve ("move.l #msprite_l34,d3" salio al desenrollar
+# init_sprite_tables con el vbcc de 2022)
+if grep -nE "$(printf '\t')(move|add|sub|cmp|lea|pea)(\.[bwl])?$(printf '\t')#[a-z0-9]+_l[0-9]+" $CC/*.code.s; then
+    echo "ERROR: referencia absoluta a una etiqueta local del C (ver arriba)"; exit 1
+fi
 [ -f work/yi1_map16.bin ] || python tools/mkmapbin.py
 # el arnes incluye work/cc/*.s: en PROF, una copia que apunta a work/prof/cc
 HARNESS=player/logicbench.s
@@ -61,6 +67,6 @@ if [ -n "$PROF" ]; then
     sed 's#"work/cc/\([a-z0-9]*\)\.\(data\|code\)\.s"#"work/prof/cc/\1.\2.s"#' player/logicbench.s > work/prof/logicbench.s
     HARNESS=work/prof/logicbench.s
 fi
-"$VBCC/bin/vasmm68k_mot$X" -quiet -Fbin -m68000 -I player -I . -L $OUT/logicbench.lst \
+"$VBCC/bin/vasmm68k_mot$X" -quiet -Fbin -m68000 $LBDEFS -I player -I . -L $OUT/logicbench.lst \
     -o $OUT/logicbench.bin $HARNESS
 [ -n "$PROF" ] || python tools/mkadf.py --boot work/boot.bin --stage2 work/logicbench.bin --out work/logicbench.adf

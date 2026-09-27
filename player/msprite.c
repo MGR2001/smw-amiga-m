@@ -70,6 +70,33 @@ static int spawn(u8 y, u8 index, u8 col, u8 scr, u8 state)
     return 1;
 }
 
+/* Primera entrada de spr_level con pantalla >= s, para s = 0..32: el bucle
+   de LoadSprFromLevel salta con `continue` todas las de pantalla menor, asi
+   que empezar ahi da lo mismo aunque la lista no estuviera ordenada, y no
+   recorre el nivel entero cada 2 frames (~3 000 ciclos en el 68000). Se
+   arma una vez por nivel (cuando cambia spr_level). */
+static const u8 *sll_for;
+static u8 sll_y[33], sll_i[33];
+static void sll_build(void)
+{
+    /* una pasada: las s ya llenas son siempre un prefijo [0, hi) (la
+       primera entrada con pantalla >= s llena todas las s <= su pantalla
+       que faltaban), asi que cada entrada solo llena de hi a su pantalla */
+    u8 y, i, hi = 0, scr;
+    for (y = 1, i = 0; spr_level[y] != 0xFF; y += 3, i++) {
+        scr = (u8)(((spr_level[y] << 3) & 0x10) | (spr_level[y + 1] & 0x0F));
+        for (; hi <= scr; hi++) {
+            sll_y[hi] = y;
+            sll_i[hi] = i;
+        }
+    }
+    for (; hi < 33; hi++) {                 /* sin entradas: el final */
+        sll_y[hi] = y;
+        sll_i[hi] = i;
+    }
+    sll_for = spr_level;
+}
+
 /* LoadSprFromLevel (nivel horizontal) */
 void sprite_load_level(void)
 {
@@ -84,7 +111,11 @@ void sprite_load_level(void)
     scrn = (u8)(R8(wm_Bg1HOfs + 1) + tx_02A7F9[d] + (c >> 8));   /* m1: pantalla */
     if (NEG(scrn))
         return;
-    for (y = 1, index = 0; spr_level[y] != 0xFF; y += 3, index++) {
+    if (spr_level != sll_for)
+        sll_build();
+    y = sll_y[scrn > 32 ? 32 : scrn];
+    index = sll_i[scrn > 32 ? 32 : scrn];
+    for (; spr_level[y] != 0xFF; y += 3, index++) {
         u8 b0 = spr_level[y], b1 = spr_level[y + 1], num = spr_level[y + 2];
         u8 scr = (u8)(((b0 << 3) & 0x10) | (b1 & 0x0F));
         if (scr < scrn)
@@ -116,20 +147,27 @@ static void spr_unsup(void) { if (!mario_unsupported) mario_unsupported = MARIO_
 /* ZeroSpriteTables + LoadSpriteTables (sprite_tables.s) */
 static void init_sprite_tables(u8 x)
 {
-    static const u16 zero[] = {
-        wm_SprInWaterTbl, wm_SprBehindScrn, wm_SpriteState, wm_SpriteMiscTbl3,
-        wm_SpriteMiscTbl4, wm_SpriteMiscTbl5, wm_SpriteDir, wm_SprObjStatus,
-        wm_SpriteOffTbl, wm_SpriteGfxTbl, wm_SpriteDecTbl1, wm_SpriteDecTbl2,
-        wm_SpriteDecTbl3, wm_SpriteDecTbl4, wm_DisSprCapeContact, wm_SprChainKillTbl,
-        wm_SpriteMiscTbl6, wm_SpriteSpeedX, wm_SpriteXAcc, wm_SpriteSpeedY,
-        wm_SpriteYAcc, wm_SpriteInterTbl, wm_SpriteEatenTbl, wm_SpriteDecTbl6,
-        wm_Tweaker1656, wm_Tweaker1662, wm_Tweaker166E, wm_Tweaker167A,
-        wm_Tweaker1686, wm_SprStompImmuneTbl, wm_SpriteMiscTbl8, wm_SpriteMiscTbl7,
-        wm_SpriteMiscTbl1, wm_1FD6 };
+    /* desenrollado con desplazamientos constantes: el bucle sobre una tabla
+       de u16 costaba ~3 900 ciclos en el 68000 cada vez que aparece uno */
     u8 n = SPR(wm_SpriteNum, x);
-    unsigned k;
-    for (k = 0; k < sizeof zero / sizeof zero[0]; k++)
-        SETSPR(zero[k], x, 0);
+    SETSPR(wm_SprInWaterTbl, x, 0);     SETSPR(wm_SprBehindScrn, x, 0);
+    SETSPR(wm_SpriteState, x, 0);       SETSPR(wm_SpriteMiscTbl3, x, 0);
+    SETSPR(wm_SpriteMiscTbl4, x, 0);    SETSPR(wm_SpriteMiscTbl5, x, 0);
+    SETSPR(wm_SpriteDir, x, 0);         SETSPR(wm_SprObjStatus, x, 0);
+    SETSPR(wm_SpriteOffTbl, x, 0);      SETSPR(wm_SpriteGfxTbl, x, 0);
+    SETSPR(wm_SpriteDecTbl1, x, 0);     SETSPR(wm_SpriteDecTbl2, x, 0);
+    SETSPR(wm_SpriteDecTbl3, x, 0);     SETSPR(wm_SpriteDecTbl4, x, 0);
+    SETSPR(wm_DisSprCapeContact, x, 0); SETSPR(wm_SprChainKillTbl, x, 0);
+    SETSPR(wm_SpriteMiscTbl6, x, 0);    SETSPR(wm_SpriteSpeedX, x, 0);
+    SETSPR(wm_SpriteXAcc, x, 0);        SETSPR(wm_SpriteSpeedY, x, 0);
+    SETSPR(wm_SpriteYAcc, x, 0);        SETSPR(wm_SpriteInterTbl, x, 0);
+    SETSPR(wm_SpriteEatenTbl, x, 0);    SETSPR(wm_SpriteDecTbl6, x, 0);
+    /* Tweaker1656..1686: los pone abajo (en el ROM se ponen a 0 y despues
+       se cargan; escribirlos dos veces hace que el vbcc de 2022 saque la
+       direccion como absoluta, P36) */
+    SETSPR(wm_SprStompImmuneTbl, x, 0);
+    SETSPR(wm_SpriteMiscTbl8, x, 0);    SETSPR(wm_SpriteMiscTbl7, x, 0);
+    SETSPR(wm_SpriteMiscTbl1, x, 0);    SETSPR(wm_1FD6, x, 0);
     SETSPR(wm_OffscreenHorz, x, 1);
     SETSPR(wm_SpritePal, x, tx_166E[n] & 0x0F);
     SETSPR(wm_Tweaker1656, x, tx_1656[n]);
