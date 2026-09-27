@@ -56,23 +56,27 @@ MIDMAX      equ 12
 SEG         equ 64+MIDMAX*12+12 ; 220 (tools/mkscroll.py: SEG). Una carga
                                 ; ocupa hasta 12 bytes: 2 rellenos + MOVE
 CL_SIZE     equ CL_LINES+SEG*LINES+4
-HOFS        equ $38             ; h de un WAIT = HOFS + x / 2 (medido, copcal.py)
+; WAIT + MOVE: en que x de pantalla cambia el color (P42, medido en WinUAE
+; con copcal.s -DPATTERN y COPCAL_FINE=1, h de a 2):
+;   h <= $D0: x = 8 * ((h - $38) >> 2) - 1   (rejilla de 8 px: con 6 planos
+;             el copper tiene una ranura cada 4 cc; h = $40 y $42 dan
+;             x = 15, $44 y $46 dan 23). BPLCON1 no lo mueve.
+;   h >= $D0: x = 303 + (h - $D0)            ($D4 -> 307, $DC -> 315)
+; Para cambiar en x >= objetivo (nunca antes), lo mas pronto posible:
+;   objetivo <= 303: q = (objetivo + 8) >> 3, h = $38 + 4q, x = 8q - 1
+;   objetivo >  303: h = (objetivo - 94) & $FE, x = h + 95
+HOFS        equ $38
 LASTX       equ 316             ; ninguna carga despues de esta x
         ifnd    BLITS
 BLITS       equ 4               ; pasos de blit_steps por frame
         endc
-        ifnd    WOFS
-WOFS        equ 8               ; los WAIT, 8 px mas tarde: en el scroll las cargas
-                                ; caian ~5 px antes que en copcal (sin explicar)
-        endc
 VMARG       equ 4               ; margen de validez de una escritura fija (px)
-XKNEE       equ 304             ; medido (copcal.py): hasta h = $D0, x = 2 (h - $38);
-HKNEE       equ $d0             ; despues, 1 px por unidad de h ($D4 -> 307, $DC -> 315)
+TLINE       equ -64             ; T al empezar las cargas de una linea (cota
+                                ; inferior: el borrado acaba antes de x = 0, P43)
+XKNEE       equ 303             ; x de h = HKNEE; despues, 1 px por unidad de h
+HKNEE       equ $d0
 BLANKH      equ $e2             ; el borrado empieza en esta h de la linea
                                 ; ANTERIOR: 7 + k MOVE terminan antes de x = 0
-        ifnd    TXOFS
-TXOFS       equ 5               ; carga: x = fin del tramo anterior + TXOFS
-        endc
 
 ; cabecera de yi1_s.dat
 D_W     equ 4
@@ -570,15 +574,14 @@ build_mid:
         sub.w   d6,d2
         bpl.s   .fp
         moveq   #0,d2
-.fp:    add.w   #3+WOFS,d2                  ; la h va de 4 en 4 px: redondear
-        and.w   #$fffc,d2                   ; HACIA ARRIBA (nunca antes de que
-        cmp.w   #XKNEE,d2                   ; termine el tramo anterior)
-        bhi.s   .fk
-        lsr.w   #1,d2                       ; x <= 304: h = $38 + x / 2
-        add.w   #HOFS,d2
+.fp:    cmp.w   #XKNEE,d2                   ; h para cambiar en x >= objetivo
+        bhi.s   .fk                         ; (P42, cabecera)
+        addq.w  #8,d2
+        lsr.w   #3,d2                       ; q = (x + 8) >> 3
+        lsl.w   #2,d2
+        add.w   #HOFS,d2                    ; h = $38 + 4q
         bra.s   .fk2
-.fk:    sub.w   #XKNEE-HKNEE,d2             ; x > 304: 1 px por unidad de h
-        addq.w  #1,d2
+.fk:    sub.w   #XKNEE-HKNEE-1,d2           ; x > 303: h = x - 94, par
 .fk2:   and.w   #$fe,d2
         cmp.w   d1,d2
         bhs.s   .fh
@@ -612,8 +615,14 @@ build_mid:
 .nx:    move.w  2(a4),d0                    ; inicio de las cargas (build_copper)
         lea     (a0,d0.w),a3                ; a3 = donde van las cargas
         moveq   #0,d4                       ; d4 = cargas escritas
-        moveq   #0,d1                       ; d1 = T: x en que el copper puede
-                                            ; escribir (el borrado ya termino)
+        moveq   #TLINE,d1                   ; d1 = T: x en que el copper puede
+                                            ; escribir. Al empezar la linea NO es
+                                            ; 0: el borrado termina ~60 px ANTES
+                                            ; de x = 0 (P43). Con T < 0, toda
+                                            ; carga que llega aca (fin anterior
+                                            ; >= s: liberacion >= 1) va con WAIT;
+                                            ; un MOVE suelto o de relleno caeria
+                                            ; antes de x = 0
 .ld:    cmp.w   d3,d2
         bhs     .ld_done
         moveq   #0,d0
@@ -666,19 +675,25 @@ build_mid:
 .pw:    move.w  d1,-(sp)
         add.w   #32,(sp)                    ; T + 32: lo minimo que cuesta
         cmp.w   (sp)+,d0
-        bhs.s   .pw2
+        bge.s   .pw2                        ; con signo: T + 32 < 0 al empezar
         move.w  d1,d0
         add.w   #32,d0
-.pw2:   add.w   #3+WOFS,d0                  ; x de 4 en 4 px, hacia arriba
-        and.w   #$fffc,d0
-        move.w  d0,d1                       ; T = x del MOVE
-        cmp.w   #XKNEE,d0
-        bhi.s   .pk
-        lsr.w   #1,d0                       ; x <= 304: h = $38 + x / 2
-        add.w   #HOFS,d0
+.pw2:   move.w  d0,d1                       ; T = x objetivo: COTA INFERIOR de
+                                            ; donde cae el MOVE (cae en
+                                            ; [objetivo, objetivo + 7]). El camino
+                                            ; rapido mueve este WAIT con la camara
+                                            ; y su fase en la rejilla de 8 px
+                                            ; cambia: los MOVE sin WAIT que lo
+                                            ; siguen solo son seguros si se
+                                            ; decidieron con la cota inferior
+        cmp.w   #XKNEE,d0                   ; h para cambiar en x >= objetivo
+        bhi.s   .pk                         ; (P42, cabecera)
+        addq.w  #8,d0
+        lsr.w   #3,d0
+        lsl.w   #2,d0
+        add.w   #HOFS,d0                    ; h = $38 + 4q
         bra.s   .pk2
-.pk:    sub.w   #XKNEE-HKNEE,d0             ; x > 304: 1 px por unidad de h
-        addq.w  #1,d0
+.pk:    sub.w   #XKNEE-HKNEE-1,d0           ; x > 303: h = x - 94, par
 .pk2:   and.w   #$fe,d0
         cmp.w   #$e2,d0
         bls.s   .h2
@@ -695,7 +710,7 @@ build_mid:
         addq.w  #4,2(a6)
         addq.l  #4,a3
 .mv:    cmp.w   #LASTX,d1                   ; mas alla del borde derecho: se
-        bhi.s   .ld_done                    ; escribiria DESPUES del borrado
+        bhi.s   .lastx                      ; escribiria DESPUES del borrado
                                             ; de la linea siguiente y le
                                             ; cambiaria el color entera
         move.w  4(a5),(a3)+                 ; MOVE registro, color
@@ -720,6 +735,12 @@ build_mid:
 .next_ld:
         addq.w  #1,d2
         bra     .ld
+.lastx: move.w  d1,d0                       ; no entra (x > LASTX): la linea se
+        sub.w   #LASTX,d0                   ; vuelve a mirar cuando entre, en
+        add.w   d6,d0                       ; s + (x - LASTX). Sin esto las
+        cmp.w   (a6),d0                     ; cargas de detras quedaban sin
+        bhs.s   .ld_done                    ; escribir hasta el vu de otra
+        move.w  d0,(a6)                     ; carga (s = 4346: 4 de 6)
 .ld_done:
         lea     vars(pc),a5
         addq.l  #2,sp                       ; (lo que habia antes: no sirve,

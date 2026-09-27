@@ -1,0 +1,155 @@
+{
+ "_meta": {
+  "commit": "5f5fc86+cambios",
+  "fecha": "2026-09-27",
+  "nota": "tools/regress.py; las medidas emu.* dependen del emulador"
+ },
+ "m68k.full.ciclos_max": {
+  "how": "min",
+  "value": 35880
+ },
+ "m68k.full.ciclos_media": {
+  "how": "min",
+  "value": 20177
+ },
+ "m68k.full.ok": {
+  "how": "max",
+  "value": 6510
+ },
+ "m68k.loop.ciclos_max": {
+  "how": "min",
+  "value": 42106
+ },
+ "m68k.loop.ciclos_media": {
+  "how": "min",
+  "value": 26128
+ },
+ "m68k.loop.ciclos_p99": {
+  "how": "min",
+  "value": 28438
+ },
+ "m68k.loop.resync": {
+  "how": "min",
+  "value": 37
+ },
+ "m68k.loop.tramo": {
+  "how": "max",
+  "value": 1240
+ },
+ "m68k.spr.ciclos_max": {
+  "how": "min",
+  "value": 52816
+ },
+ "m68k.spr.ciclos_media": {
+  "how": "min",
+  "value": 35938
+ },
+ "m68k.spr.ciclos_p99": {
+  "how": "min",
+  "value": 52112
+ },
+ "m68k.spr.resync": {
+  "how": "min",
+  "value": 4
+ },
+ "m68k.spr.tramo": {
+  "how": "max",
+  "value": 2859
+ },
+ "pc.8a.aire.ok": {
+  "how": "max",
+  "value": 2989
+ },
+ "pc.8a.aire.tot": {
+  "how": "eq",
+  "value": 3497
+ },
+ "pc.8a.suelo.ok": {
+  "how": "max",
+  "value": 2962
+ },
+ "pc.8a.suelo.tot": {
+  "how": "eq",
+  "value": 3050
+ },
+ "pc.full.aire.ok": {
+  "how": "max",
+  "value": 3557
+ },
+ "pc.full.aire.tot": {
+  "how": "eq",
+  "value": 3573
+ },
+ "pc.full.suelo.ok": {
+  "how": "max",
+  "value": 2953
+ },
+ "pc.full.suelo.tot": {
+  "how": "eq",
+  "value": 2974
+ },
+ "pc.game.resync": {
+  "how": "min",
+  "value": 1
+ },
+ "pc.game.rex_exactos": {
+  "how": "max",
+  "value": 3192
+ },
+ "pc.game.rex_seguidos": {
+  "how": "info",
+  "value": 3194
+ },
+ "pc.game.tramo": {
+  "how": "max",
+  "value": 3824
+ },
+ "pc.gfx.frames": {
+  "how": "eq",
+  "value": 6869
+ },
+ "pc.gfx.oam_ok": {
+  "how": "max",
+  "value": 6869
+ },
+ "pc.gfx.scr_ok": {
+  "how": "max",
+  "value": 6869
+ },
+ "pc.loop.resync": {
+  "how": "min",
+  "value": 37
+ },
+ "pc.loop.tramo": {
+  "how": "max",
+  "value": 1240
+ },
+ "pc.sprload.distintos": {
+  "how": "min",
+  "value": 0
+ },
+ "pc.sprload.exactos": {
+  "how": "max",
+  "value": 20
+ },
+ "pc.sprload.oraculo": {
+  "how": "eq",
+  "value": 20
+ },
+ "pc.sprloop.diferencia": {
+  "how": "min",
+  "value": 1
+ },
+ "pc.sprloop.exactos": {
+  "how": "max",
+  "value": 2593
+ },
+ "pc.sprloop.rebotes_ok": {
+  "how": "max",
+  "value": 12
+ },
+ "pc.sprloop.seguidos": {
+  "how": "info",
+  "value": 2594
+ }
+}

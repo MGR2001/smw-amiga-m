@@ -242,7 +242,7 @@ static void spr_obj_vert(u8 x)
     if (t >= 0xD8)
         goto l_386;
     {   /* pendiente: CODE_00FA19 */
-        u8 s8 = T8(R16(wm_SlopeSteepness) + (u8)(t - 0x6E)), h;
+        u8 s8 = T8V(R16(wm_SlopeSteepness) + (u8)(t - 0x6E)), h;
         u16 idx = (u16)((s8 << 4) | (R8(m10) & 0x0F));
         W8(m8, s8);
         W8(m0, R8(m12) & 0x0F);

@@ -23,7 +23,7 @@
    cuándo está hecho. No se empieza el siguiente con el anterior en rojo.
 3. Al cerrar un paso: commit `Etapa N.x: <qué>` y actualizar §1.2. Si aparece
    una trampa nueva, se agrega como `Pnn` en `AGENTS.md` §8 (la próxima es
-   **P42**).
+   **P46**).
 4. Al cerrar la sesión: handoff con la plantilla de §7, que reemplaza a §1.
 
 **Reglas del proceso (no negociables, vienen de lo que ya costó caro):**
@@ -40,7 +40,7 @@
 
 ---
 
-## 1. Handoff (estado al 2026-09-26)
+## 1. Handoff (estado al 2026-09-27)
 
 ### 1.1 Ramas
 
@@ -66,8 +66,8 @@
 | 1-2b | Assets, paletas, nivel, capa 1 1:1 | **hecho** (6111/6111 bloques) | `tools/smw2amiga.py`, `palette.py`, `mklvl.py`, `m16diff.py` |
 | 3-4 | Esqueleto Amiga y viabilidad | **hecho**; D1, D8 y D9 cerrados | `player/boot.s`, `bench*.s`, `copbench.s` |
 | 5 | Conversor del nivel al formato (d) | **hecho en cloud**; falta compararlo contra la referencia en la PC (→ 7) | `tools/mkbg.py`, `mkd8in.py`, `mkleveld.py` → `work/yi1_d.dat`, `render_d.py` |
-| 0 | Consolidar el WIP | 0.1 y 0.2 **hechas**; 0.3: imagen **igual a la base** en las 6 x, falta explicar un pico de 307 % en s = 4504; 0.4 pendiente | §5, Etapa 0 |
-| 6 | Scroll del nivel real | **prototipo funcionando**: solo hacia la derecha, a velocidad fija, a 320 px. Media **25 %** de un frame (FS-UAE, 4 px/frame, con `blit_steps`), pero con **un frame de 307 % en s = 4504** | `tools/mkscroll.py` → `work/yi1_s.dat`, `player/scroll.s` |
+| 0 | Consolidar el WIP | **hecha** (2026-09-27, en la PC): 0.3 pico explicado (estructural, se arregla en 6.4); 0.4 explicado y arreglado (P42-P45) | §5, Etapa 0 |
+| 6 | Scroll del nivel real | **prototipo funcionando**: solo hacia la derecha, a velocidad fija, a 320 px. Media **27,3 %** de un frame (WinUAE KS 1.2, 4 px/frame); **403 frames (a 2 px/frame) pasan del frame**, en s ≈ 1590-1970, 2630-2700 y 4230-4680, con el peor en s = 4504 (**320 %**) | `tools/mkscroll.py` → `work/yi1_s.dat`, `player/scroll.s`; `tools/scrollprof.py`, `tools/scrollsim.py` |
 | 7 | Capa 2 contra la referencia | pendiente (solo PC) | — |
 | 8a/8b | Física y colisión de Mario | **hecho**: `full` 6510/6547; los 37 que fallan son contactos con sprites | `player/mario.c`, `mcoll.c`, `manim.c` |
 | 8 (gfx, cámara) | Gráficos (OAM) y cámara | **hecho**: `gfx` 6869/6869; lazo cerrado solo con el joypad | `player/mgfx.c`, `mcam.c` |
@@ -97,6 +97,10 @@ del WIP ya verificado:
 | 68000 `loop --sprites` | 4 / **35 779** / 53 002 | 4 / 44 364 / 64 752 |
 | `logicbench`, FS-UAE | **26,5 %** corriendo, **26,9 %** saltando | 31,6 % / 32,9 % |
 | `scroll.s -DBENCH -DSPEED=4`, FS-UAE | media 25,2 %; **máx. 307,5 % en s = 4504** | sin/con columna 33,9 % / 42,5 % (otra forma de contar: ver Etapa 0.3) |
+| `scroll.s -DBENCH -DSPEED=4`, **WinUAE KS 1.2** (2026-09-27) | media **27,3 %**; máx. 320,6 % en s = 4504 (antes de P42-P45: 25,4 % / 309,9 %) | el +1,9 es el precio de P44-P45 (más cargas con WAIT); Musashi: código −7 %, datos +14 % |
+| `scroll_check --mid --sc 2`, **WinUAE** ×2, fallos que no explica un vecino (2026-09-27) | 500: 0, 846: 0, 1000: 0, 1700: 0, 1936: 0, 2500: 0, 3500: 72, 4346: 34, 4500: 54 | antes (`WOFS` = 8): 0, manchado, 0, 9, manchado, 3, 72, —, 58 |
+| `scrollsim.py --speed 2` (color de la capa 1 en cada frame, simulado) | **19 586 px** en todo el recorrido; peor frame 194 px | antes: 298 060; peor 5409 (s = 844) |
+| `logicbench`, **WinUAE KS 1.2** (8d) | 28,3 % corriendo, 28,8 % saltando | FS-UAE: 26,5 / 26,9 %; binario con el vbcc de la PC (2022), ver §1.4 |
 | `scroll_check --mid`, fallos que no explica un vecino | x = 500: 74, 1000: 31, 1700: 91-94, 2500: 46, 3500: 72, 4500: 125-127 (±5 px entre builds, ver 0.4) | en `f21a2e3`: 1000: 31, 1700: 91, 2500: 46, 4500: 127 (500 y 3500 no se midieron) |
 | `render_d.py` | 0 px contra la imagen ideal; 3966 px (0,018 %) moviendo la cámara | igual |
 
@@ -113,6 +117,24 @@ del WIP ya verificado:
 | grabar partidas (`smwrecomp` + `oamrec.py`) | **no** | sí, con el usuario jugando |
 | numpy / scipy | sí | **no** en el Python de §6: instalarlo o correr esas herramientas en cloud |
 
+**PC, 2026-09-27** (lo que hizo falta para correr todo en la PC):
+- `regress.py` desde Python: poner `C:\msys64\ucrt64\bin` **primero** en el
+  PATH (`export PATH=/c/msys64/ucrt64/bin:$PATH`); si no, `cc1` de gcc 16
+  muere sin mensaje.
+- ROM: `../smwre/smw.sfc` (CRC32 `B19ED489`) → `work/smw.sfc`; después
+  `smwgen.py --rom work/smw.sfc`, `smwtabx.py`, `oracle2bin.py`,
+  `mkmapbin.py` (como `setup_cloud.sh`).
+- `machine68k` (Musashi) no compila con pip en Windows: bajar el sdist y
+  cambiar en `setup.py` el `cmd = [gen_tool, ...]` por la ruta absoluta con
+  `.exe`; después `pip install .`.
+- El **vbcc de la PC (2022) no es el de cloud**: pliega `rom00 - $C000` en
+  una referencia absoluta con un puntero leído de `ram[]` (se arregló con
+  `T8V`, `smwmac.h`) y da ~+0,8 % de ciclos en Musashi. Por eso la PC usa
+  su propia base: `regress.py --baseline tools/baseline_pc.json`.
+- WinUAE ×2 sin reescalar: `scroll_check.py --sc 2`, `scroll_read.py` sin
+  `--auto`, `tools/shots6.ps1 -Dir DIR` (espera 25 + x/100 s: KS 1.2 tarda
+  más en arrancar de lo que se creía).
+
 ### 1.5 Arranque rápido en cloud
 
 ```bash
@@ -128,10 +150,10 @@ se pierde la medida cycle-exact.
 
 ### 1.6 Pendiente del usuario o de la PC (juntarlo en una sola sesión)
 
-1. **PC:** confirmar la 8d en WinUAE con KS 1.2 (esperado ~26,5 % / ~26,9 %,
-   lo que da FS-UAE después de la optimización).
-   También prueba que el ADF de 58 KB arranca en KS 1.2. Comandos en
-   `AGENTS.md`, "Qué hay que hacer en la PC", punto 1.
+1. ~~**PC:** confirmar la 8d en WinUAE con KS 1.2~~ **hecho el
+   2026-09-27:** 28,3 % / 28,8 % (FS-UAE daba 26,5 / 26,9 %) y el ADF
+   arranca en KS 1.2. Diferencia sin explicar: puede ser el emulador o el
+   vbcc de la PC (2022, distinto del de cloud; ver §1.4).
 2. **PC:** Etapa 7 (`cmp_ref.py` del blob de la etapa 5 contra la referencia).
 3. **PC + usuario, una única sesión de grabación** (Etapa 8.1). Se agrupa
    todo lo que hace falta grabar para no pedirle al usuario que juegue varias
@@ -344,6 +366,18 @@ escrito.
 
   Hasta explicarlo, el pico cuenta en el presupuesto.
 
+**CERRADA el 2026-09-27 (PC):** el pico no es un bug. `tools/scrollprof.py`
+(Musashi, el cuerpo real de `frame`) da 218 % solo de CPU en s = 4504, y
+el 99 % es `build_mid`. En x = 4816-4856 del nivel hay un **borde vertical
+de color en 144 líneas** (765 cargas); cuando entra por la derecha,
+`build_mid` reconstruye ~140 líneas enteras (~2 200 ciclos cada una: recorre
+todas las cargas de la línea, hasta 52) en 2-3 frames seguidos. No es el
+único: a 2 px/frame hay **403 frames** cuyo trabajo pasa del comienzo de la
+pantalla siguiente (s ≈ 1590-1970, 2630-2700, 4230-4680); el banco solo
+mostraba el máximo. Confirmado en WinUAE KS 1.2: 309,9 % en s = 4504. El
+arreglo es de la 6.4: reconstruir solo lo que cambia (agregar la carga que
+entra, no rehacer la línea) y repartir entre frames.
+
 0.4 **Los ~5 px del copper** (`WOFS`=8, un parche empírico). Leer lo que
 dejó el subagente (`copcal_fine.py` y el diff de `copcal.s`/`copcal.py` en
 `45e3857`). Si no hay conclusión, repetir el experimento: bandas con
@@ -362,7 +396,31 @@ tiempos entre la CPU y el copper, la misma familia que los ~5 px. Probar
 con `imgdiff.py` sobre dos builds con relleno distinto (`ds.b` de más antes
 de `vars`).
 
-0.5 Commit sin "WIP". Actualizar §1.
+**CERRADA el 2026-09-27 (PC):** explicado y arreglado, sin `WOFS`.
+- **P42:** con 6 planos el WAIT tiene rejilla de 8 px (h = `$40` y `$42`
+  caen igual). Medido en WinUAE con `copcal.s -DPATTERN` + `COPCAL_FINE=1`:
+  x = 8·⌊(h − `$38`)/4⌋ − 1. El modelo viejo fallaba 5 px con h ≡ 2 (mod 4).
+  `BPLCON1` y el fetch se comportan como supone `scroll.s`. `TXOFS` no se
+  usaba: borrado.
+- Mirando en movimiento, el usuario vio **objetos que salen por la
+  izquierda pintados con los colores del siguiente** (s = 846, 1936). Tres
+  causas más, arregladas: **P43** (el borrado deja el copper libre ~60 px
+  antes de x = 0: la primera carga de la línea va con WAIT), **P44** (los
+  derrames de la etapa 5 alargan el tramo: `mkscroll.py`) y **P45** (una
+  carga cortada por `LASTX` no bajaba el `vu`).
+- La pista de la disposición en memoria (91 → 94) queda explicada por P42:
+  cambiar el código cambia la fase de los WAIT en la rejilla.
+- Herramientas nuevas: `tools/scrollsim.py` (la lista del copper de cada
+  frame, simulada con el modelo medido, contra el render del PC),
+  `tools/scrollprof.py` (ciclos por frame y por rutina de `scroll.s` en
+  Musashi), `tools/shots6.ps1` (capturas de WinUAE en varias x, con
+  reintentos) y `scroll_check.py --sc 2` (capturas de WinUAE ×2, sin el
+  borroneo de FS-UAE).
+- Queda (6.x): los postes de la meta (s ≈ 4540-4580) tienen más cambios de
+  color de los que el copper alcanza (ancho de banda), y los 72 px de
+  x = 3500 (iguales antes y después: no son del copper; sin investigar).
+
+0.5 **HECHA:** commit sin "WIP" (rama `etapa0-cierre`). §1 actualizado.
 
 ### Etapa 6 — Terminar el scroll
 

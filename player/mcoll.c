@@ -913,7 +913,7 @@ l_ECB1:
             goto l_ED4A;
         W8(wm_PlayerExitBlkPos, R8(wm_PlayerExitBlkPos) - 0x10);  /* SBC #$0F, C=0 */
     }
-    t = T8(R16(wm_SlopeSteepness) + (u8)(rY - 0x6E));
+    t = T8V(R16(wm_SlopeSteepness) + (u8)(rY - 0x6E));
     a = T8(DATA_00E632 + ((t << 4) | R8(wm_PlayerBlkPosX)));
     if (NEG(a))
         goto l_ED0F;
@@ -975,7 +975,7 @@ l_ED86:
     t = R8(TILESET);
     if ((t == 0x03 || t == 0x0E) && rY >= 0xD2)
         goto l_EDE9;
-    t = T8(R16(wm_SlopeSteepness) + (u8)(rY - 0x6E));
+    t = T8V(R16(wm_SlopeSteepness) + (u8)(rY - 0x6E));
     a = (u8)(R8(wm_PlayerBlkPosY) - T8(DATA_00E632 + ((t << 4) | R8(wm_PlayerBlkPosX))));
     if (NEG(a))
         W8(wm_IsOnGround, R8(wm_IsOnGround) + 1);

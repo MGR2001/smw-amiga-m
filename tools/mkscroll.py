@@ -100,18 +100,27 @@ def main():
     ini = np.zeros((LINES, 7), np.int32)
     chg = []
     mld = [[] for _ in range(LINES)]
+    idx = render_d.l1_index(d)
     for L in range(LINES):
         by_reg = {}
         for ev in d["events"][Y0 + L]:
             by_reg.setdefault(ev[2], []).append(ev)
+        row = idx[Y0 + L]
         for r, lst in by_reg.items():
             lst.sort()
             # visible a cam_x: el primer evento con fin >= cam_x
             ini[L, r - 1] = lst[0][3]
             for prev, cur in zip(lst, lst[1:]):
                 if cur[3] != prev[3]:
-                    chg.append((prev[1] + 1, L * SEG + 8 + (r - 1) * 4 + 2, cur[3]))
-                    mld[L].append((prev[1], cur[0], 0x180 + 2 * r, cur[3]))
+                    # fin REAL del tramo anterior: mkleveld.py reparte los
+                    # "derrames" (pixeles fuera de todo tramo) al registro
+                    # que conserva el color, asi que despues de prev[1]
+                    # puede haber pixeles de r que todavia necesitan el
+                    # color viejo. La carga no puede caer antes del ultimo.
+                    use = np.nonzero(row[prev[1] + 1:cur[0]] == r)[0]
+                    fin = prev[1] + 1 + int(use[-1]) if len(use) else prev[1]
+                    chg.append((fin + 1, L * SEG + 8 + (r - 1) * 4 + 2, cur[3]))
+                    mld[L].append((fin, cur[0], 0x180 + 2 * r, cur[3]))
     chg.sort()
     mlx, mldb = [], bytearray()
     late = 0

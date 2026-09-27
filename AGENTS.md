@@ -1015,7 +1015,58 @@ espera, `-DSTOPX=3500` y `4500` se capturaban **antes de llegar** y
 `scroll_check` daba ~35 000 fallos (la imagen era de otra parte del nivel).
 Esperar **≥ 50 + STOPX/100 s**. `tools/regress.py` ya lo hace, y avisa si
 una captura difiere en más del 20 % (posición equivocada, no fallo de
-imagen). Descubierto el 2026-09-26; ver `ROADMAP.md` §8.
+imagen). Descubierto el 2026-09-26; ver `ROADMAP.md` §8. En WinUAE con
+KS 1.2 pasa lo mismo: `tools/shots6.ps1` espera 25 + STOPX/100 s.
+
+**P42 — En DPF de 6 planos, el WAIT del copper tiene rejilla de 8 px, no de 4.**
+Medido en WinUAE (`copcal.s -DPATTERN`, `COPCAL_FINE=1`, h de a 2): el
+MOVE después de `WAIT h` cambia el color en
+**x = 8·⌊(h − $38)/4⌋ − 1** hasta h = `$D0` (x = 303), y después en
+x = 303 + (h − `$D0`). `h = $40` y `$42` dan los dos x = 15; `$44` y `$46`,
+x = 23. Con 6 planos el copper solo tiene una ranura cada 4 cc. `BPLCON1`
+no mueve el cambio, y con `BPLCON1` = 0 el píxel 0 de la palabra cae justo
+en el borde de la DIW (el scroll de `scroll.s` es correcto). `copcal` solo
+había medido h múltiplos de 8 (error de 1 px) y el modelo x = 2·(h − $38)
+fallaba por **5 px** con h ≡ 2 (mod 4): era el adelanto "sin explicar" que
+tapaba `WOFS` = 8. Para caer en x ≥ objetivo: q = (objetivo + 8) >> 3,
+h = $38 + 4q (cabecera de `scroll.s`). Además, como el camino rápido de
+`build_mid` mueve el WAIT con la cámara y su fase en la rejilla cambia, los
+MOVE sin WAIT que lo siguen se deciden con la **cota inferior** (el
+objetivo), no con la x real de ese frame.
+
+**P43 — El borrado deja al copper libre ~60 px ANTES de x = 0.**
+El borrado de la línea L empieza en (L − 1, `$E2`): en el borrado
+horizontal no hay DMA de planos y los 7 MOVE terminan mucho antes de x = 0.
+`build_mid` suponía T = 0 al empezar las cargas de la línea: una carga
+cuyo tramo anterior todavía se veía en x = 1..40 salía sin WAIT (o con 1-2
+MOVE de relleno) y caía **antes de x = 0**. Síntoma: los objetos que salen
+por la izquierda se pintan con los colores del objeto siguiente (tubo
+diagonal con franjas de tierra en s = 846, caja de piedras verde en
+s = 1936; lo vio el usuario en movimiento). Las capturas con el scroll
+parado en las 6 x de siempre no lo veían porque ahí no hay un objeto
+saliendo por el borde. Arreglo: T = `TLINE` (−64) al empezar la línea, así
+la primera carga de cada línea lleva WAIT. `tools/scrollsim.py` simula la
+lista del copper en **cada frame** del recorrido con este modelo (T0 = −56).
+
+**P44 — Los "derrames" de la etapa 5 alargan el tramo anterior.**
+`mkleveld.py` asigna los píxeles que quedan fuera de todo tramo al registro
+que *todavía conserva* el color: después del fin de un tramo puede haber
+píxeles de ese registro que necesitan el color viejo (línea 152, COLOR01:
+tramo hasta x = 4571, píxel en 4579). `mkscroll.py` liberaba la carga en
+el fin del tramo y el copper, legal según los datos, la ponía encima. Ahora
+la carga (y el cambio del borrado) se libera después del último píxel del
+registro antes del tramo nuevo. Coste: ventanas más cortas, más cargas con
+WAIT (en el plan, 9 de 3409 no llegan, antes 2).
+
+**P45 — Una carga cortada por `LASTX` tiene que bajar el `vu` de la línea.**
+Si `.mv` abandonaba una carga con x > `LASTX` sin tocar el `vu`, la línea no
+se volvía a mirar cuando la carga entraba en pantalla y las de detrás
+quedaban sin escribir (s = 4346, línea 162: 4 de 6).
+
+Con P42-P45 (`tools/scrollsim.py --speed 2`, todo el recorrido): 298 060 px
+de la capa 1 con el color mal → **19 586** (−93 %), peor frame 5409 → 194
+px. Lo que queda son los postes de la meta (muchos colores en pocos px:
+ancho de banda del copper) y puntos sueltos.
 
 **P8 — El slow RAM de la A501 no está disponible si el software lo desactiva.**
 Algunas rutinas de arranque desactivan `/EXRAM`. Verifica que `$C00000`

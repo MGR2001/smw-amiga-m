@@ -13,6 +13,13 @@
 #define T16(a)      ((u16)(rom00[(a) - ROM00_BASE] | (rom00[(a) - ROM00_BASE + 1] << 8)))
 #define NEG(v)      ((v) & 0x80)
 
+/* T8 con una direccion que solo se conoce en tiempo de ejecucion (un puntero
+   leido de ram[], p. ej. R16(wm_SlopeSteepness) + y). Con T8 a secas, el
+   vbcc de la PC (2022) pliega el -$C000 en el simbolo ("lea -49152+_rom00,a0",
+   absoluto, P36); el (u16) obliga a calcular antes el indice (0..$3FFF, el
+   mismo valor) y el acceso queda relativo a a4. */
+#define T8V(a)      (rom00[(u16)((a) - ROM00_BASE)])
+
 /* Tabla + indice de 8 bits: T8X(DATA_00E89C, x) == T8(DATA_00E89C + x).
    El puntero (rom00 + desplazamiento POSITIVO) queda relativo a a4 y el
    indice entra en el modo (d8,An,Dn.w): vbcc genera mucho menos codigo que

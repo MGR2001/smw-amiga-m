@@ -62,15 +62,20 @@ def main():
     ap.add_argument("--s", type=int, default=1000)
     ap.add_argument("--mid", action="store_true")
     ap.add_argument("--png", default=os.path.join(HERE, "..", "work", "scroll_cmp.png"))
+    ap.add_argument("--sc", type=float, default=SC,
+                    help="escala de la captura: 2,125 FS-UAE (por defecto), 2 WinUAE (shot.ps1)")
     a = ap.parse_args()
+    # zona donde buscar el origen: la de FS-UAE, o la de la ventana de WinUAE
+    rx, ry = ((150, 200), (90, 125)) if a.sc == SC else ((40, 100), (40, 100))
+    SCa = a.sc
     d = render_d.load(os.path.join(HERE, "..", "work", "yi1_d.dat"))
     e = expect(d, render_d.l1_index(d), a.s, a.mid)
     cap = np.asarray(Image.open(a.shot).convert("RGB")).astype(int)
     best = None
-    for x0 in np.arange(150, 200, 0.5):
-        for y0 in np.arange(90, 125, 0.5):
-            xs = (x0 + (np.arange(0, W, 4) + 0.5) * SC).astype(int)
-            ys = (y0 + (np.arange(0, LINES, 4) + 0.5) * SC).astype(int)
+    for x0 in np.arange(rx[0], rx[1], 0.5):
+        for y0 in np.arange(ry[0], ry[1], 0.5):
+            xs = (x0 + (np.arange(0, W, 4) + 0.5) * SCa).astype(int)
+            ys = (y0 + (np.arange(0, LINES, 4) + 0.5) * SCa).astype(int)
             if xs[-1] >= cap.shape[1] or ys[-1] >= cap.shape[0]:
                 continue
             ok = (np.abs(cap[ys][:, xs] - e[::4, ::4]).max(axis=2) <= 8).mean()
@@ -79,14 +84,14 @@ def main():
     _, x0, y0 = best
     for fx in np.arange(x0 - 0.5, x0 + 0.5, 0.125):     # afinar
         for fy in np.arange(y0 - 0.5, y0 + 0.5, 0.125):
-            xs = (fx + (np.arange(W) + 0.5) * SC).astype(int)
-            ys = (fy + (np.arange(LINES) + 0.5) * SC).astype(int)
+            xs = (fx + (np.arange(W) + 0.5) * SCa).astype(int)
+            ys = (fy + (np.arange(LINES) + 0.5) * SCa).astype(int)
             ok = (np.abs(cap[ys][:, xs] - e).max(axis=2) <= 8).mean()
             if ok > best[0]:
                 best = (ok, fx, fy)
     _, x0, y0 = best
-    xs = (x0 + (np.arange(W) + 0.5) * SC).astype(int)
-    ys = (y0 + (np.arange(LINES) + 0.5) * SC).astype(int)
+    xs = (x0 + (np.arange(W) + 0.5) * SCa).astype(int)
+    ys = (y0 + (np.arange(LINES) + 0.5) * SCa).astype(int)
     got = cap[ys][:, xs]
     bad = np.abs(got - e).max(axis=2) > 8
     # un color que no es del OCS (canales multiplos de 17) es una mezcla de
