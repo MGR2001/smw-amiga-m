@@ -377,6 +377,9 @@ copyworst:
         add.l   #worst_spr-binstart,a0      ; spr.lv del nivel
         move.l  a0,_spr_level(a4)
         move.l  a0,_sll_for(a4)
+        move.l  a4,a0                       ; los punteros de logic68k.s (en
+        add.l   #_logic68k_init-binstart,a0 ; el juego se ponen una vez; si no
+        jsr     (a0)                        ; se rehacen en cada level_frame)
         move.l  (sp)+,a4
         rts
         else

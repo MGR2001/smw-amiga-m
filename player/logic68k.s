@@ -20,22 +20,22 @@
 ; Deja m0, m1, m10-m13, m15 y Map16NumLo como el C.
 ;----------------------------------------------------------------------
         public  _spr_tile_asm
-_spr_tile_asm:
-        movem.l d2-d4/a2,-(sp)
+_spr_tile_asm:                              ; guarda solo d2-d3; ram por a4
+        movem.l d2-d3,-(sp)
         moveq   #0,d1
-        move.b  16+7(sp),d1                 ; x
+        move.b  8+7(sp),d1                  ; x
         moveq   #0,d2
-        move.b  16+11(sp),d2                ; y
-        lea     _ram(a4),a2
-        lea     (a2,d1.w),a1                ; a1 = ram + x: tablas de sprite
-        move.b  d2,m15(a2)                  ; con d16(a1) ((d8,An,Dn) no llega)
+        move.b  8+11(sp),d2                 ; y
+        lea     _ram(a4),a1
+        add.w   d1,a1                       ; a1 = ram + x ((d8,An,Dn) no llega)
+        move.b  d2,_ram+m15(a4)
         move.b  wm_Tweaker1656(a1),d0
         and.b   #$0f,d0
         lsl.b   #2,d0
         add.b   d0,d2                       ; y = punto de choque
-        move.b  wm_TempTileGen(a2),d0
+        move.b  _ram+wm_TempTileGen(a4),d0
         addq.b  #1,d0
-        and.b   wm_IsVerticalLvl(a2),d0
+        and.b   _ram+wm_IsVerticalLvl(a4),d0
         bne     .inc                        ; generador / nivel vertical: el C
         ; py = Y del sprite + SprObjClipY[y]
         moveq   #0,d3
@@ -46,32 +46,30 @@ _spr_tile_asm:
         moveq   #0,d0
         move.b  (a0,d2.w),d0
         add.w   d0,d3
-        move.b  d3,m12(a2)
-        move.w  d3,d0
-        lsr.w   #8,d0
-        move.b  d0,m13(a2)
+        move.b  d3,_ram+m12(a4)
+        move.w  d3,-(sp)                    ; byte alto, sin desplazar
+        move.b  (sp)+,_ram+m13(a4)
         moveq   #-16,d0                     ; $F0
         and.b   d3,d0
-        move.b  d0,m0(a2)
+        move.b  d0,_ram+m0(a4)
         cmp.w   #$1b0,d3
         bhs     .out
-        ; px = X del sprite + SprObjClipX[y]
-        moveq   #0,d4
-        move.b  wm_SpriteXHi(a1),d4
-        lsl.w   #8,d4
-        move.b  wm_SpriteXLo(a1),d4
+        ; px = X del sprite + SprObjClipX[y]  (d1: x ya no hace falta)
+        move.b  wm_SpriteXHi(a1),d1
+        lsl.w   #8,d1
+        move.b  wm_SpriteXLo(a1),d1
         move.l  _spr_clip_x(a4),a0
         moveq   #0,d0
         move.b  (a0,d2.w),d0
-        add.w   d0,d4
-        move.b  d4,m10(a2)
-        move.b  d4,m1(a2)
-        move.w  d4,d0
+        add.w   d0,d1
+        move.b  d1,_ram+m10(a4)
+        move.b  d1,_ram+m1(a4)
+        move.w  d1,d0
         lsr.w   #8,d0
-        move.b  d0,m11(a2)
-        tst.w   d4
+        move.b  d0,_ram+m11(a4)
+        tst.w   d1
         bmi     .out
-        cmp.b   wm_ScreensInLvl(a2),d0
+        cmp.b   _ram+wm_ScreensInLvl(a4),d0
         bhs     .out
         ; o = scr_ofs[pantalla] + (py & $1F0) + (px & $FF) >> 4  (< $3600)
         and.w   #$1f,d0
@@ -81,14 +79,15 @@ _spr_tile_asm:
         and.w   #$1f0,d3
         add.w   d3,d0
         moveq   #0,d3
-        move.b  d4,d3
+        move.b  d1,d3
         lsr.b   #4,d3
         add.w   d3,d0
         move.l  _map16_lo(a4),a0
         move.b  (a0,d0.w),d2                ; lo
         move.l  _map16_hi(a4),a0
+        moveq   #0,d3
         move.b  (a0,d0.w),d3                ; pagina
-        move.b  d2,wm_Map16NumLo(a2)
+        move.b  d2,_ram+wm_Map16NumLo(a4)
         tst.b   d3
         beq.s   .p0
         cmp.b   #$32,d2
@@ -107,16 +106,15 @@ _spr_tile_asm:
         bne.s   .ret
         moveq   #MARIO_UNSUP_TILE,d0
         move.l  d0,_mario_unsupported(a4)
-.ret:   moveq   #0,d0
-        move.b  d3,d0
-        movem.l (sp)+,d2-d4/a2
+.ret:   move.l  d3,d0
+        movem.l (sp)+,d2-d3
         rts
-.out:   clr.b   wm_Map16NumLo(a2)           ; CODE_0194B4
-        clr.b   wm_SprMoveDownPixels(a2)
+.out:   clr.b   _ram+wm_Map16NumLo(a4)      ; CODE_0194B4
+        clr.b   _ram+wm_SprMoveDownPixels(a4)
         moveq   #0,d0
-        movem.l (sp)+,d2-d4/a2
+        movem.l (sp)+,d2-d3
         rts
-.inc:   movem.l (sp)+,d2-d4/a2              ; los argumentos siguen en la pila
+.inc:   movem.l (sp)+,d2-d3                 ; los argumentos siguen en la pila
         jmp     _spr_tile_c
 
 ;----------------------------------------------------------------------
@@ -127,11 +125,11 @@ _spr_tile_asm:
 ; f44d_tail (f545 en C).
 ;----------------------------------------------------------------------
         public  _f44d_asm
-_f44d_asm:
+_f44d_asm:                                  ; solo d2 se guarda: base en a1
         tst.b   _ram+wm_8E(a4)
         bne     .c
-        movem.l d2-d3/a2,-(sp)
-        lea     _ram(a4),a2
+        move.l  d2,-(sp)
+        lea     _ram(a4),a1
         move.b  _rX(a4),d0
         addq.b  #2,d0
         move.b  d0,_rX(a4)
@@ -139,29 +137,28 @@ _f44d_asm:
         and.b   d0,d1                       ; k = 2 * ((rX >> 1) & 63)
         lea     _probe_dx(a4),a0
         move.w  (a0,d1.w),d2
-        add.w   _probe_mx(a4),d2            ; x
+        add.w   _probe_mx(a4),d2            ; d2 = x
         lea     _probe_dy(a4),a0
-        move.w  (a0,d1.w),d3
-        add.w   _probe_my(a4),d3            ; y
-        move.b  d2,wm_BlockYPos(a2)         ; (el ROM pone x en BlockYPos)
+        move.w  (a0,d1.w),d1
+        add.w   _probe_my(a4),d1            ; d1 = y
+        move.b  d2,wm_BlockYPos(a1)         ; (el ROM pone x en BlockYPos)
         move.w  d2,d0
         lsr.w   #8,d0                       ; d0 = xs = pantalla
-        move.b  d0,wm_BlockYPos+1(a2)
-        move.b  d3,wm_BlockXPos(a2)
-        move.w  d3,d1
-        lsr.w   #8,d1
-        move.b  d1,wm_BlockXPos+1(a2)
-        clr.b   wm_WhichSwitchPressed(a2)
-        cmp.w   #$1b0,d3
+        move.b  d0,wm_BlockYPos+1(a1)
+        move.b  d1,wm_BlockXPos(a1)
+        move.w  d1,-(sp)                    ; byte alto de y, sin desplazar
+        move.b  (sp)+,wm_BlockXPos+1(a1)
+        clr.b   wm_WhichSwitchPressed(a1)
+        cmp.w   #$1b0,d1
         bhs.s   .off
-        cmp.b   wm_ScreensInLvl(a2),d0
+        cmp.b   wm_ScreensInLvl(a1),d0
         bhs.s   .off
         and.w   #$1f,d0
         add.w   d0,d0
         lea     _scr_ofs(a4),a0
         move.w  (a0,d0.w),d0
-        and.w   #$1f0,d3
-        add.w   d3,d0
+        and.w   #$1f0,d1
+        add.w   d1,d0
         moveq   #0,d1
         move.b  d2,d1
         lsr.b   #4,d1
@@ -169,10 +166,11 @@ _f44d_asm:
         move.l  _map16_lo(a4),a0
         move.b  (a0,d0.w),d1                ; lo
         move.l  _map16_hi(a4),a0
-        move.b  (a0,d0.w),d0                ; pagina
-        move.b  d1,wm_Map16NumLo(a2)
+        moveq   #0,d2
+        move.b  (a0,d0.w),d2                ; pagina
+        move.b  d1,wm_Map16NumLo(a1)
         move.b  d1,_rY(a4)
-        tst.b   d0
+        tst.b   d2
         beq.s   .p0
         cmp.b   #$32,d1
         beq.s   .sw
@@ -186,16 +184,17 @@ _f44d_asm:
         sub.b   #$ec,d1
         cmp.b   #$10,d1
         bhs.s   .ret
-.sw:    and.l   #$ff,d0                     ; interruptores P: f545 en C
-        move.l  d0,-(sp)
+.sw:    move.l  d2,-(sp)                    ; interruptores P: f545 en C
         jsr     _f44d_tail
         addq.l  #4,sp
-.ret:   and.l   #$ff,d0
-        movem.l (sp)+,d2-d3/a2
+        moveq   #0,d2
+        move.b  d0,d2
+.ret:   move.l  d2,d0
+        move.l  (sp)+,d2
         rts
 .off:   move.b  #$25,_rY(a4)                ; CODE_00F4A0: fuera del nivel
         moveq   #0,d0
-        movem.l (sp)+,d2-d3/a2
+        move.l  (sp)+,d2
         rts
 .c:     jmp     _f44d_c
 

@@ -624,13 +624,18 @@ static void f2c2(u8 a)
 }
 
 /* CODE_00F04D: bloques de agua de la pagina 1 */
+/* La tabla de la ROM (26 bloques) pasada una vez a un indice de 256: la
+   busqueda lineal costaba ~1 000 ciclos por llamada en el 68000 */
+static u8 water_tab[256], water_ok;
 static int f04d(u8 a)
 {
-    int x;
-    for (x = 0x19; x >= 0; x--)
-        if (T8X(DATA_00EAC1, x) == a)
-            return 1;
-    return 0;
+    if (!water_ok) {
+        int x;
+        for (x = 0x19; x >= 0; x--)
+            water_tab[T8X(DATA_00EAC1, x)] = 1;
+        water_ok = 1;
+    }
+    return water_tab[a];
 }
 
 /* CODE_00EFBC / _00EFCD: cintas transportadoras */
