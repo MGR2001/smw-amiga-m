@@ -1048,6 +1048,13 @@ saliendo por el borde. Arreglo: T = `TLINE` (−64) al empezar la línea, así
 la primera carga de cada línea lleva WAIT. `tools/scrollsim.py` simula la
 lista del copper en **cada frame** del recorrido con este modelo (T0 = −56).
 
+**P46 — A 256 px (DIW `$2CA1`, fetch `$40`-`$C0`) el copper es otro modelo.**
+Medido en WinUAE (`copcal.s -DW256 -DPATTERN`, `COPCAL_W256=1..3`): la
+rejilla de 8 px de P42 corrida a h − `$48` (x = 8·⌊(h − `$48`)/4⌋ − 1)
+hasta h = `$C0` (x = 239) y, al terminar el fetch, `$C4` → 243,
+`$C8` → 247, `$CC` → 251, `$CE` → 255; desde `$D0` ya está fuera de la
+pantalla. **Cada cambio de DIW o de fetch pide recalibrar** con `copcal`.
+
 **P44 — Los "derrames" de la etapa 5 alargan el tramo anterior.**
 `mkleveld.py` asigna los píxeles que quedan fuera de todo tramo al registro
 que *todavía conserva* el color: después del fin de un tramo puede haber

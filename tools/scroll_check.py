@@ -62,11 +62,14 @@ def main():
     ap.add_argument("--s", type=int, default=1000)
     ap.add_argument("--mid", action="store_true")
     ap.add_argument("--png", default=os.path.join(HERE, "..", "work", "scroll_cmp.png"))
+    ap.add_argument("--w", type=int, default=256, help="ancho de la pantalla (256, D10; 320 la vieja)")
     ap.add_argument("--sc", type=float, default=SC,
                     help="escala de la captura: 2,125 FS-UAE (por defecto), 2 WinUAE (shot.ps1)")
     a = ap.parse_args()
+    global W
+    W = a.w
     # zona donde buscar el origen: la de FS-UAE, o la de la ventana de WinUAE
-    rx, ry = ((150, 200), (90, 125)) if a.sc == SC else ((40, 100), (40, 100))
+    rx, ry = ((150, 200), (90, 125)) if a.sc == SC else ((40, 160), (40, 100))
     SCa = a.sc
     d = render_d.load(os.path.join(HERE, "..", "work", "yi1_d.dat"))
     e = expect(d, render_d.l1_index(d), a.s, a.mid)
@@ -109,7 +112,7 @@ def main():
             nb &= np.abs(got - en).max(axis=2) > 8
     print("fallos que no se explican por un vecino: %d (%.3f %%)" % (nb.sum(), 100 * nb.mean()))
     img = np.vstack([e, got, np.where(bad[..., None], [255, 0, 255], got // 2 + 64)])
-    Image.fromarray(img.astype(np.uint8)).resize((960, 2016), 0).save(a.png)
+    Image.fromarray(img.astype(np.uint8)).resize((W * 3, LINES * 9), 0).save(a.png)
     print("-> %s (esperado / captura / fallos en magenta)" % a.png)
 
 

@@ -23,7 +23,7 @@
    cuándo está hecho. No se empieza el siguiente con el anterior en rojo.
 3. Al cerrar un paso: commit `Etapa N.x: <qué>` y actualizar §1.2. Si aparece
    una trampa nueva, se agrega como `Pnn` en `AGENTS.md` §8 (la próxima es
-   **P46**).
+   **P47**).
 4. Al cerrar la sesión: handoff con la plantilla de §7, que reemplaza a §1.
 
 **Reglas del proceso (no negociables, vienen de lo que ya costó caro):**
@@ -67,7 +67,7 @@
 | 3-4 | Esqueleto Amiga y viabilidad | **hecho**; D1, D8 y D9 cerrados | `player/boot.s`, `bench*.s`, `copbench.s` |
 | 5 | Conversor del nivel al formato (d) | **hecho en cloud**; falta compararlo contra la referencia en la PC (→ 7) | `tools/mkbg.py`, `mkd8in.py`, `mkleveld.py` → `work/yi1_d.dat`, `render_d.py` |
 | 0 | Consolidar el WIP | **hecha** (2026-09-27, en la PC): 0.3 pico explicado (estructural, se arregla en 6.4); 0.4 explicado y arreglado (P42-P45) | §5, Etapa 0 |
-| 6 | Scroll del nivel real | **prototipo funcionando**: solo hacia la derecha, a velocidad fija, a 320 px. Media **27,3 %** de un frame (WinUAE KS 1.2, 4 px/frame); **403 frames (a 2 px/frame) pasan del frame**, en s ≈ 1590-1970, 2630-2700 y 4230-4680, con el peor en s = 4504 (**320 %**) | `tools/mkscroll.py` → `work/yi1_s.dat`, `player/scroll.s`; `tools/scrollprof.py`, `tools/scrollsim.py` |
+| 6 | Scroll del nivel real | **prototipo funcionando**: solo hacia la derecha, a velocidad fija; **6.1 hecha: 256 px** (media 22,1 %, máx. 278,5 %, 8 sprites con DMA). Lo que sigue son los números a 320 px: Media **27,3 %** de un frame (WinUAE KS 1.2, 4 px/frame); **403 frames (a 2 px/frame) pasan del frame**, en s ≈ 1590-1970, 2630-2700 y 4230-4680, con el peor en s = 4504 (**320 %**) | `tools/mkscroll.py` → `work/yi1_s.dat`, `player/scroll.s`; `tools/scrollprof.py`, `tools/scrollsim.py` |
 | 7 | Capa 2 contra la referencia | pendiente (solo PC) | — |
 | 8a/8b | Física y colisión de Mario | **hecho**: `full` 6510/6547; los 37 que fallan son contactos con sprites | `player/mario.c`, `mcoll.c`, `manim.c` |
 | 8 (gfx, cámara) | Gráficos (OAM) y cámara | **hecho**: `gfx` 6869/6869; lazo cerrado solo con el joypad | `player/mgfx.c`, `mcam.c` |
@@ -441,6 +441,31 @@ de `vars`).
 
 **Hecho cuando** `scroll_check` da lo mismo o menos que a 320 px, el coste
 queda re-medido y las simulaciones de sprites están re-corridas y anotadas.
+
+**HECHA el 2026-09-27 (PC, WinUAE KS 1.2):**
+- `scroll.s` y las herramientas llevan `VIS` (256 por defecto; `-DVIS=320`
+  arma la pantalla vieja **byte a byte igual** a la de antes). DIW
+  `$2CA1`/`$0CA1`, fetch `$40`/`$C0`, 17 palabras por línea; los valores
+  del roadmap eran correctos.
+- Copper recalibrado (**P46**): la misma rejilla con h − `$48`,
+  x = 8·⌊(h − `$48`)/4⌋ − 1 hasta h = `$C0` (x = 239); después `$C4` → 243,
+  `$C8` → 247, `$CC` → 251, `$CE` → 255 (macro `TAILH`). El borrado sigue
+  terminando antes de x = 0 (P43).
+- Imagen, `scroll_check --mid --sc 2 --w 256`, fallos que no explica un
+  vecino: 500: 0, 846: 1, 1000: 0, 1700: 0, 1936: 0, 2500: 0, 3500: 72,
+  4500: 75 (a 320: 0, 0, 0, 0, 0, 0, 72, 54; en 4500 la ventana ve otra
+  parte del nivel). `scrollsim --speed 2`: 14 868 px mal en todo el
+  recorrido (320: 19 586).
+- Coste, `-DBENCH -DSPEED=4`: media **22,1 %** (320: 27,3 %), máx. 278,5 %
+  en s = 4568 (320: 320,6 %). Musashi: 26 813 ciclos de media (320:
+  30 963). A 2 px/frame, 433 frames pasan del frame (320: 487).
+- **Sprite 7 con DMA: sí.** `scroll.s -DSPRTEST` dibuja los 8 sprites: a
+  256 px se ven los 8 (4 columnas adosadas); a 320, solo 0-5.
+- `oamstudy`, `d8demote` y `copsim` dan lo mismo que lo anotado en
+  `AGENTS.md` §9 (ya modelaban 256 px y 4 columnas; ahora la premisa está
+  medida): 2310 líneas piden 5-6 columnas, 45 de 2500 frames sin resolver
+  con un bob, 1916 cargas de la capa 1 que no entran. El borrado no es el
+  límite (como mucho 9 MOVE); `--hbl` no cambia nada.
 
 6.2 **Cámara en las dos direcciones.** Hoy `lo_tab`, `vu` y la lista de
 cambios de color (`CHG`) solo avanzan.

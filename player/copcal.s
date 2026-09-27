@@ -15,7 +15,11 @@
 BPL1MOD     equ $108
 BPL2MOD     equ $10a
 BPL1PTH     equ $0e0
+        ifd     W256
+FETCHB      equ 34                  ; 17 palabras por linea y plano (256 px)
+        else
 FETCHB      equ 42                  ; 21 palabras por linea y plano
+        endc
 
 V_ONES      equ 0
 V_ZERO      equ 4
@@ -118,8 +122,13 @@ alloc_chip:
 
         even
 COPLIST:
+        ifd     W256
+        dc.w    $008e,$2ca1,$0090,$2ca1     ; DIW de 256 px (D10), centrada
+        dc.w    $0092,$0040,$0094,$00c0     ; DDF: como el scroll a 256 px
+        else
         dc.w    $008e,$2c81,$0090,$2cc1     ; DIW
         dc.w    $0092,$0030,$0094,$00d0     ; DDF: como el scroll
+        endc
         dc.w    $0100,$6600,$0102,$0000,$0104,$0000
         dc.w    BPL1MOD,-FETCHB,BPL2MOD,-FETCHB
 PTRS:   dc.w    $00e0,0,$00e2,0,$00e4,0,$00e6,0,$00e8,0,$00ea,0

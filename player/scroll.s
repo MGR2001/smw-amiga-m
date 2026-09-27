@@ -28,8 +28,11 @@
 
         include "exec.i"
 
+        ifnd    VIS
+VIS     equ     256             ; ancho de pantalla (D10: 256 como la SNES;
+        endc                    ; -DVIS=320 arma la pantalla vieja)
         ifnd    STOPX
-STOPX   equ     4800            ; 5120 - 320: el final del nivel
+STOPX   equ     5120-VIS        ; el final del nivel
         endc
         ifnd    SPEED
 SPEED   equ     2               ; px por frame
@@ -65,16 +68,52 @@ CL_SIZE     equ CL_LINES+SEG*LINES+4
 ; Para cambiar en x >= objetivo (nunca antes), lo mas pronto posible:
 ;   objetivo <= 303: q = (objetivo + 8) >> 3, h = $38 + 4q, x = 8q - 1
 ;   objetivo >  303: h = (objetivo - 94) & $FE, x = h + 95
+; Pantalla de 256 px (DIW $2CA1, fetch $40-$C0; medido igual, copcal.s
+; -DW256, COPCAL_W256=1..3): la misma rejilla con h - $48, hasta h = $C0
+; (x = 239); despues $C4 -> 243, $C8 -> 247, $CC -> 251, $CE -> 255 (TAILH)
+        ifeq    VIS-256
+HOFS        equ $48
+LASTX       equ 255             ; ninguna carga despues de esta x
+XKNEE       equ 239             ; x de h = HKNEE; despues, TAILH
+HKNEE       equ $c0
+FETCHW      equ 17              ; palabras por linea y plano
+DIWS        equ $2ca1
+DIWE        equ $0ca1
+DDFS        equ $0040
+DDFE        equ $00c0
+        else
 HOFS        equ $38
 LASTX       equ 316             ; ninguna carga despues de esta x
+XKNEE       equ 303             ; x de h = HKNEE; despues, 1 px por unidad de h
+HKNEE       equ $d0
+FETCHW      equ 21
+DIWS        equ $2c81
+DIWE        equ $0cc1
+DDFS        equ $0030
+DDFE        equ $00d0
+        endc
+
+; h para x > XKNEE (en el registro \1)
+TAILH   macro
+        ifeq    VIS-256
+        sub.w   #XKNEE+1,\1                 ; 0.. desde x = 240
+        cmp.w   #12,\1
+        blo.s   .t1\@
+        move.w  #$ce,\1                     ; 252..: $CE (x = 255)
+        bra.s   .t2\@
+.t1\@:  and.w   #$fffc,\1
+        add.w   #$c4,\1                     ; $C4 + 4k: x = 243 + 4k
+.t2\@:
+        else
+        sub.w   #XKNEE-HKNEE-1,\1           ; x > 303: h = x - 94, par
+        endc
+        endm
         ifnd    BLITS
 BLITS       equ 4               ; pasos de blit_steps por frame
         endc
 VMARG       equ 4               ; margen de validez de una escritura fija (px)
 TLINE       equ -64             ; T al empezar las cargas de una linea (cota
                                 ; inferior: el borrado acaba antes de x = 0, P43)
-XKNEE       equ 303             ; x de h = HKNEE; despues, 1 px por unidad de h
-HKNEE       equ $d0
 BLANKH      equ $e2             ; el borrado empieza en esta h de la linea
                                 ; ANTERIOR: 7 + k MOVE terminan antes de x = 0
 
@@ -229,7 +268,12 @@ entry:
         move.w  #$7fff,DMACON(a4)
         move.l  V_COP(a5),COP1LC(a4)
         move.w  #0,COPJMP1(a4)
+        ifd     SPRTEST
+        bsr     spr_init
+        move.w  #$83e0,DMACON(a4)           ; + SPREN
+        else
         move.w  #$83c0,DMACON(a4)           ; MASTER|BPLEN|COPEN|BLTEN
+        endc
         ifd     BENCH
         bsr     bench_init
         endc
@@ -247,6 +291,9 @@ frame:
         bsr     readtimer
         move.w  d0,V_T0(a5)
         clr.w   V_COLF(a5)
+        endc
+        ifd     SPRTEST
+        bsr     spr_ptrs
         endc
         move.w  V_S(a5),d0
         cmp.w   #STOPX,d0
@@ -484,7 +531,7 @@ build_mid:
         move.l  a2,V_MLXB(a5)
         move.w  V_S(a5),d6                  ; d6 = s
         move.w  d6,d5
-        add.w   #320,d5                     ; d5 = s + 320
+        add.w   #VIS,d5                     ; d5 = s + VIS
         ; bloques de 16 lineas con el minimo de su wake: si la camara no
         ; llego al minimo, el bloque entero se salta
         move.l  V_WKB(a5),d0
@@ -579,9 +626,9 @@ build_mid:
         addq.w  #8,d2
         lsr.w   #3,d2                       ; q = (x + 8) >> 3
         lsl.w   #2,d2
-        add.w   #HOFS,d2                    ; h = $38 + 4q
+        add.w   #HOFS,d2                    ; h = HOFS + 4q
         bra.s   .fk2
-.fk:    sub.w   #XKNEE-HKNEE-1,d2           ; x > 303: h = x - 94, par
+.fk:    TAILH   d2
 .fk2:   and.w   #$fe,d2
         cmp.w   d1,d2
         bhs.s   .fh
@@ -629,10 +676,10 @@ build_mid:
         move.w  d2,d0
         lsl.l   #4,d0
         lea     (a1,d0.l),a5                ; OJO: a5 prestado (vars)
-        cmp.w   8(a5),d5                    ; x planificada >= s + 320: ya no
+        cmp.w   8(a5),d5                    ; x planificada >= s + VIS: ya no
         bhi.s   .in
-        move.w  8(a5),d0                    ; entra cuando s > x - 320
-        sub.w   #319,d0
+        move.w  8(a5),d0                    ; entra cuando s > x - VIS
+        sub.w   #VIS-1,d0
         bcc.s   .vu1
         moveq   #0,d0
 .vu1:   cmp.w   (a6),d0
@@ -646,8 +693,8 @@ build_mid:
         move.w  2(a5),d0                    ; principio del nuevo
         cmp.w   d0,d5
         bhi.s   .vis
-        sub.w   #319,d0                     ; empieza fuera: se vera cuando
-        cmp.w   (a6),d0                     ; s > principio - 320
+        sub.w   #VIS-1,d0                   ; empieza fuera: se vera cuando
+        cmp.w   (a6),d0                     ; s > principio - VIS
         bhs     .next_ld
         move.w  d0,(a6)
         bra     .next_ld
@@ -691,9 +738,9 @@ build_mid:
         addq.w  #8,d0
         lsr.w   #3,d0
         lsl.w   #2,d0
-        add.w   #HOFS,d0                    ; h = $38 + 4q
+        add.w   #HOFS,d0                    ; h = HOFS + 4q
         bra.s   .pk2
-.pk:    sub.w   #XKNEE-HKNEE-1,d0           ; x > 303: h = x - 94, par
+.pk:    TAILH   d0
 .pk2:   and.w   #$fe,d0
         cmp.w   #$e2,d0
         bls.s   .h2
@@ -935,17 +982,21 @@ build_copper:                               ; a0 = lista
         movem.l a2,-(sp)
         move.l  a3,V_DATA(a5)
         move.l  a0,d4                       ; d4 = principio de la lista
-        move.l  #$008e2c81,(a0)+            ; DIWSTRT
-        move.l  #$00900cc1,(a0)+            ; DIWSTOP: 224 lineas
-        move.l  #$00920030,(a0)+            ; DDFSTRT: una palabra antes
-        move.l  #$009400d0,(a0)+            ; DDFSTOP
+        move.l  #$008e0000|DIWS,(a0)+       ; DIWSTRT
+        move.l  #$00900000|DIWE,(a0)+       ; DIWSTOP: 224 lineas
+        move.l  #$00920000|DDFS,(a0)+       ; DDFSTRT: una palabra antes
+        move.l  #$00940000|DDFE,(a0)+       ; DDFSTOP
         move.l  #$01006600,(a0)+            ; BPLCON0: 6 planos, DBLPF, COLOR
         move.l  #$01020000,(a0)+            ; BPLCON1 (set_pointers)
+        ifd     SPRTEST
+        move.l  #$01040024,(a0)+            ; BPLCON2: sprites delante
+        else
         move.l  #$01040000,(a0)+            ; BPLCON2: PF1 delante
+        endc
         move.w  #$0108,(a0)+
-        move.w  #LINEB1-42,(a0)+            ; BPL1MOD
+        move.w  #LINEB1-FETCHW*2,(a0)+      ; BPL1MOD
         move.w  #$010a,(a0)+
-        move.w  #LINEB2-42,(a0)+            ; BPL2MOD
+        move.w  #LINEB2-FETCHW*2,(a0)+      ; BPL2MOD
         move.w  #COLOR00,(a0)+
         move.w  D_SKY(a3),(a0)+
         move.l  #$01900000,(a0)+            ; COLOR08 (transparente en PF2)
@@ -1189,5 +1240,61 @@ gmin_a: ds.w    LINES/16                    ; build_mid: minimo de wake por bloq
 gmin_b: ds.w    LINES/16                    ; de 16 lineas (0: mirar)
 wake_a: ds.w    LINES                       ; build_mid: s desde la que hay que
 wake_b: ds.w    LINES                       ; mirar cada linea (0: siempre)
+        ifd     SPRTEST
+;----------------------------------------------------------------------
+; -DSPRTEST (Etapa 6.1): los 8 sprites, cada uno un bloque de 16 x 16 con
+; su numero de columnas (sprite n: n + 1 rayas), en x = 8 + 30 n de la
+; pantalla, lineas $50-$5F. Dice que sprites tienen DMA con este fetch.
+;----------------------------------------------------------------------
+SPRY    equ     $50
+spr_init:
+        lea     sprdata(pc),a0
+        moveq   #0,d2                       ; n
+.s:     move.w  d2,d0
+        mulu    #30,d0
+        add.w   #8+DIWS&$ff-1,d0            ; HSTART = DIW + x - 1
+        move.w  d0,d1
+        lsr.w   #1,d1
+        or.w    #SPRY<<8,d1
+        move.w  d1,(a0)+                    ; SPRxPOS
+        and.w   #1,d0
+        or.w    #(SPRY+16)<<8,d0
+        move.w  d0,(a0)+                    ; SPRxCTL
+        moveq   #16-1,d3
+.l:     move.w  #$aaaa,d0                   ; rayas: n + 1 a la izquierda
+        move.w  d2,d1
+        addq.w  #1,d1
+        moveq   #-1,d4
+        lsl.w   d1,d4
+        not.w   d4                          ; n + 1 bits bajos... al reves
+        ror.w   d1,d4                       ; ...arriba
+        cmp.w   #3,d3
+        bhi.s   .d
+        moveq   #-1,d4                      ; 4 lineas macizas abajo
+.d:     move.w  d4,(a0)+
+        clr.w   (a0)+
+        dbf     d3,.l
+        clr.l   (a0)+
+        addq.w  #1,d2
+        cmp.w   #8,d2
+        blo.s   .s
+        move.w  #$0ff0,$1a2(a4)             ; COLOR17/21/25/29
+        move.w  #$0f0f,$1aa(a4)
+        move.w  #$00ff,$1b2(a4)
+        move.w  #$0fff,$1ba(a4)
+        rts
+spr_ptrs:
+        lea     sprdata(pc),a0
+        move.l  a0,d0
+        lea     $120(a4),a1                 ; SPR0PTH
+        moveq   #8-1,d1
+.p:     move.l  d0,(a1)+
+        add.l   #4+16*4+4,d0
+        dbf     d1,.p
+        rts
+        even
+sprdata: ds.b   8*(4+16*4+4)
+        endc
+
 gfxname: dc.b   "graphics.library",0
         even

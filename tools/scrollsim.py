@@ -36,7 +36,11 @@ T0 = -56                # x en que termina el borrado de 7 MOVE (antes de 0; P42
 
 
 def xh(h):
-    """x de pantalla donde cae el MOVE despues de WAIT h (P42)"""
+    """x de pantalla donde cae el MOVE despues de WAIT h (P42; 256 px: copcal -DW256)"""
+    if W == 256:
+        if h <= 0xC0:
+            return 8 * ((h - 0x48) >> 2) - 1
+        return {0xC4: 243, 0xC6: 243, 0xC8: 247, 0xCA: 247, 0xCC: 251}.get(h, 255 if h <= 0xCE else 999)
     return 8 * ((h - 0x38) >> 2) - 1 if h <= 0xD0 else 303 + (h - 0xD0)
 
 
@@ -81,18 +85,23 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--src", default=os.path.join(HERE, "..", "player", "scroll.s"))
     ap.add_argument("--speed", type=int, default=4)
+    ap.add_argument("--vis", type=int, default=256, help="ancho de pantalla de scroll.s (-DVIS)")
     ap.add_argument("--from", dest="x0", type=int, default=0)
-    ap.add_argument("--to", dest="x1", type=int, default=4800)
+    ap.add_argument("--to", dest="x1", type=int, default=5120)
     ap.add_argument("-D", action="append", default=[])
     ap.add_argument("--png", help="imagen (esperado / simulado / fallos) del peor frame")
     ap.add_argument("--top", type=int, default=10)
     ap.add_argument("--data", default=os.path.join(P.WORK, "yi1_s.dat"))
     a = ap.parse_args()
+    global W, T0
+    W = a.vis
+    T0 = -56 - (320 - W)            # el borrado termina a la misma h: antes de x = 0
+    a.x1 = min(a.x1, 5120 - W)
 
     d = render_d.load(os.path.join(P.WORK, "yi1_d.dat"))
     idx = render_d.l1_index(d)
     ideal = [render_d.reg_colors(d["events"][Y0 + L], d["W"]) for L in range(LINES)]
-    code, lst = P.assemble(a.src, ["SPEED=%d" % a.speed, "STOPX=%d" % min(a.x1, 4800)] + a.D)
+    code, lst = P.assemble(a.src, ["SPEED=%d" % a.speed, "STOPX=%d" % a.x1, "VIS=%d" % W] + a.D)
     syms, local = P.listing(lst)
     V = {n: v for n, v in syms.items() if n.startswith("V_")}
     sc = P.Scroll(code, syms, local, open(a.data, "rb").read(), V)

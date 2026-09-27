@@ -167,14 +167,17 @@ def main():
     ap.add_argument("--src", default=os.path.join(ROOT, "player", "scroll.s"))
     ap.add_argument("--data", default=os.path.join(WORK, "yi1_s.dat"))
     ap.add_argument("--speed", type=int, default=4)
-    ap.add_argument("--stopx", type=int, default=4800)
+    ap.add_argument("--vis", type=int, default=256, help="ancho de pantalla (-DVIS)")
+    ap.add_argument("--stopx", type=int, help="por defecto 5120 - vis")
     ap.add_argument("-D", action="append", default=[], help="define extra para vasm")
     ap.add_argument("--top", type=int, default=5)
     ap.add_argument("--at", type=int, help="perfil por rutina del frame con esta s")
     ap.add_argument("--csv", help="escribir s,ciclos de cada frame")
     a = ap.parse_args()
 
-    defs = ["SPEED=%d" % a.speed, "STOPX=%d" % a.stopx] + a.D
+    if a.stopx is None:
+        a.stopx = 5120 - a.vis
+    defs = ["SPEED=%d" % a.speed, "STOPX=%d" % a.stopx, "VIS=%d" % a.vis] + a.D
     code, lst = assemble(a.src, defs)
     syms, local = listing(lst)
     V = {n: v for n, v in syms.items() if n.startswith("V_")}

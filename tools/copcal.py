@@ -61,7 +61,19 @@ if os.environ.get("COPCAL_RIGHT"):
 TESTS_FINE2 = ([("wait h=$%02X" % h, [("W", h), ("M", 0)]) for h in range(0xC8, 0xE4, 2)]
                + [("W$50 M W$%02X M" % h, [("W", 0x50), ("M", 1), ("W", h), ("M", 0)])
                   for h in range(0x5C, 0x6A, 2)])
-if os.environ.get("COPCAL_FINE") == "2":
+# COPCAL_W256=1/2 (armar copcal.s con -DW256 -DPATTERN): la pantalla de
+# 256 px (D10), h de a 2 en toda la linea, en dos tandas
+TESTS_W256 = {
+    "1": [("wait h=$%02X" % h, [("W", h), ("M", 0)]) for h in range(0x3C, 0x80, 2)],
+    "2": [("wait h=$%02X" % h, [("W", h), ("M", 0)]) for h in range(0x80, 0xC4, 2)],
+    "3": ([("wait h=$%02X" % h, [("W", h), ("M", 0)]) for h in range(0xC4, 0xE4, 2)]
+          + [("W$60 M M M", [("W", 0x60), ("M", 0), ("M", 1), ("M", 2)]),
+             ("W$60 M W$60 M", [("W", 0x60), ("M", 0), ("W", 0x60), ("M", 1)]),
+             ("borrado (v-1,$E2) 7 MOVE: fin", [("B", 0), ("P", 7), ("M", 0)])]),
+}
+if os.environ.get("COPCAL_W256"):
+    TESTS, STEP = TESTS_W256[os.environ["COPCAL_W256"]], 5
+elif os.environ.get("COPCAL_FINE") == "2":
     TESTS, STEP = TESTS_FINE2, 7
 elif os.environ.get("COPCAL_FINE"):
     TESTS, STEP = TESTS_FINE, 7
