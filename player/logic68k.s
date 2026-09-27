@@ -436,3 +436,79 @@ _camera_F6DB:
         movem.l (sp)+,d2-d7/a2
         rts
 .vert:  jmp     _camera_F6DB_c
+
+;----------------------------------------------------------------------
+; int spr_mario_contact_asm(u8 x) = spr_mario_contact de msprite.c: cajas
+; de Mario y del sprite x; 1 si se tocan. Primero Y, despues X, como el C.
+; Tablas por puntero (logic68k_init): _mcl (MarioClipDispY, MarioClipH) y
+; _cl (ClipDispX, ClipDispY, ClipWidth, ClipHeight).
+;----------------------------------------------------------------------
+CONTACT macro                               ; \1 = a  \2 = b  \3 = wa  \4 = wb
+        move.w  \1,d0                       ; (u16)(a - b + $80) >= $100: no
+        sub.w   \2,d0
+        add.w   #$80,d0
+        cmp.w   #$100,d0
+        bhs     .no
+        move.b  \3,d0                       ; (u8)(wa + wb) <
+        add.b   \4,d0
+        move.b  \2,d1                       ;   (u8)((u8)b - (u8)a + wb): no
+        sub.b   \1,d1
+        add.b   \4,d1
+        cmp.b   d1,d0
+        blo     .no
+        endm
+
+        public  _spr_mario_contact_asm
+_spr_mario_contact_asm:
+        movem.l d2-d7/a2,-(sp)
+        moveq   #0,d1
+        move.b  28+7(sp),d1                 ; x
+        lea     _ram(a4),a2
+        lea     (a2,d1.w),a1                ; a1 = ram + x
+        moveq   #1,d2                       ; k
+        tst.b   wm_IsDucking(a2)
+        bne.s   .k
+        tst.b   wm_MarioPowerUp(a2)
+        beq.s   .k
+        moveq   #0,d2
+.k:     tst.b   wm_OnYoshi(a2)
+        beq.s   .k2
+        addq.w  #2,d2
+.k2:    RD16    wm_MarioYPos,d3
+        move.l  _mcl_dy(a4),a0
+        moveq   #0,d0
+        move.b  (a0,d2.w),d0
+        add.w   d0,d3                       ; my
+        move.l  _mcl_h(a4),a0
+        move.b  (a0,d2.w),d4                ; mh
+        moveq   #$3f,d7
+        and.b   wm_Tweaker1662(a1),d7       ; c
+        move.b  wm_SpriteYHi(a1),d5
+        lsl.w   #8,d5
+        move.b  wm_SpriteYLo(a1),d5
+        move.l  _cl_dy(a4),a0
+        move.b  (a0,d7.w),d0
+        ext.w   d0
+        add.w   d0,d5                       ; sy
+        move.l  _cl_h(a4),a0
+        move.b  (a0,d7.w),d6                ; sh
+        CONTACT d3,d5,d4,d6
+        RD16    wm_MarioXPos,d3
+        addq.w  #2,d3                       ; mx
+        moveq   #$0c,d4                     ; mw
+        move.b  wm_SpriteXHi(a1),d5
+        lsl.w   #8,d5
+        move.b  wm_SpriteXLo(a1),d5
+        move.l  _cl_dx(a4),a0
+        move.b  (a0,d7.w),d0
+        ext.w   d0
+        add.w   d0,d5                       ; sx
+        move.l  _cl_w(a4),a0
+        move.b  (a0,d7.w),d6                ; sw
+        CONTACT d3,d5,d4,d6
+        moveq   #1,d0
+        movem.l (sp)+,d2-d7/a2
+        rts
+.no:    moveq   #0,d0
+        movem.l (sp)+,d2-d7/a2
+        rts

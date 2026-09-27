@@ -230,15 +230,26 @@ u8 spr_tile_asm(u8 x, u8 y);
    inicializado en la declaracion guardaria la direccion ABSOLUTA del
    ensamblado, y el binario se carga en cualquier sitio (P36) */
 const u8 *spr_clip_x, *spr_clip_y, *gdi_ofs, *gdi_bit;
+const u8 *mcl_dy, *mcl_h, *cl_dx, *cl_dy, *cl_w, *cl_h;
 u8 logic68k_zero;               /* siempre 0: con "tabla + 0 de la RAM" vbcc
                                    calcula la direccion con lea d16(a4); con
                                    "= tabla" emite move.l #etiqueta (absoluta) */
 void logic68k_init(void)
 {
+    /* ya estan: un solo puntero dice si hay que (re)hacerlos (con un flag no
+       alcanza: logicbench -DWORST restaura punteros de Musashi) */
+    if (spr_clip_x == tx_SprObjClipX + logic68k_zero)
+        return;
     spr_clip_x = tx_SprObjClipX + logic68k_zero;
     spr_clip_y = tx_SprObjClipY + logic68k_zero;
     gdi_ofs = tx_03B75C + logic68k_zero;
     gdi_bit = tx_03B75E + logic68k_zero;
+    mcl_dy = tx_MarioClipDispY + logic68k_zero;
+    mcl_h = tx_MarioClipH + logic68k_zero;
+    cl_dx = tx_ClipDispX + logic68k_zero;
+    cl_dy = tx_ClipDispY + logic68k_zero;
+    cl_w = tx_ClipWidth + logic68k_zero;
+    cl_h = tx_ClipHeight + logic68k_zero;
 }
 u8 spr_tile_c(u8 x, u8 y)
 #else
@@ -486,6 +497,10 @@ static void sub_offscreen3(u8 x)
 
 /* GetMarioClipping + GetSpriteClippingA + CheckForContact: 1 si las cajas
    de Mario y del sprite se tocan. */
+#ifdef LOGIC68K
+int spr_mario_contact_asm(u8 x);
+#define spr_mario_contact spr_mario_contact_asm     /* player/logic68k.s */
+#else
 static int spr_mario_contact(u8 x)
 {
     u8 k = 0, i, c;
@@ -513,6 +528,7 @@ static int spr_mario_contact(u8 x)
     }
     return 1;
 }
+#endif
 
 /* MarioSprInteractRt, hasta el contacto (el Rex tiene Tweaker167A bit 7:
    la reaccion la hace el propio sprite) */
