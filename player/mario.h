@@ -74,6 +74,7 @@ void sprites_begin(void);
 void level_frame(void);
 
 /* msprite.c: etapa 9 */
+extern const u16 scr_ofs[32];  /* inicio de cada pantalla en map16 (s * $1B0) */
 extern const u8 *spr_level;     /* spr.lv del nivel */
 extern u8 spr_spawned;          /* ranuras creadas por el cargador en este frame */
 extern u8 level_sprites;        /* manim.c: 1 = level_frame corre tambien los sprites */

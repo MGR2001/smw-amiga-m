@@ -39,7 +39,7 @@ static void unsup(int why) { if (!mario_unsupported) mario_unsupported = why; }
 
 /* DATA_00BA60/BA9C: inicio de cada pantalla en el buffer (s * $1B0), en
    tabla como en el ROM: el 68000 tarda hasta 70 ciclos en un MULU */
-static const u16 scr_ofs[32] = {
+const u16 scr_ofs[32] = {                   /* tambien msprite.c */
     0x0000, 0x01B0, 0x0360, 0x0510, 0x06C0, 0x0870, 0x0A20, 0x0BD0,
     0x0D80, 0x0F30, 0x10E0, 0x1290, 0x1440, 0x15F0, 0x17A0, 0x1950,
     0x1B00, 0x1CB0, 0x1E60, 0x2010, 0x21C0, 0x2370, 0x2520, 0x26D0,

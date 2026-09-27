@@ -215,7 +215,7 @@ static void spr_pos_axis(u8 x, u8 o)
 static u8 spr_tile(u8 x, u8 y)
 {
     u16 py, px, o;
-    u8 a;
+    u8 a, lo;
     W8(m15, y);
     y = (u8)(((SPR(wm_Tweaker1656, x) & 0x0F) << 2) + y);
     if ((u8)((R8(wm_TempTileGen) + 1) & R8(wm_IsVerticalLvl))) { spr_unsup(); return 0; }
@@ -228,12 +228,16 @@ static u8 spr_tile(u8 x, u8 y)
     W8(m10, (u8)px);
     W8(m1, (u8)px);
     W8(m11, px >> 8);
-    if ((px & 0x8000) || (px >> 8) >= R8(wm_ScreensInLvl)) goto out;
-    o = (u16)((px >> 8) * 0x1B0 + (py & 0x1F0) + ((px >> 4) & 0x0F));
-    W8(wm_Map16NumLo, map16_lo[o]);
+    if ((px & 0x8000) || (u8)(px >> 8) >= R8(wm_ScreensInLvl)) goto out;
+    /* tabla de pantallas en vez de MULU, y el bloque en locales: con
+       map16_lo[o] en cada comparacion vbcc releia el puntero y el byte
+       (escribir ram[] podria cambiarlos) */
+    o = (u16)(scr_ofs[(u8)(px >> 8) & 0x1F] + (py & 0x1F0) + ((u8)px >> 4));
+    lo = map16_lo[o];
     a = map16_hi[o];
-    if (a ? (map16_lo[o] == 0x32 || map16_lo[o] == 0x2F)
-          : (map16_lo[o] == 0x29 || map16_lo[o] == 0x2B || (u8)(map16_lo[o] - 0xEC) < 0x10))
+    W8(wm_Map16NumLo, lo);
+    if (a ? (lo == 0x32 || lo == 0x2F)
+          : (lo == 0x29 || lo == 0x2B || (u8)(lo - 0xEC) < 0x10))
         spr_unsup();                        /* bloques de los interruptores P */
     return a;
 out:                                        /* CODE_0194B4 */
