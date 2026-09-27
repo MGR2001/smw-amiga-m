@@ -198,3 +198,114 @@ _f44d_asm:
         movem.l (sp)+,d2-d3/a2
         rts
 .c:     jmp     _f44d_c
+
+;----------------------------------------------------------------------
+; void spr_pos_axis_asm(u8 x, u8 o) = spr_pos_axis de msprite.c
+; (SubSprYPosNoGrvty; o = $0C: SubSprXPosNoGrvty). Velocidad 4.4 a la
+; posicion: YAcc += v << 4, YLo:YHi += (v asr 4) + acarreo, con addx
+; (la cadena de acarreo del 65816, sin rearmar 16 bits).
+;----------------------------------------------------------------------
+        public  _spr_pos_axis_asm
+_spr_pos_axis_asm:
+        movem.l d2-d3,-(sp)
+        moveq   #0,d1
+        move.b  8+7(sp),d1                  ; x
+        moveq   #0,d0
+        move.b  8+11(sp),d0                 ; o
+        add.w   d0,d1
+        lea     _ram(a4),a1
+        add.w   d1,a1                       ; a1 = ram + x + o
+        move.b  wm_SpriteSpeedY(a1),d0      ; v
+        beq.s   .zero
+        move.b  d0,d1
+        asr.b   #4,d1                       ; d = v >> 4 con signo
+        smi     d2                          ; hi = $FF si d < 0
+        lsl.b   #4,d0                       ; v << 4
+        move.b  wm_SpriteYAcc(a1),d3
+        add.b   d0,d3                       ; X = acarreo c
+        move.b  d3,wm_SpriteYAcc(a1)        ; (move no toca X)
+        scs     d0                          ; d0 = -c
+        move.b  wm_SpriteYLo(a1),d3
+        addx.b  d1,d3                       ; YLo + d + c
+        move.b  d3,wm_SpriteYLo(a1)
+        move.b  wm_SpriteYHi(a1),d3
+        addx.b  d2,d3                       ; YHi + hi + acarreo
+        move.b  d3,wm_SpriteYHi(a1)
+        sub.b   d0,d1                       ; d + c
+        move.b  d1,_ram+wm_SprPixelMove(a4)
+        movem.l (sp)+,d2-d3
+        rts
+.zero:  clr.b   _ram+wm_SprPixelMove(a4)
+        movem.l (sp)+,d2-d3
+        rts
+
+;----------------------------------------------------------------------
+; int get_draw_info_asm(u8 x) = get_draw_info de msprite.c
+; (GetDrawInfoBnk3, solo los flags de fuera de pantalla). Devuelve 0 si
+; el sprite esta lejos.
+;----------------------------------------------------------------------
+        public  _get_draw_info_asm
+_get_draw_info_asm:
+        movem.l d2-d4,-(sp)
+        moveq   #0,d1
+        move.b  12+7(sp),d1                 ; x
+        lea     _ram(a4),a1
+        add.w   d1,a1                       ; a1 = ram + x
+        lea     _ram(a4),a0
+        clr.b   wm_OffscreenVert(a1)
+        move.b  wm_SpriteXHi(a1),d2
+        lsl.w   #8,d2
+        move.b  wm_SpriteXLo(a1),d2         ; sx
+        move.b  wm_Bg1HOfs+1(a0),d0
+        lsl.w   #8,d0
+        move.b  wm_Bg1HOfs(a0),d0           ; camara X
+        sub.w   d0,d2                       ; sx - cam
+        move.w  d2,d0
+        lsr.w   #8,d0
+        sne     d0
+        neg.b   d0
+        move.b  d0,wm_OffscreenHorz(a1)     ; alto != 0
+        add.w   #$40,d2
+        cmp.w   #$180,d2
+        shs     d0
+        neg.b   d0
+        move.b  d0,wm_SpriteOffTbl(a1)
+        bne.s   .far
+        move.b  wm_Bg1VOfs+1(a0),d3
+        lsl.w   #8,d3
+        move.b  wm_Bg1VOfs(a0),d3           ; camara Y
+        move.b  wm_SpriteYHi(a1),d2
+        lsl.w   #8,d2
+        move.b  wm_SpriteYLo(a1),d2
+        sub.w   d3,d2                       ; sy - camY (+ tabla abajo)
+        moveq   #0,d4
+        btst    #5,wm_Tweaker1662(a1)
+        beq.s   .y0
+        moveq   #1,d4                       ; y = 1: dos puntos
+.lp:    move.l  _gdi_ofs(a4),a0
+        moveq   #0,d0
+        move.b  (a0,d4.w),d0
+        add.w   d2,d0
+        lsr.w   #8,d0
+        beq.s   .nx
+        move.l  _gdi_bit(a4),a0
+        move.b  (a0,d4.w),d0
+        or.b    d0,wm_OffscreenVert(a1)
+.nx:    subq.w  #1,d4
+        bpl.s   .lp
+        bra.s   .on
+.y0:    move.l  _gdi_ofs(a4),a0
+        moveq   #0,d0
+        move.b  (a0),d0
+        add.w   d2,d0
+        lsr.w   #8,d0
+        beq.s   .on
+        move.l  _gdi_bit(a4),a0
+        move.b  (a0),d0
+        or.b    d0,wm_OffscreenVert(a1)
+.on:    moveq   #1,d0
+        movem.l (sp)+,d2-d4
+        rts
+.far:   moveq   #0,d0
+        movem.l (sp)+,d2-d4
+        rts

@@ -1,6 +1,6 @@
 {
  "_meta": {
-  "commit": "8415942+cambios",
+  "commit": "c96ee68+cambios",
   "fecha": "2026-09-27",
   "nota": "tools/regress.py; las medidas emu.* dependen del emulador"
  },
@@ -38,15 +38,15 @@
  },
  "m68k.spr.ciclos_max": {
   "how": "min",
-  "value": 45544
+  "value": 43536
  },
  "m68k.spr.ciclos_media": {
   "how": "min",
-  "value": 30189
+  "value": 29778
  },
  "m68k.spr.ciclos_p99": {
   "how": "min",
-  "value": 44688
+  "value": 42530
  },
  "m68k.spr.resync": {
   "how": "min",

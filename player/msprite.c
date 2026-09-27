@@ -17,6 +17,10 @@
 #include "gen/smwtabx.h"
 #include "smwmac.h"
 
+/* build de la Amiga: rutinas de player/logic68k.s en vez del C */
+#if defined(__VBCC__) && !defined(NOASM)
+#define LOGIC68K 1
+#endif
 const u8 *spr_level;        /* spr.lv del nivel (cabecera incluida) */
 static void init_sprite_tables(u8 x);
 
@@ -189,6 +193,10 @@ static u8 sub_horiz_pos(u8 x)
 
 /* SubSprYPosNoGrvty (o con o = $0C, SubSprXPosNoGrvty): velocidad 4.4 a
    la posicion; las tablas X estan $0C bytes despues de las Y */
+#ifdef LOGIC68K
+void spr_pos_axis_asm(u8 x, u8 o);
+#define spr_pos_axis spr_pos_axis_asm       /* player/logic68k.s */
+#else
 static void spr_pos_axis(u8 x, u8 o)
 {
     u8 v = SPR(wm_SpriteSpeedY + o, x), c, hi, lo, d;
@@ -209,19 +217,19 @@ static void spr_pos_axis(u8 x, u8 o)
     SETSPR(wm_SpriteYHi + o, x, (u8)(hi + SPR(wm_SpriteYHi + o, x) + (sum >> 8)));
     W8(wm_SprPixelMove, (u8)(d + c));
 }
+#endif
 
 /* CODE_019441 / _01944D / CODE_0194BF: el bloque bajo el punto de choque
    y (0..3: derecha, izquierda, abajo, arriba). Deja m0, m10-m13, m15. */
 #if defined(__VBCC__) && !defined(NOASM)
 /* build de la Amiga: la llama player/logic68k.s (spr_tile_asm) en los
    casos raros; el asm usa estas tablas y scr_ofs */
-#define LOGIC68K 1
 u8 spr_tile_c(u8 x, u8 y);
 u8 spr_tile_asm(u8 x, u8 y);
 /* punteros asignados en tiempo de ejecucion (logic68k_init): uno
    inicializado en la declaracion guardaria la direccion ABSOLUTA del
    ensamblado, y el binario se carga en cualquier sitio (P36) */
-const u8 *spr_clip_x, *spr_clip_y;
+const u8 *spr_clip_x, *spr_clip_y, *gdi_ofs, *gdi_bit;
 u8 logic68k_zero;               /* siempre 0: con "tabla + 0 de la RAM" vbcc
                                    calcula la direccion con lea d16(a4); con
                                    "= tabla" emite move.l #etiqueta (absoluta) */
@@ -229,6 +237,8 @@ void logic68k_init(void)
 {
     spr_clip_x = tx_SprObjClipX + logic68k_zero;
     spr_clip_y = tx_SprObjClipY + logic68k_zero;
+    gdi_ofs = tx_03B75C + logic68k_zero;
+    gdi_bit = tx_03B75E + logic68k_zero;
 }
 u8 spr_tile_c(u8 x, u8 y)
 #else
@@ -418,6 +428,10 @@ static void spr_update_pos(u8 x)
 
 /* GetDrawInfoBnk3: solo los flags de fuera de pantalla (el dibujo, en la
    etapa 6). Devuelve 0 si el sprite esta lejos (PLA/PLA: no se dibuja). */
+#ifdef LOGIC68K
+int get_draw_info_asm(u8 x);
+#define get_draw_info get_draw_info_asm     /* player/logic68k.s */
+#else
 static int get_draw_info(u8 x)
 {
     u16 sx = (u16)(SPR(wm_SpriteXLo, x) | SPR(wm_SpriteXHi, x) << 8), cam = R16(wm_Bg1HOfs);
@@ -438,6 +452,7 @@ static int get_draw_info(u8 x)
     }
     return 1;
 }
+#endif
 
 /* SubOffscreen0Bnk3 (nivel horizontal) */
 static void sub_offscreen3(u8 x)
