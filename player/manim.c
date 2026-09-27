@@ -354,6 +354,9 @@ void level_frame(void)
     sprites_begin();
     if (level_sprites) {                    /* CODE_01808C: ranuras 11..0 */
         u8 k = 12;
+#if defined(__VBCC__) && !defined(NOASM)
+        logic68k_init();                    /* punteros de player/logic68k.s */
+#endif
         do {
             k--;
             if (RX8(wm_SpriteStatus, k)) {

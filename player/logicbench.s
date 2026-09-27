@@ -548,6 +548,8 @@ vars:   ds.b    V_SIZE
         include "work/cc/mcam.code.s"
         include "work/cc/msprite.code.s"
         include "work/cc/smwrom00.code.s"
+        include "work/cc/smwram.i"          ; direcciones de ram[] para el asm
+        include "player/logic68k.s"         ; rutinas a mano (8.2)
         even
 MAPHALF     equ 20*$1B0                     ; 20 pantallas de Yoshi's Island 1
 map16:

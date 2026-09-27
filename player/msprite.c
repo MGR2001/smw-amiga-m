@@ -212,7 +212,28 @@ static void spr_pos_axis(u8 x, u8 o)
 
 /* CODE_019441 / _01944D / CODE_0194BF: el bloque bajo el punto de choque
    y (0..3: derecha, izquierda, abajo, arriba). Deja m0, m10-m13, m15. */
+#if defined(__VBCC__) && !defined(NOASM)
+/* build de la Amiga: la llama player/logic68k.s (spr_tile_asm) en los
+   casos raros; el asm usa estas tablas y scr_ofs */
+#define LOGIC68K 1
+u8 spr_tile_c(u8 x, u8 y);
+u8 spr_tile_asm(u8 x, u8 y);
+/* punteros asignados en tiempo de ejecucion (logic68k_init): uno
+   inicializado en la declaracion guardaria la direccion ABSOLUTA del
+   ensamblado, y el binario se carga en cualquier sitio (P36) */
+const u8 *spr_clip_x, *spr_clip_y;
+u8 logic68k_zero;               /* siempre 0: con "tabla + 0 de la RAM" vbcc
+                                   calcula la direccion con lea d16(a4); con
+                                   "= tabla" emite move.l #etiqueta (absoluta) */
+void logic68k_init(void)
+{
+    spr_clip_x = tx_SprObjClipX + logic68k_zero;
+    spr_clip_y = tx_SprObjClipY + logic68k_zero;
+}
+u8 spr_tile_c(u8 x, u8 y)
+#else
 static u8 spr_tile(u8 x, u8 y)
+#endif
 {
     u16 py, px, o;
     u8 a, lo;
@@ -245,6 +266,10 @@ out:                                        /* CODE_0194B4 */
     W8(wm_SprMoveDownPixels, 0);
     return 0;
 }
+
+#ifdef LOGIC68K
+#define spr_tile spr_tile_asm
+#endif
 
 /* _019435 */
 static void spr_obj_bit(u8 x)
