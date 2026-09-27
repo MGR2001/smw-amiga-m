@@ -1055,6 +1055,28 @@ hasta h = `$C0` (x = 239) y, al terminar el fetch, `$C4` → 243,
 `$C8` → 247, `$CC` → 251, `$CE` → 255; desde `$D0` ya está fuera de la
 pantalla. **Cada cambio de DIW o de fetch pide recalibrar** con `copcal`.
 
+**P47 — vbcc también emite direcciones absolutas sin avisar al tomar la
+dirección de un array `static` o al inicializar un puntero.**
+`p = tabla;` sale `move.l #msprite_l12,...` y `const u8 *p = tabla;` deja
+`dc.l` con la dirección del ensamblado: el binario se carga en cualquier
+sitio y esas direcciones están mal (en Musashi, `BASE` = `$10000`).
+`logicbench_build.sh` ahora también para con las etiquetas locales
+(`msprite_l34`). Arreglo: asignar en tiempo de ejecución con un índice
+que vbcc no puede plegar (`tabla + logic68k_zero`, un `u8` que vale 0):
+así usa `lea l12(a4)`. Lo mismo con el vbcc de 2022 al desenrollar
+escrituras repetidas a la misma tabla (`move.l #5718+_ram,d2`).
+
+**P48 — En el banco, lo que va delante de los datos del C los corre.**
+`logicbench -DWORST` metía 10 KB de estado delante de los `.data.s` del
+C: los datos pasaban de 32 KB de `a4` (P36) y el frame salía otro sin
+ningún error. Los datos grandes del arnés van al **final** del binario
+(después del mapa) y se llegan con `a4 + (etiqueta - binstart)`.
+
+**P49 — `logicbench`: una carga que toca `a4` tiene que guardarlo.**
+`measure` usa `a4` = CUSTOM; una carga que lo pone en `binstart` y no lo
+restaura cuelga el banco (la captura sale sin resultados). `copystate`
+lo guarda; `copyworst` tuvo que hacerlo también.
+
 **P44 — Los "derrames" de la etapa 5 alargan el tramo anterior.**
 `mkleveld.py` asigna los píxeles que quedan fuera de todo tramo al registro
 que *todavía conserva* el color: después del fin de un tramo puede haber

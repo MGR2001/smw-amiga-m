@@ -23,7 +23,7 @@
    cuándo está hecho. No se empieza el siguiente con el anterior en rojo.
 3. Al cerrar un paso: commit `Etapa N.x: <qué>` y actualizar §1.2. Si aparece
    una trampa nueva, se agrega como `Pnn` en `AGENTS.md` §8 (la próxima es
-   **P47**).
+   **P50**).
 4. Al cerrar la sesión: handoff con la plantilla de §7, que reemplaza a §1.
 
 **Reglas del proceso (no negociables, vienen de lo que ya costó caro):**
@@ -72,7 +72,7 @@
 | 8a/8b | Física y colisión de Mario | **hecho**: `full` 6510/6547; los 37 que fallan son contactos con sprites | `player/mario.c`, `mcoll.c`, `manim.c` |
 | 8 (gfx, cámara) | Gráficos (OAM) y cámara | **hecho**: `gfx` 6869/6869; lazo cerrado solo con el joypad | `player/mgfx.c`, `mcam.c` |
 | 8c | Pendientes | las de la partida salen exactas; **falta la grabación de las colinas** | — |
-| 8.2 | Optimizar la lógica | **en curso**: peor frame con sprites 52 816 → 51 354 ciclos (Musashi); ~50 % estimado en la Amiga a 256 px, objetivo 40 %. Plan en §5 | `player/msprite.c`, `tools/m68kprof.py` |
+| 8.2 | Optimizar la lógica | **hecha** (2026-09-27): peor frame con sprites **40,1 % medido** en WinUAE KS 1.2 a 256 px (~39,7 % sin el propio banco); era ~50 %. Musashi 52 816 → 40 956. Sin sprites 20,2 / 20,5 % | `player/logic68k.s`, `NOOAM`, `logicbench -DWORST` |
 | 8d | Coste en la Amiga | **medido**: 26,5 % corriendo y 26,9 % saltando (FS-UAE, DPF encendido, sin sprites), después de la optimización de los subagentes; antes, 31,6 % y 32,9 % | `player/logicbench.s` |
 | 9 | Sprites: lógica | cargador (20/20), motor mínimo, **Rex**, bloque `?` volador (`$83`) y caja de mensaje (`$B9`). Falta el resto de D3 | `player/msprite.c` |
 | 9 | Sprites: dibujo en la Amiga | no empezado | — |
@@ -571,7 +571,40 @@ camino). Red de seguridad: V1 en cada commit.
 **Hecho cuando** la lógica con sprites da ≤ 40 % en el peor frame (FS-UAE,
 DPF encendido) y V1 es idéntica.
 
-**Estado el 2026-09-27 (PC), en curso:**
+**HECHA el 2026-09-27 (PC).** Resultado, WinUAE KS 1.2 a 256 px:
+- **Peor frame con sprites** (frame 7901, `logicbench -DWORST`):
+  **40,1 %** medido, con ~0,4 % del propio banco (la entrada por
+  `callframe`): **~39,7 %** real. Objetivo: ≤ 40 %. Semántica idéntica
+  en todo (V1: `regress.py`, `abcheck.py` IGUAL en cada paso).
+- **Sin sprites (8d):** 20,2 % corriendo / 20,5 % saltando (antes 25,8 /
+  26,3 % a 256 px; 28,3 / 28,8 % a 320).
+- Musashi, peor frame con sprites: 52 816 → **40 956** (−22,5 %); media
+  con sprites 35 938 → 28 598.
+
+Qué se hizo, por orden de ganancia:
+1. **`NOOAM`** (el build de la Amiga no escribe la OAM: sin `ClearOam` ni
+   las 4 entradas de Mario; quedan sus efectos en `HidePlayer`/`m4-m6`):
+   −8 % en el peor frame, −11,6 % de media. `logicbench_build.sh` compila
+   con `CDEFS=-DNOOAM` por defecto; el PC (modo `gfx`) sigue con la OAM.
+2. **Ensamblador a mano, `player/logic68k.s`:** `spr_tile`, `f44d`,
+   `spr_pos_axis` (con `addx`), `get_draw_info`, `camera_F6DB`, `f7f4`,
+   `spr_mario_contact`, `rex_main`, `spr_update_pos`. Cada rutina
+   reemplaza a la de C **solo** en el build de la Amiga (vbcc sin
+   `NOASM`); el C queda como referencia y para los casos raros (el asm
+   salta al C con los mismos argumentos). Las direcciones salen de
+   `work/cc/smwram.i` (generado de `smwram.h`, `smwtab.h` y el enum de
+   `mario.h`); las tablas de la ROM se leen por puntero
+   (`logic68k_init`), nada de la ROM en el asm (R9).
+3. C: `sprite_load_level` sin recorrer el nivel, `f04d` con tabla,
+   `init_sprite_tables` desenrollado, `spr_tile` sin MULU.
+
+Probado y descartado: flags de vbcc (igual o semántica rota, P38);
+partir `sprite_run` para hacer los temporizadores en asm (vbcc deja de
+incorporar el despacho y sale peor). Queda sin ensamblador, si hiciera
+falta margen: `spr_obj_vert`, `spr_obj_interact`, `spr_spr_interact`,
+`eb77`, `f636`, `e92b`, `sprite_run` entero.
+
+**Estado intermedio (histórico):**
 - **Dónde estamos.** `logicbench -DVIS256` (la pantalla de la 6.1) en WinUAE
   KS 1.2: 25,8 % corriendo / 26,3 % saltando. Factor WinUAE/Musashi del
   mismo trabajo: **1,39** a 256 px (1,50 a 320). Peor frame con sprites en
