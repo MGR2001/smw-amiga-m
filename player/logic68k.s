@@ -633,3 +633,80 @@ _spr_update_pos_asm:
         moveq   #MARIO_UNSUP_TILE,d0
         move.l  d0,_mario_unsupported(a4)
         bra.s   .ret
+
+;----------------------------------------------------------------------
+; u16 f7f4(u16 limit, u16 bg1v) = f7f4_c de mcam.c (CODE_00F7F4, el scroll
+; vertical de la capa 1). Hacia arriba (v2 < 0) salta al C, que vuelve a
+; escribir igual m0, m2, m4 y las direcciones antes de seguir.
+; d1 = a / v2  d2 = y  d3 = limit  d4 = bg1v  d5 = valor de tabla
+;----------------------------------------------------------------------
+T16Y    macro                               ; \2.w = T16X(\1, y), y en d2
+        lea     _rom00+(\1-ROM00_BASE)(a4),a0
+        move.b  1(a0,d2.w),\2
+        lsl.w   #8,\2
+        move.b  (a0,d2.w),\2
+        endm
+
+        public  _f7f4
+_f7f4:
+        tst.b   _ram+wm_VertScrollHead(a4)
+        bne.s   .on
+        moveq   #0,d0
+        move.w  10(sp),d0                   ; bg1v
+        rts
+.on:    movem.l d2-d5/a2,-(sp)
+        lea     _ram(a4),a2
+        move.w  20+6(sp),d3                 ; limit
+        move.w  20+10(sp),d4                ; bg1v
+        WR16    m4,d3
+        moveq   #0,d2
+        RD16    wm_MarioYPos,d1
+        sub.w   d4,d1                       ; v0
+        WR16    m0,d1
+        move.w  d1,d0
+        sub.w   #$0070,d0
+        bmi.s   .y0
+        moveq   #2,d2
+.y0:    move.b  d2,wm_Layer1ScrollDir(a2)
+        move.b  d2,wm_Layer2ScrollDir(a2)
+        T16Y    DATA_00F69F,d5
+        sub.w   d5,d1                       ; v2
+        move.w  d1,d0                       ; (v2 ^ T16X(DATA_00F6A3, y)) & $8000
+        lsr.w   #8,d0
+        lea     _rom00+(DATA_00F6A3-ROM00_BASE)(a4),a0
+        move.b  1(a0,d2.w),d5
+        eor.b   d5,d0
+        bmi.s   .keep
+        moveq   #2,d2
+        moveq   #0,d1
+.keep:  WR16    m2,d1
+        tst.w   d1
+        bmi.s   .up
+        clr.b   wm_ScrScrollToPlayer(a2)
+        T16Y    DATA_00F6A7,d5              ; _00F883: limita la velocidad
+        move.w  d1,d0
+        sub.w   d5,d0
+        eor.w   d5,d0
+        bmi.s   .nc
+        move.w  d5,d1
+.nc:    add.w   d4,d1                       ; a + bg1v
+        T16Y    DATA_00F6AD,d5
+        move.w  d1,d0
+        sub.w   d5,d0
+        bpl.s   .ok
+        move.w  d5,d1
+.ok:    move.w  d1,d4                       ; bg1v = a
+        moveq   #0,d0
+        move.w  d3,d0
+        sub.w   d4,d0
+        bmi.s   .lim
+        moveq   #0,d0
+        move.w  d4,d0
+        bra.s   .out
+.lim:   clr.b   wm_EnableVertScroll(a2)
+        moveq   #0,d0
+        move.w  d3,d0
+.out:   movem.l (sp)+,d2-d5/a2
+        rts
+.up:    movem.l (sp)+,d2-d5/a2              ; hacia arriba: el C
+        jmp     _f7f4_c

@@ -56,7 +56,12 @@ MCS void f8ab(void)
 /* CODE_00F7F4 / CODE_00F7FA: scroll vertical. Entra y sale Bg1VOfs en una
    variable (nativo: en el 68000 cada valor de 16 bits de ram[] cuesta ~50
    ciclos); escribe en la RAM lo mismo que el ROM. */
+#ifdef LOGIC68K
+u16 f7f4_c(u16 limit, u16 bg1v);    /* la referencia; f7f4 (asm) cae aca hacia arriba */
+u16 f7f4_c(u16 limit, u16 bg1v)
+#else
 MCS u16 f7f4(u16 limit, u16 bg1v)
+#endif
 {
     u8 y, x;
     u16 a, v0, v2;
