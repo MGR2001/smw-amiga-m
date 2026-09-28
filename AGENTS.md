@@ -175,6 +175,30 @@ $F80000             Kickstart ROM (no la usaremos: bootblock propio)
 **Regla de oro:** si el blitter o el copper tienen que leerlo, va en chip RAM.
 Sin excepciones.
 
+### Mapa medido del juego (`player/game.s`, 2026-09-27)
+
+Lo de arriba era el plan; esto es lo que usa hoy el primer ADF jugable.
+**Hace falta la expansión A501**: el binario solo, más los datos del scroll,
+PF1 y las dos listas no entran en 512 KB de chip.
+
+| dónde | bloque | bytes |
+|---|---|---|
+| chip | `yi1_s.dat` (bloques, capa 2, colores, plan del copper; `D_*`) | 223 600 |
+| chip | PF1: buffer circular (`BUF1`) | 59 136 |
+| chip | 2 listas del copper con `-DSPRITES` (`CL_SIZE` = 216 + 220 × 224 + 4) | 2 × 49 500 |
+| chip | sprites de Mario: 2 buffers × 4 sprites × 84 palabras + nulo | 1 352 |
+| chip | **total del juego** | **≈ 383 KB** |
+| slow | el binario (se copia solo desde la chip de `boot.s`, que se libera) | 178 944 |
+| slow | copia de los datos del C y del mapa (reinicio del nivel, en vivo) | 11 748 + 17 280 |
+
+Dentro del binario (`work/live/game.lst`): cabecera `A5PL` → datos del C
+(`smwrom00` + `cdata0..cdata1` = `$401C-$6E00`: **tienen que quedar a
+menos de 32 KB de `binstart`**, P36) → código del C, `logic68k.s`,
+`mspr68k.s` → `scroll.s` (`SCROLL_LIB`) → código del juego (`entry` en
+`$1101C`) → `map16` (17 280), `spr.lv`, `mario_pal.bin` (256),
+`gfx32.bin` y `gfx32f.bin` (2 × 23 808), `yi1_replay.bin` (42 058). El ADF
+ocupa 403 KB de 880 KB (45 %).
+
 ---
 
 ## 5. Pipeline de assets (etapa 1 — HECHA)
@@ -1094,6 +1118,64 @@ en la captura de 1700 a la vuelta, un WAIT en `$BD` (x = 231) + un MOVE
 detrás cambió el color en x <= 244, no en 247. Afecta a las cadenas que
 cruzan x ~ 232-255. Para arreglarlo: medir esa zona con `copcal.s` y
 meterla en el modelo, o poner un WAIT propio a cada carga en la cola.
+
+**P52 — `game.s`: el código del juego queda a más de 32 KB de `binstart`.**
+Los datos del C van primero (P36) y detrás el código del C y de
+`scroll.s`: `entry`, `mario_draw` y compañía quedan más allá de 32 KB, y
+`lea binstart(pc)` / `bra.w entry` / `move.l hdr_data_len(pc)` dan
+"displacement out of range". Se usa el macro `GETBASE An` (`lea` a una
+etiqueta local + `sub.l #etiqueta-binstart`) y la cabecera salta con
+`lea binstart(pc)` + `add.l #entry-binstart` + `jmp`. Lo mismo con los
+datos grandes del final: al meter GFX32 delante del replay,
+`lea replay(pc)` dejó de llegar. Un `ifgt cdata1-binstart-$7ffe` + `fail`
+avisa si los datos del C pasan de 32 KB.
+
+**P53 — `mspr_draw` destruye d2.** `mario_draw` guardaba en d2 el buffer
+de sprites de la lista y después de `bsr mspr_draw` escribía los punteros
+con ese d2: Mario salía como un garabato al pie de la pantalla (los
+punteros de sprites apuntaban a basura). Ahora `movem.l d2/a2` alrededor.
+Las rutinas a mano documentan los registros que destruyen: leerlo.
+
+**P54 — vbcc y el dibujo genérico: 300 000 ciclos.** `mario_sprite()` en C
+(lienzo `[linea][columna][plano][byte]`, índices `int`, bucles genéricos)
+costaba ~301 000 ciclos por frame (212 %): unas 37 000 instrucciones. El
+C queda como referencia y para los casos raros; el caso de siempre va en
+`mspr68k.s` con `MOVEP.W`: en un tile de 4 bpp de la SNES la fila r tiene
+los planos 0-1 en la palabra 2r y los 2-3 en 16 + 2r, y `movep.w d,0(a)` /
+`movep.w d,1(a)` reparte los bytes del tile izquierdo y del derecho en las
+palabras DATA/DATB de los sprites sin convertir nada (~10 400 ciclos,
+7,3 %). Volteo horizontal: `gfx32f.bin` (bytes al revés) y L/R cambiados.
+
+**P55 — "Recién apretado" contra la RAM del juego (sospecha, sin
+confirmar).** `game.s` (en vivo) calcula `$16 = $15 nuevo & ~$15 viejo`
+leyendo el `$15` viejo de `ram[]`. SMW borra los botones en algunos casos
+(`no_buttons()`); si pasa con una tecla apretada, el frame siguiente la ve
+"recién apretada": explicaría los dobles saltos que vio el usuario. Arreglo
+previsto: guardar el joypad del frame anterior en una variable propia.
+
+**P56 — La herramienta Bash rompe las barras invertidas en los heredoc.**
+`\1` de los macros de vasm, `\n` de las cadenas de C y `\x01` de Python
+llegaron como caracteres de control o saltos de línea reales (varias veces,
+en las dos sesiones del 2026-09-27; el `\1` roto fue un chr(1) invisible
+que hizo fallar un `Edit` después). Los scripts con barras se escriben con
+la herramienta de escritura de ficheros, no con `cat <<EOF`, o se usa
+`chr(92)`.
+
+**P57 — Capturas ×2 de WinUAE: muestrear el centro del píxel.** Con el
+origen de la pantalla en (130, 69) de la captura, el píxel (x, y) de la
+Amiga es (131 + 2x, 70 + 2y). Tomando la esquina (130 + 2x) salen miles de
+"fallos" en todos los bordes (`game_check.py` dio 7566 así; 0 al
+arreglarlo).
+
+**P58 — En vivo, lo no portado reinicia el nivel (parche provisorio).**
+`level_frame` pone `mario_unsupported` y no sigue cuando Mario entra en algo
+que el port no tiene (animaciones, meta, tuberías, capa 2, tiles
+especiales...); en el replay eso lo tapan las resincronizaciones, en vivo
+no. `game.s` cuenta esos frames y a los 75 (1,5 s) restaura los datos del C
+y el mapa guardados al cargar y vuelve al primer estado. El daño (`MEV_HURT`)
+se resuelve sin animación: grande → chico con `wm_PlayerHurtTimer = $7F`;
+chico → reinicio. **No dice qué pasó**: próximo paso, un modo diagnóstico
+que lo muestre en pantalla.
 
 **P44 — Los "derrames" de la etapa 5 alargan el tramo anterior.**
 `mkleveld.py` asigna los píxeles que quedan fuera de todo tramo al registro

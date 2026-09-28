@@ -292,10 +292,6 @@ static int ref_px(int x, int y)            /* color (0..15) de la referencia */
 {
     static u8 vram[0x80][32];
     int e, i;
-    for (i = 0; i < 10; i++) {
-        int r, pa = ram[wm_0D85 + i] | ram[wm_0D85 + i + 1] << 8;
-        (void)pa;
-    }
     for (i = 0; i < 5; i++) {
         int r;
         for (r = 0; r < 2; r++) {
