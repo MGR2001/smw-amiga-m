@@ -62,7 +62,16 @@ BUF1    equ     LINEB1*LINES    ; 59136
 CL_BPLCON1  equ 20+2
 CL_COLOR00  equ 36+2
 CL_PTR      equ 44              ; BPL1PTH; BPLnPTH en CL_PTR + (n-1)*8
+        ifd     SPRITES
+; -DSPRITES (el juego, 6b.4): la cabecera lleva ademas los 8 punteros de
+; sprites (SPR0PTH..SPR7PTL) y COLOR17-31, que escribe el juego en la
+; lista de cada frame (Mario se ve junto con el fondo de su frame)
+CL_SPR      equ 92              ; SPR0PTH; SPRnPTH en CL_SPR + n*8
+CL_COL17    equ CL_SPR+64       ; COLOR17; COLORk en CL_COL17 + (k-17)*4
+CL_LINES    equ CL_COL17+60
+        else
 CL_LINES    equ 92
+        endc
 ; un segmento por linea: 2 WAIT + 7 + 7 MOVE (borrado), hasta MIDMAX
 ; cargas a mitad de linea y el salto al segmento siguiente (COP2LCH,
 ; COP2LCL, COPJMP2). Tamano fijo, contenido de largo variable: los huecos
@@ -926,10 +935,14 @@ build_copper:                               ; a0 = lista
         ifd     SPRTEST
         move.l  #$01040024,(a0)+            ; BPLCON2: sprites delante
         else
+        ifd     SPRITES
+        move.l  #$01040024,(a0)+            ; BPLCON2: sprites delante
+        else
         ifd     BPLCON2V
         move.l  #$01040000|BPLCON2V,(a0)+
         else
         move.l  #$01040000,(a0)+            ; BPLCON2: PF1 delante
+        endc
         endc
         endc
         move.w  #$0108,(a0)+
@@ -945,6 +958,20 @@ build_copper:                               ; a0 = lista
         clr.w   (a0)+
         addq.w  #2,d0
         dbf     d1,.ptr
+        ifd     SPRITES
+        move.w  #$0120,d0                   ; SPR0PTH..SPR7PTL
+        moveq   #16-1,d1
+.spt:   move.w  d0,(a0)+
+        clr.w   (a0)+
+        addq.w  #2,d0
+        dbf     d1,.spt
+        move.w  #$01a2,d0                   ; COLOR17..COLOR31
+        moveq   #15-1,d1
+.c17:   move.w  d0,(a0)+
+        clr.w   (a0)+
+        addq.w  #2,d0
+        dbf     d1,.c17
+        endc
         ; lineas
         move.l  a3,a1
         add.l   D_INI(a3),a1

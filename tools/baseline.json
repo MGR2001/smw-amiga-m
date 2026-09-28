@@ -1,7 +1,7 @@
 {
  "_meta": {
-  "commit": "7aa2e6b+cambios",
-  "fecha": "2026-09-26",
+  "commit": "7542034+cambios",
+  "fecha": "2026-09-27",
   "nota": "tools/regress.py; las medidas emu.* dependen del emulador"
  },
  "emu.logic.corriendo_pct": {
@@ -62,11 +62,11 @@
  },
  "m68k.full.ciclos_max": {
   "how": "min",
-  "value": 42046
+  "value": 34688
  },
  "m68k.full.ciclos_media": {
   "how": "min",
-  "value": 20019
+  "value": 18835
  },
  "m68k.full.ok": {
   "how": "max",
@@ -74,15 +74,15 @@
  },
  "m68k.loop.ciclos_max": {
   "how": "min",
-  "value": 48194
+  "value": 38502
  },
  "m68k.loop.ciclos_media": {
   "how": "min",
-  "value": 25909
+  "value": 22779
  },
  "m68k.loop.ciclos_p99": {
   "how": "min",
-  "value": 28172
+  "value": 24818
  },
  "m68k.loop.resync": {
   "how": "min",
@@ -94,15 +94,15 @@
  },
  "m68k.spr.ciclos_max": {
   "how": "min",
-  "value": 53002
+  "value": 43280
  },
  "m68k.spr.ciclos_media": {
   "how": "min",
-  "value": 35779
+  "value": 30893
  },
  "m68k.spr.ciclos_p99": {
   "how": "min",
-  "value": 52180
+  "value": 42652
  },
  "m68k.spr.resync": {
   "how": "min",

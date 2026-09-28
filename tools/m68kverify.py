@@ -140,6 +140,9 @@ def main():
     ap.add_argument("--sprites", action="store_true",
                     help="loop con _level_sprites = 1: los sprites del nivel los corre el "
                          "binario (como marioverify game, pero TODOS: los sin portar no hacen nada)")
+    ap.add_argument("--replay", default=None,
+                    help="loop: escribir el replay del tramo mas largo para player/game.s "
+                         "(-DREPLAY, etapa 6.3): el joypad de cada frame y las resincronizaciones")
     ap.add_argument("--spr", default=os.path.join(HERE, "..", "..", "smw-src-master", "project",
                                                   "mw_e10", "levels", "data", "world_1", "1", "spr.lv"))
     a = ap.parse_args()
@@ -287,10 +290,14 @@ def run_loop(a, cpu, call, rec, orc, n, RAM, MAP, map0, syms):
     synced = False
     costs = []
     prev = None
+    # --replay: el tramo mas largo de la grabacion, frame a frame (ver replay_write)
+    seg = longest_segment(rec, n) if a.replay else None
+    ops, states, sprinit = [], [], None
     for i in range(n):
         r = rec(i)
         newseg = prev is None or r[0] != prev[0] + 1 or prev[1] != 0x29
         prev = r
+        inseg = seg is not None and seg[0] <= r[0] <= seg[1]
         if r[1] != 0x29:
             synced = False
             continue
@@ -299,15 +306,22 @@ def run_loop(a, cpu, call, rec, orc, n, RAM, MAP, map0, syms):
             cpu.write(RAM, bytes(0x2000))
             if spr is not None:
                 newseg_sprites(r)
+            if inseg:
+                sprinit = cpu.read(RAM + 0x1938, 128)
             synced = False
         if orc(r, ANIM) or orc(r, LOCKED):
             synced = False
+            if inseg:
+                ops.append((REP_SKIP, r[2][0x15:0x19]))
             continue
         if not synced:
             sync(r, cpu.read(RAM, 0x2000))
             synced = True
             longest = max(longest, cur)
             cur = 0
+            if inseg:
+                ops.append((REP_SYNC, r[2][0x15:0x19]))
+                states.append(r[2] + r[3])
             continue
         cpu.write(RAM + 0x15, r[2][0x15:0x19])
         if a.dump is not None and r[0] == a.dump:
@@ -327,12 +341,19 @@ def run_loop(a, cpu, call, rec, orc, n, RAM, MAP, map0, syms):
                  for _, adr, w in FIELDS + LOOP_FIELDS)
         if ok:
             cur += 1
+            if inseg:
+                ops.append((REP_RUN, r[2][0x15:0x19]))
             continue
         resync += 1
         longest = max(longest, cur)
         cur = 0
         sync(r, ram)
+        if inseg:
+            ops.append((REP_RUNSYNC, r[2][0x15:0x19]))
+            states.append(r[2] + r[3])
     longest = max(longest, cur)
+    if a.replay:
+        replay_write(a.replay, seg[0], ops, states, sprinit, spr)
     print("binario 68000 en lazo cerrado (%s%s): %d frames, %d resincronizaciones, "
           "tramo mas largo %d frames" % (a.engine, ", con sprites" if spr else "", frames, resync,
                                          longest))
@@ -344,6 +365,54 @@ def run_loop(a, cpu, call, rec, orc, n, RAM, MAP, map0, syms):
               " = media %.1f %%, max %.1f %% de un frame PAL"
               % (mean, c[int(len(c) * 0.99)], worst[0], worst[1],
                  100 * mean / PAL_FRAME, 100 * worst[0] / PAL_FRAME))
+
+
+# replay (--replay) para player/game.s -DREPLAY. Lo que hace el lazo cerrado
+# de arriba en cada frame del tramo, para que la Amiga haga exactamente lo
+# mismo (y siga la grabacion igual que aca):
+REP_RUN, REP_SYNC, REP_SKIP, REP_RUNSYNC = 0, 1, 2, 3
+#   RUN      joypad ($15-$18) + level_frame
+#   SYNC     cargar el estado grabado (sync()), sin level_frame
+#   SKIP     nada (Mario en una animacion o sprites congelados: no portado)
+#   RUNSYNC  joypad + level_frame, y despues cargar el estado (resincronizar)
+# Formato (big-endian):
+#   +0  "SMWR"  u16 frames  u16 primer frame  u16 estados  u16 0
+#   +12 u32 desplazamiento de OPS, u32 de STS
+#   +20 128 bytes: wm_SprLoadStatus ($1938) al empezar el tramo
+#   OPS frames x 6 bytes: u8 op, u8 0, joypad ($15-$18)
+#   STS estados x 576 bytes: $0000-$00FF y $13C0-$14FF (como el oraculo),
+#       en el orden en que los piden SYNC y RUNSYNC
+# Al cargar un estado, game.s conserva las tablas de SPR_KEEP (los sprites
+# son del port) y pone $1931 = 7, $1692 = spr.lv[0] & $3F y $1430 = $FFFF.
+
+
+def longest_segment(rec, n):
+    """(primer frame, ultimo frame) del tramo continuo de juego mas largo"""
+    best, start, prev = None, None, None
+    for i in range(n + 1):
+        r = rec(i) if i < n else None
+        cont = r is not None and prev is not None and r[0] == prev[0] + 1 and r[1] == 0x29
+        if not cont:
+            if start is not None and (best is None or prev[0] - start > best[1] - best[0]):
+                best = (start, prev[0])
+            start = r[0] if r is not None and r[1] == 0x29 else None
+        prev = r
+    return best
+
+
+def replay_write(path, first, ops, states, sprinit, spr):
+    if spr is None:
+        sys.exit("--replay necesita --sprites (el juego corre los sprites)")
+    head = b"SMWR" + struct.pack(">HHHH", len(ops), first, len(states), 0)
+    o_ops = 20 + 128
+    o_sts = o_ops + 6 * len(ops)
+    out = head + struct.pack(">II", o_ops, o_sts) + bytes(sprinit)
+    out += b"".join(bytes([op, 0]) + bytes(j) for op, j in ops)
+    out += b"".join(bytes(st) for st in states)
+    open(path, "wb").write(out)
+    k = [sum(1 for op, _ in ops if op == t) for t in range(4)]
+    print("replay: %s, frames %d-%d (%d): RUN %d, SYNC %d, SKIP %d, RUNSYNC %d; %d bytes"
+          % (path, first, first + len(ops) - 1, len(ops), k[0], k[1], k[2], k[3], len(out)))
 
 
 LOOP_FIELDS = [("Bg1HOfs $1A", 0x1A, 2), ("Bg1VOfs $1C", 0x1C, 2), ("Bg2HOfs $1E", 0x1E, 2),

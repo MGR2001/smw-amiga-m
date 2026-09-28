@@ -77,7 +77,7 @@
 | 9 | Sprites: lógica | cargador (20/20), motor mínimo, **Rex**, bloque `?` volador (`$83`) y caja de mensaje (`$B9`). Falta el resto de D3 | `player/msprite.c` |
 | 9 | Sprites: dibujo en la Amiga | no empezado | — |
 | 10-12 | HUD, audio, pulido | no empezados | — |
-| — | **Integración** (un binario que junte scroll + lógica + Mario + joystick) | **no empezada**: hoy el scroll (`scroll.s`) y la lógica (`logicbench.s`) son programas separados | — |
+| — | **Integración** (un binario que junte scroll + lógica + Mario + joystick) | **en curso** (2026-09-27): `game.s` junta todo; el replay sigue la grabación (6.3 hecha); Mario en sprites; entrada en vivo escrita, sin probar con teclas | `player/game.s`, `mspr.c`, `mspr68k.s`, `tools/game_build.sh`, `gamecheck.py`, `game_check.py` |
 
 ### 1.3 Números de regresión (la red de seguridad)
 
@@ -516,6 +516,28 @@ en el ADF). Es la primera prueba de lazo cerrado en la Amiga.
 **Hecho cuando** la Amiga sigue la partida grabada y las capturas coinciden
 con el esperado en al menos 5 frames repartidos por el nivel.
 
+**HECHA el 2026-09-27 (PC, WinUAE KS 1.2):**
+- `player/game.s`: un solo binario con el C (`level_frame`, datos a menos
+  de 32 KB de `binstart`, P36) y `scroll.s` como biblioteca (`SCROLL_LIB`:
+  `scroll_init` / `scroll_frame`). Cada frame, desde la línea `$110`:
+  entrada → `level_frame` → Mario (6b.4) → `scroll_frame` con
+  s = `Bg1HOfs`. El binario se copia solo a la slow RAM (todo es relativo
+  al PC o a `a4`) y libera la chip: no entraba en 512 KB. Build:
+  `sh tools/game_build.sh` (`GDEFS`, `OUT`).
+- `-DREPLAY`: `m68kverify.py --mode loop --sprites --replay` escribe
+  `work/yi1_replay.bin`: el tramo 5145-11457 (6313 frames) con el joypad y
+  las mismas resincronizaciones del lazo cerrado del PC (RUN 6177, SYNC 3,
+  SKIP 129, RUNSYNC 4). La Amiga hace exactamente eso.
+- `tools/gamecheck.py`: el binario del juego en Unicorn, frame a frame:
+  **0 diferencias** con el oráculo en los 6177 RUN. La cámara recorre 0-2492
+  y vuelve (el vertical queda en 192 toda la partida; el header de YI1 no
+  tiene scroll vertical).
+- Capturas (`tools/shots63.ps1`, `-DSTOPF`): frames 6000 / 7000 / 8000 /
+  9000 / 10000 / 11000 → fallos que no explica un vecino **0 / 0 / 0 / 0 /
+  0 / 6** (el 11000, con la cámara volviendo).
+- Coste de la lógica en el juego (Musashi, sin DMA): media 20,9 %, peor
+  29,3 % del frame.
+
 6.4 **Bajar el coste a ≤ 25 %** en el peor frame con columna. Primero,
 el pico de s = 4504 (Etapa 0.3). Ideas
 anotadas en `AGENTS.md`: `blit_steps` (0.3); en `build_mid`, tablas en vez de
@@ -747,6 +769,32 @@ Mario del oráculo en N. Extender `scroll_check.py` o escribir
 
 6b.6 **Medida.** Peor frame del juego integrado, con `-DBENCH` y FS-UAE →
 **compuerta D1** (§2).
+
+**Estado al 2026-09-27 (en curso):**
+- 6b.1: el juego carga con el loader de siempre (`boot.s` + `mkadf.py`):
+  binario (~180 KB) a slow RAM y `yi1_s.dat` a chip. Sin compresión ni
+  vlink todavía.
+- 6b.2: hecho en `game.s` (arriba, 6.3). Latencia de un frame: la lista del
+  copper, los punteros de sprites y la paleta de Mario de un frame se ven
+  juntos.
+- 6b.3: `game.s` sin `-DREPLAY` = en vivo. Teclado por la interrupción de
+  nivel 2 (handshake de >= 2 líneas con `VHPOSR`), tabla D14 (`keytab`),
+  joystick del puerto 2 (botón 1 = B, arriba + botón = A, botón 2 = Y), OR
+  de los dos → `$15-$18`. Lo que el port no tiene (animaciones de Mario,
+  meta, tuberías...) congela el frame: a los 1,5 s el nivel vuelve a
+  empezar (se guardan al cargar los datos del C y el mapa). Daño sin
+  animación: grande → chico con invulnerabilidad; chico → reinicio.
+  **Sin probar con teclas en el emulador todavía.**
+- 6b.4: `mgfx.c` (NOOAM) deja las 4 entradas de Mario en `mario_oam` /
+  `mario_osz` y la paleta en `mario_pal`; `player/mspr.c` (referencia) y
+  `player/mspr68k.s` (el caso de siempre, con `MOVEP.W`, ~10 400 ciclos =
+  7,3 %) arman dos parejas de sprites adosados desde GFX32
+  (`tools/mkmario.py`: `gfx32.bin`, `gfx32f.bin` volteado, `mario_pal.bin`).
+  `marioverify mspr` (PC, `-DNOOAM`): OAM = oráculo y sprites = render de
+  referencia en 6869/6869; `gamecheck.py --spr`: vbcc y asm = referencia en
+  6184/6184 (el asm fue al C 1 vez). Coste extra de la lógica por llenar
+  `mario_oam`: ~2 300 ciclos (Musashi, peor frame con sprites 43 280).
+- 6b.5: `tools/game_check.py` (fondo + Mario contra la captura).
 
 **Hecho cuando** el ADF se juega con joystick en FS-UAE y en WinUAE con
 KS 1.2, el replay coincide con el oráculo y el presupuesto está medido y

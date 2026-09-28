@@ -29,6 +29,16 @@
 #define OAM_P(y)    (0x0303 + (y))
 #define OAM_SIZE    0x0460          /* wm_OamSize.1 */
 
+#ifdef NOOAM
+/* 6b.4: lo que la SNES pondria en la OAM para Mario (las 4 entradas de
+   CODE_00E45D, con el mismo formato: X, Y, tile, prop) y en wm_OamSize
+   (bit 1 = 16x16, bit 0 = bit 8 de la X). Y = $F0: la entrada no se ve
+   (como wm_ClearOam). Lo dibuja mspr.c con los tiles que f636 apunta. */
+u8 mario_oam[16];
+u8 mario_osz[4];
+#endif
+u8 mario_pal;                   /* indice de DATA_00E2A2 de la paleta */
+
 /* CODE_00F636: punteros de DMA a los gráficos del jugador */
 static void f636(u8 m10v, u8 m11v)
 {
@@ -71,6 +81,9 @@ void mario_E2BD(void)
     u8 a, x, y, c;
     u16 w, sx;
 
+#ifdef NOOAM
+    mario_oam[1] = mario_oam[5] = mario_oam[9] = mario_oam[13] = 0xF0;
+#endif
     if (R8(wm_HidePlayer) != 0xFF && R8(wm_LooseYoshiFlag)) {
         if (!mario_unsupported) mario_unsupported = MARIO_UNSUP_YOSHI;
         return;
@@ -95,6 +108,7 @@ l_shift:
 l_E30C:
     a = (u8)((a & 0x03) + 4);
 l_E31A:
+    mario_pal = a;
     W16(wm_PlayerPalPtr, T16(DATA_00E2A2 + (u8)(a << 1)));
 
     x = R8(wm_MarioFrame);
@@ -158,22 +172,21 @@ l_E31A:
         y = T8X(DATA_00E2B2, x);
         a |= T8X(MarioPalIndex, R8(wm_MarioDirection));
 #ifdef NOOAM
-        /* build de la Amiga: sin las 4 entradas de OAM (la 6b.4 dibuja a
-           Mario con su pose). Solo los efectos que no son OAM: lo que el
-           bucle deja en HidePlayer y en m4-m6 */
-        (void)a; (void)k; (void)o; (void)sy; (void)sx;
-        W8(wm_HidePlayer, R8(wm_HidePlayer) >> 4);
-        W8(m4, (u8)(m4v << 4));
-        W8(m5, (u8)(m5v + 8));
-        W8(m6, (u8)(m6v + 4));
+        /* build de la Amiga: la OAM de la SNES no existe. Las 4 entradas de
+           Mario van a mario_oam / mario_osz (las dibuja mspr.c, 6b.4); el
+           resto (Yoshi, ExOam) no */
+        o = mario_oam;
 #else
         o = ram + 0x0300 + y;               /* wm_OamSlot.1,Y: X, Y, tile, prop */
+#endif
         o[3] = a;
         o[4 + 3] = a;
         o[12 + 3] = a;
+#ifndef NOOAM
         o[16 + 3] = a;
         W8((u16)(0x02FB + y), a);           /* wm_ExOamSlot.63.Prop,Y */
         W8((u16)(0x02FF + y), a);           /* wm_ExOamSlot.64.Prop,Y */
+#endif
         if (m4v == 0xE8)
             a ^= 0x40;
         o[8 + 3] = a;
@@ -196,7 +209,11 @@ l_E31A:
             o[0] = (u8)w;
             cc = (u8)((w >> 8) & 1);        /* XBA / LSR: bit 8 de la X */
 l_plus:
+#ifdef NOOAM
+            mario_osz[4 - k] = (u8)(((m4v >> 6) & 2) | cc);
+#else
             RX8(OAM_SIZE, y >> 2) = (u8)(((m4v >> 6) & 2) | cc);
+#endif
             m4v <<= 1;                      /* ASL m4: tamaño 16x16 */
             m5v += 2;
             m6v++;
@@ -207,7 +224,6 @@ l_plus:
         W8(m4, m4v);
         W8(m5, m5v);
         W8(m6, m6v);
-#endif
         if (R8(wm_MarioPowerUp) == 0x02) {
             if (!mario_unsupported) mario_unsupported = MARIO_UNSUP_CAPE;
             return;

@@ -85,4 +85,12 @@ void sprite_load_level(void);   /* LoadSprFromLevel */
 void sprite_run(u8 x);          /* CODE_0180D2 + HandleSprite de la ranura x (Rex) */
 void sprite_tweakers(u8 x);     /* LoadTweakerBytes */
 
+/* mspr.c (6b.4): Mario en sprites de hardware de la Amiga */
+#define MSPR_LINES  40                      /* alto maximo */
+#define MSPR_WORDS  (2 + 2 * MSPR_LINES + 2) /* palabras por sprite */
+extern const u8 *gfx32;                     /* GFX32 ($7E:2000), descomprimido */
+extern u8 mario_oam[16], mario_osz[4];      /* mgfx.c, build NOOAM */
+extern u8 mario_pal;                        /* indice de la paleta (DATA_00E2A2) */
+int mario_sprite(u16 *spr, u16 vy0, u16 hx0);
+
 #endif

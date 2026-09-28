@@ -281,6 +281,131 @@ static int run_gfx(const char *oampath)
     return 0;
 }
 
+#ifdef NOOAM
+/* Modo "mspr" (build -DNOOAM, 6b.4): como "gfx", pero con las entradas que
+   mgfx.c deja en mario_oam / mario_osz, y ademas los sprites de mspr.c
+   contra un render de referencia hecho como la SNES: la VRAM de sprites
+   armada como el DMA del NMI (wm_0D85: 5 punteros por fila de 64 bytes,
+   wm_Tile7FPtr en el tile $7F) y las entradas con volteo y prioridad. */
+static u8 g32[0x5D00];
+static int ref_px(int x, int y)            /* color (0..15) de la referencia */
+{
+    static u8 vram[0x80][32];
+    int e, i;
+    for (i = 0; i < 10; i++) {
+        int r, pa = ram[wm_0D85 + i] | ram[wm_0D85 + i + 1] << 8;
+        (void)pa;
+    }
+    for (i = 0; i < 5; i++) {
+        int r;
+        for (r = 0; r < 2; r++) {
+            int p = (ram[wm_0D85 + 10 * r + 2 * i] | ram[wm_0D85 + 10 * r + 2 * i + 1] << 8) - 0x2000;
+            if (p >= 0 && p + 64 <= (int)sizeof g32) {
+                memcpy(vram[16 * r + 2 * i], g32 + p, 32);
+                memcpy(vram[16 * r + 2 * i + 1], g32 + p + 32, 32);
+            } else {
+                memset(vram[16 * r + 2 * i], 0, 64);
+            }
+        }
+    }
+    {
+        int p = (ram[wm_Tile7FPtr] | ram[wm_Tile7FPtr + 1] << 8) - 0x2000;
+        if (p >= 0 && p + 32 <= (int)sizeof g32) memcpy(vram[0x7F], g32 + p, 32);
+        else memset(vram[0x7F], 0, 32);
+    }
+    for (e = 0; e < 4; e++) {               /* la primera que tenga color */
+        u8 *o = mario_oam + 4 * e;
+        int sz = (mario_osz[e] & 2) ? 16 : 8, ex, ey, u, v, t, c;
+        if (o[1] == 0xF0) continue;
+        ex = o[0] | ((mario_osz[e] & 1) << 8); if (ex >= 256) ex -= 512;
+        ey = o[1] >= 0xF0 ? o[1] - 256 : o[1];
+        u = x - ex; v = y - ey;
+        if (u < 0 || v < 0 || u >= sz || v >= sz) continue;
+        if (o[3] & 0x40) u = sz - 1 - u;
+        if (o[3] & 0x80) v = sz - 1 - v;
+        t = o[2] + (u >> 3) + 16 * (v >> 3);
+        if (!((t < 0x20 && (t & 15) < 10) || t == 0x7F)) continue;
+        u &= 7; v &= 7;
+        c = ((vram[t][2 * v] >> (7 - u)) & 1) | (((vram[t][2 * v + 1] >> (7 - u)) & 1) << 1)
+            | (((vram[t][16 + 2 * v] >> (7 - u)) & 1) << 2) | (((vram[t][17 + 2 * v] >> (7 - u)) & 1) << 3);
+        if (c) return c;
+    }
+    return 0;
+}
+
+static int run_mspr(const char *oampath, const char *g32path)
+{
+    unsigned char *odb;
+    static u16 spr[4 * MSPR_WORDS];
+    long i, n = 0, okoam = 0, okpx = 0, drawn = 0, shown = 0;
+    FILE *f = fopen(oampath, "rb"), *g = fopen(g32path, "rb");
+    if (!f) { perror(oampath); return 2; }
+    if (!g || fread(g32, 1, sizeof g32, g) != sizeof g32) { perror(g32path); return 2; }
+    fclose(g);
+    gfx32 = g32;
+    odb = malloc(nrec * OREC);
+    if (fread(odb, OREC, nrec, f) != (size_t)nrec) { fprintf(stderr, "%s: lectura corta\n", oampath); return 2; }
+    fclose(f);
+    for (i = 0; i + 1 < nrec; i++) {
+        long j = i + 1;
+        unsigned char port[4 * 5], *rec = odb + j * OREC + 5;
+        int np = 0, nr = odb[j * OREC + 4], k, found = 0, x, y, bad = 0, cols;
+        static int got[240][256];
+        if (frame_of(j) != frame_of(i) + 1) continue;
+        if (db[i * REC + 4] != 0x29 || db[j * REC + 4] != 0x29) continue;
+        if (orc(i, wm_MarioPowerUp) == 2) continue;
+        load(i);
+        take(j, 0x13);
+        for (k = 0; k < 4; k++) take(j, wm_Bg1HOfs + k);
+        mario_unsupported = 0;
+        mario_E2BD();
+        if (mario_unsupported) continue;
+        n++;
+        for (k = 0; k < 4; k++) {
+            u8 *o = mario_oam + 4 * k;
+            if (o[1] == 0xF0) continue;
+            memcpy(port + 5 * np, o, 4);
+            port[5 * np + 4] = mario_osz[k];
+            np++;
+        }
+        for (k = 0; k + np <= nr && !found; k++)
+            if (!memcmp(rec + 5 * k, port, 5 * np)) found = 1;
+        if (np == 0) found = 1; else drawn++;
+        okoam += found;
+        /* los sprites, decodificados, contra la referencia */
+        cols = mario_sprite(spr, 0x2C, 0xA0);
+        memset(got, 0, sizeof got);
+        for (k = 0; k < cols; k++) {
+            u16 *a = spr + 2 * k * MSPR_WORDS, *b = a + MSPR_WORDS;
+            int vs = (a[0] >> 8) | ((a[1] >> 2) & 1) << 8, ve = (a[1] >> 8) | ((a[1] >> 1) & 1) << 8;
+            int hs = ((a[0] & 0xFF) << 1) | (a[1] & 1), l;
+            if (!(b[1] & 0x80)) bad = 1;    /* la impar tiene que ir adosada */
+            for (l = 0; l < ve - vs; l++)
+                for (x = 0; x < 16; x++) {
+                    int sx = hs - 0xA0 + x, sy = vs - 0x2C - 1 + l, c;
+                    c = ((a[2 + 2 * l] >> (15 - x)) & 1) | (((a[3 + 2 * l] >> (15 - x)) & 1) << 1)
+                        | (((b[2 + 2 * l] >> (15 - x)) & 1) << 2) | (((b[3 + 2 * l] >> (15 - x)) & 1) << 3);
+                    if (sx >= 0 && sx < 256 && sy >= 0 && sy < 240 && c) got[sy][sx] = c;
+                }
+        }
+        for (y = 0; y < 240 && !bad; y++)
+            for (x = 0; x < 256; x++)
+                if (got[y][x] != ref_px(x, y)) { bad = 1; break; }
+        if (bad && getenv("MSPR_DBG") && shown < 1) {
+            int e2;
+            for (e2 = 0; e2 < 4; e2++) printf("e%d %02x %02x %02x %02x sz %d\n", e2, mario_oam[4*e2], mario_oam[4*e2+1], mario_oam[4*e2+2], mario_oam[4*e2+3], mario_osz[e2]);
+            for (y = 0; y < 240; y++) for (x = 0; x < 256; x++) { int r = ref_px(x, y); if (got[y][x] || r) { if (got[y][x] != r) printf("(%d,%d) got %d ref %d\n", x, y, got[y][x], r); } }
+        }
+        okpx += !bad;
+        if ((!found || bad) && shown++ < 20)
+            printf("  frame %u: OAM %s, pixeles %s\n", frame_of(j), found ? "ok" : "MAL", bad ? "MAL" : "ok");
+    }
+    printf("\n[mspr] frames: %ld (con Mario dibujado: %ld)\n"
+           "       mario_oam = OAM grabada: %ld  sprites = referencia: %ld\n", n, drawn, okoam, okpx);
+    return !(okoam == n && okpx == n);
+}
+#endif
+
 /* ------------------------------------------------------------------ */
 /* Modo "loop": LAZO CERRADO.  Desde el primer frame de cada tramo el port
    corre solo, recibiendo del oraculo unicamente el joypad ($15-$18), con
@@ -785,6 +910,11 @@ int main(int argc, char **argv)
                            : "../smw-src-master/project/mw_e10/levels/data/world_1/1/spr.lv");
     if (only && !strcmp(only, "loop"))
         return run_loop(argc > 3 ? argv[3] : "work/yi1_map16.bin");
+#ifdef NOOAM
+    if (only && !strcmp(only, "mspr"))
+        return run_mspr(argc > 3 ? argv[3] : "work/oracle_yi1_oam.bin",
+                        argc > 4 ? argv[4] : "work/cc/gfx32.bin");
+#endif
     if (only && !strcmp(only, "gfx"))
         return run_gfx(argc > 3 ? argv[3] : "work/oracle_yi1_oam.bin");
     if (only && !strcmp(only, "fulldump") && argc > 4) {
