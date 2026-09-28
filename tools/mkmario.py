@@ -12,7 +12,7 @@ del ROM y de los fuentes: van a work/cc/, no a git, R9).
   work/cc/mario_pal.bin 8 paletas x 16 colores OCS (0x0RGB), una por indice
                         de DATA_00E2A2 (mgfx.c: mario_pal). El color k es el
                         de la paleta 0 de sprites de la SNES (CGRAM 128 + k)
-                        con la del jugador copiada desde el 135 (P10); en la
+                        con la del jugador copiada desde el 134 ($86, P10); en la
                         Amiga va a COLOR16 + k (sprites adosados)
 
     python3 tools/mkmario.py
@@ -31,7 +31,7 @@ WORK = os.path.join(HERE, "..", "work")
 ROM = os.path.join(HERE, "..", "..", "smwre", "smw.sfc")
 LEVEL = "3340088027"            # header de Yoshi's Island 1 (obj.lv)
 DATA_00E2A2 = 0xE2A2            # 8 punteros (banco 0) a paletas de 10 colores
-PLAYER_CGRAM_BASE = 135
+PLAYER_CGRAM_BASE = 134
 
 
 def main():

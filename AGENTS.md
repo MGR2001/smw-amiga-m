@@ -752,10 +752,11 @@ El mapeo `chr`/`spr-N`/`obj-N`/… → ID es por *propósito*, no secuencial:
 
 **P10 — La paleta del jugador no viene de `LoadPalette`.**
 `CODE_00B03E` (game.s:5527) copia `PALETTE_Mario` (10 colores) a
-`wm_PaletteCopy` **empezando en el color 135** (CGRAM `$87`), y el sprite se
-dibuja con la paleta de sprites 0 (colores 128-143). Por eso la vista de 16
-colores del jugador es la paleta 8 con Mario superpuesto en 135. Ver
-`build_player_palette()` en `tools/mkdemo.py`.
+`wm_PaletteCopy` **empezando en el color 134** (CGRAM `$86`), y el sprite se
+dibuja con la paleta de sprites 0 (colores 128-143). Esta nota decía 135:
+con 135 la gorra sale rosa y el overol violeta (visto en la Amiga el
+2026-09-27, 6b.4); con 134, gorra roja y overol azul. Ver
+`tools/mkmario.py` y `build_player_palette()` en `tools/mkdemo.py`.
 
 **P7 — Las muestras de audio en Paula son PCM de 8 bits FIRMADO.**
 BRR es ADPCM de 4 bits sin signo explícito. Cuidado con el sesgo DC.

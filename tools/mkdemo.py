@@ -56,10 +56,10 @@ PLAYER_PALS = {
                   0x01E0, 0x02E0, 0x577B, 0x0DDF, 0x03FF],
 }
 # CODE_00B03E (game.s:5527) copia la paleta del jugador a wm_PaletteCopy
-# desde el color 135 (= CGRAM $87).  El sprite usa la paleta de sprites 0
+# desde el color 134 (= CGRAM $86; P10: antes decia 135, mal).  El sprite usa la paleta de sprites 0
 # (colores 128-143), asi que la vista de 16 colores es la 8 con el jugador
-# superpuesto en 135.
-PLAYER_CGRAM_BASE = 135
+# superpuesto en 134.
+PLAYER_CGRAM_BASE = 134
 
 
 def build_player_palette(cgram, which):
