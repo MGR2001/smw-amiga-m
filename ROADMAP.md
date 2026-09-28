@@ -480,6 +480,28 @@ cambios de color (`CHG`) solo avanzan.
 
 **Hecho cuando** la ida y la vuelta dan la misma imagen en 6 puntos.
 
+**HECHA el 2026-09-27 (PC, WinUAE KS 1.2), con una salvedad de 1 píxel:**
+- `build_mid` reescrito: las cargas a mitad de línea se planifican en
+  `mkscroll.py` **en coordenadas del nivel** (MLD, 12 bytes: clase, x,
+  MOVE, a, b) y la Amiga solo copia, por línea, las que caen en
+  `[s, s + LASTX]`. Lo escrito queda fijo en pantalla y vale mientras
+  `s0 + a <= s < s0 + b` (intervalo por carga); la línea se reescribe cuando
+  deja de valer, cuando entra o sale una carga, o cuando la cámara vuelve.
+  Solo se miran las líneas de la lista `LNS[s >> 4]`. No depende de la
+  dirección.
+- `CHG` guarda también el color viejo (se deshace al volver); las columnas
+  nuevas entran por el lado hacia el que va la cámara; `-DRETURN=r` y
+  `-DS0=n` para probar.
+- Simulación (`scrollsim.py`, 2 px/frame): 9282 px mal en todo el nivel
+  (antes 14 868); ida y vuelta **idénticas en los 2431 frames** (tras P50).
+- Coste (Musashi, CPU sin DMA): media **9,9 %**, peor **54,1 %** (s = 4580);
+  antes 22,1 % / 278 % en WinUAE. A 4 px/frame, 13,4 % / 59,2 %.
+- Capturas de WinUAE a ida y vuelta (`shots6.ps1 -Extra`, `work/r62f2`,
+  `work/r62b2`): idénticas en 500, 1000, 2500, 3500 y 4500; en **1700
+  difiere 1 píxel** (línea 174, x = 244): P51, el copper es más rápido
+  después de `DDFSTOP` y el modelo no lo tiene. `scroll_check` (fallos que
+  no explica un vecino): 0 / 0 / 43-44 / 0 / 72 / 45.
+
 6.3 **Conectar la cámara del port (`mcam.c`) — modo replay.** El scroll deja
 de avanzar solo: lo mueve `Bg1HOfs`, calculado por `level_frame()` a partir
 del joypad **grabado en el oráculo** (`$15-$18` de `oracle_yi1.txt`, metido

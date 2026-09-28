@@ -1,27 +1,36 @@
 ;----------------------------------------------------------------------
-; scroll.s - Etapa 6, primer prototipo: el nivel real en la Amiga, en el
-; formato de D8 (d), desplazandose solo hacia la derecha.
+; scroll.s - Etapa 6: el nivel real en la Amiga, en el formato de D8 (d),
+; con la camara en las dos direcciones (6.2).
 ;
 ;   PF1 (planos impares) = capa 1: buffer circular de 22 columnas de
-;       bloques escrito dos veces (704 px), 3 planos entrelazados. Cada 16
-;       px de scroll se dibuja UNA columna nueva (fuera de la pantalla).
+;       bloques escrito dos veces (704 px), 3 planos entrelazados. Tiene
+;       las columnas p - 2 .. p + 19 (p = palabra del puntero); cuando p
+;       cambia se dibuja UNA columna nueva, fuera de la pantalla, por el
+;       lado hacia el que va la camara.
 ;   PF2 (planos pares)   = capa 2: mapa de bits de 848 px (periodo de 512
 ;       + 336) a media velocidad: paralaje por hardware (BPLCON1 bits 4-7).
-;   Colores: lista del copper por linea (2 WAIT + 7 MOVE de la capa 1 + 7
-;       de la capa 2). PROTOTIPO: la capa 1 solo recibe las cargas del
-;       borrado (tools/mkscroll.py), NO las de mitad de linea.
+;   Colores: lista del copper por linea: 2 WAIT + 7 MOVE de la capa 1 + los
+;       de la capa 2 en el borrado (los de la capa 1 los mantiene
+;       apply_colors con la lista CHG, hacia adelante y hacia atras), y las
+;       cargas a mitad de linea que caen en pantalla (build_mid, que las
+;       copia del plan de tools/mkscroll.py).
 ;
 ; Datos: work/yi1_s.dat (tools/mkscroll.py). Ventana vertical fija: lineas
 ; 192..415 del nivel (la camara de Yoshi's Island 1 no se mueve en Y).
 ;
 ; Scroll: la columna de pantalla 0 muestra la x = s del nivel. Con el
-; fetch adelantado una palabra (DDFSTRT $30): puntero = palabra
-; (s - 1) >> 4 y retardo (-s) & 15.
+; fetch adelantado una palabra: puntero = palabra (s - 1) >> 4 y retardo
+; (-s) & 15.
 ;
 ;   vasmm68k_mot -Fbin -m68000 -I player -o work/scroll.bin player/scroll.s
 ;   python3 tools/mkadf.py --boot work/boot.bin --stage2 work/scroll.bin \
 ;       --data work/yi1_s.dat --out work/scroll.adf
-;   (-DSTOPX=n: para en s = n; por defecto recorre el nivel entero)
+;   -DSTOPX=n: para en s = n (por defecto recorre el nivel entero)
+;   -DRETURN=r: va hasta r y vuelve hasta STOPX (6.2: ida y vuelta)
+;   -DS0=n: empieza en s = n
+;
+; Para el juego (6b): scroll_init y scroll_frame, con a3 = datos, a4 =
+; CUSTOM, a5 = vars y la s en V_S.
 ;
 ; Registros vivos en el bucle: a3 = datos  a4 = CUSTOM  a5 = variables
 ;----------------------------------------------------------------------
@@ -37,6 +46,9 @@ STOPX   equ     5120-VIS        ; el final del nivel
         ifnd    SPEED
 SPEED   equ     2               ; px por frame
         endc
+        ifnd    S0
+S0      equ     0
+        endc
 
 LINES   equ     224
 SLOTS   equ     22              ; columnas del buffer circular (x2)
@@ -51,10 +63,10 @@ CL_BPLCON1  equ 20+2
 CL_COLOR00  equ 36+2
 CL_PTR      equ 44              ; BPL1PTH; BPLnPTH en CL_PTR + (n-1)*8
 CL_LINES    equ 92
-; un segmento por linea: 2 WAIT + 7 + 7 MOVE (borrado), hasta MIDMAX pares
-; WAIT + MOVE a mitad de linea y el salto al segmento siguiente
-; (COP2LCH, COP2LCL, COPJMP2). Tamano fijo, contenido de largo variable:
-; los huecos no le cuestan tiempo al copper.
+; un segmento por linea: 2 WAIT + 7 + 7 MOVE (borrado), hasta MIDMAX
+; cargas a mitad de linea y el salto al segmento siguiente (COP2LCH,
+; COP2LCL, COPJMP2). Tamano fijo, contenido de largo variable: los huecos
+; no le cuestan tiempo al copper.
 MIDMAX      equ 12
 SEG         equ 64+MIDMAX*12+12 ; 220 (tools/mkscroll.py: SEG). Una carga
                                 ; ocupa hasta 12 bytes: 2 rellenos + MOVE
@@ -111,9 +123,6 @@ TAILH   macro
         ifnd    BLITS
 BLITS       equ 4               ; pasos de blit_steps por frame
         endc
-VMARG       equ 4               ; margen de validez de una escritura fija (px)
-TLINE       equ -64             ; T al empezar las cargas de una linea (cota
-                                ; inferior: el borrado acaba antes de x = 0, P43)
 BLANKH      equ $e2             ; el borrado empieza en esta h de la linea
                                 ; ANTERIOR: 7 + k MOVE terminan antes de x = 0
 
@@ -129,11 +138,12 @@ D_L2B   equ 32
 D_L2P   equ 36
 D_MLX   equ 40
 D_MLD   equ 44
+D_LNS   equ 48
 
 ; variables (a5)
 V_S     equ 0                   ; scroll de la capa 1 (px)
 V_P     equ 2                   ; palabra del puntero, (s - 1) >> 4
-V_CHG   equ 4                   ; .l siguiente cambio de color
+V_CHG   equ 4                   ; .l siguiente cambio de color (x > s)
 V_BUF1  equ 8                   ; .l buffer de PF1
 V_COP   equ 12                  ; .l lista del copper A
 V_COP2  equ 16                  ; .l lista del copper B
@@ -148,15 +158,11 @@ V_NC    equ 36
 V_MAXN  equ 38                  ; ... y sin columna
 V_SUMN  equ 40
 V_NN    equ 44
-V_LB    equ 46                  ; build_mid: bases de la lista que se escribe
-V_SHB   equ 50
-V_WKB   equ 54
-V_MLXB  equ 58
+V_DIR   equ 46                  ; -DRETURN: 0 = a la derecha, 1 = volviendo
+V_DONE  equ 48                  ; el recorrido termino
 V_DATA  equ 62                  ; .l datos (build_copper usa a3)
 V_LSA   equ 66                  ; s con la que se escribio cada lista
-V_LSB   equ 68                  ; ($FFFF: nunca)
-V_GMB   equ 70                  ; .l build_mid: minimos por bloque de la lista
-V_GI    equ 74                  ; bloque actual
+V_LSB   equ 68                  ; ($8000: nunca)
 V_CCOL  equ 76                  ; columna que se esta dibujando (-1: ninguna)
 V_CBLK  equ 78                  ; su siguiente paso (0..13 bloques, 14 copia)
 V_BSKIP equ 80                  ; BENCH: frames que todavia no se cuentan
@@ -169,6 +175,7 @@ CIAB_TAHI   equ $bfd500
 CIAB_ICR    equ $bfdd00
 CIAB_CRA    equ $bfde00
 
+        ifnd    SCROLL_LIB
         bra.w   entry
         dc.b    "A5PL"
 hdr_data_off:   dc.l    0
@@ -224,29 +231,8 @@ entry:
         beq     fail
         move.l  d0,V_COP2(a5)
 
-        move.l  V_COP(a5),a0
-        bsr     build_copper
-        move.l  V_COP2(a5),a0
-        bsr     build_copper
-        bsr     init_lo
-        move.w  #-1,V_CCOL(a5)
-        clr.w   V_S(a5)
-        move.w  #-1,V_P(a5)
-        move.l  a3,a0
-        add.l   D_CHG(a3),a0
-        move.l  a0,V_CHG(a5)
-        moveq   #0,d7                       ; columnas 0..21
-.init:  move.w  d7,d0
-        bsr     draw_column
-        addq.w  #1,d7
-        cmp.w   #SLOTS,d7
-        blo.s   .init
-        move.l  V_COP(a5),V_BACK(a5)
-        bsr     set_pointers
-        bsr     build_mid
-        move.l  V_COP2(a5),V_BACK(a5)
-        bsr     set_pointers
-        bsr     build_mid
+        move.w  #S0,V_S(a5)
+        bsr     scroll_init
 
         ;--- tomar el hardware (como demo.s) -------------------------
         jsr     _LVOForbid(a6)
@@ -295,40 +281,108 @@ frame:
         ifd     SPRTEST
         bsr     spr_ptrs
         endc
-        move.w  V_S(a5),d0
-        cmp.w   #STOPX,d0
+        bsr     camera
         ifd     BENCH
-        bhs     show_results
+        tst.w   V_DONE(a5)
+        bne     show_results
         endc
-        bhs.s   .same
+        bsr     scroll_frame
+.w2:
+        ifd     BENCH
+        bsr     bench_frame
+        endc
+.w2l:    move.l  VPOSR(a4),d0                ; esperar a que empiece otro frame
+        lsr.l   #8,d0
+        and.w   #$1ff,d0
+        cmp.w   #$110,d0
+        bhs.s   .w2l
+        bra     frame
+
+;----------------------------------------------------------------------
+; --- camera ---
+; la s del frame (programa de prueba): de S0 a STOPX a SPEED px por
+; frame; con -DRETURN=r, de S0 a r y despues de vuelta hasta STOPX.
+; V_DONE = 1 cuando llega (y la s ya no cambia).
+;----------------------------------------------------------------------
+camera:
+        move.w  V_S(a5),d0
+        ifd     RETURN
+        tst.w   V_DIR(a5)
+        bne.s   .back
+        cmp.w   #RETURN,d0
+        bhs.s   .turn
+        addq.w  #SPEED,d0
+        cmp.w   #RETURN,d0
+        bls.s   .ok
+        move.w  #RETURN,d0
+        bra.s   .ok
+.turn:  move.w  #1,V_DIR(a5)
+.back:  cmp.w   #STOPX,d0
+        bls.s   .stop
+        subq.w  #SPEED,d0
+        cmp.w   #STOPX,d0
+        bge.s   .ok
+        move.w  #STOPX,d0
+        else
+        cmp.w   #STOPX,d0
+        bhs.s   .stop
         addq.w  #SPEED,d0
         cmp.w   #STOPX,d0
         bls.s   .ok
         move.w  #STOPX,d0
+        endc
 .ok:    move.w  d0,V_S(a5)
-.same:
-        ; columna nueva (cuando cambia la palabra del puntero), lo primero:
-        ; en el borrado vertical el blitter tiene todo el bus, y la ultima
-        ; copia (672 filas) corre mientras la CPU hace build_mid
+        rts
+.stop:  move.w  #1,V_DONE(a5)
+        rts
+        endc                                ; SCROLL_LIB
+
+;----------------------------------------------------------------------
+; --- scroll_init ---
+; entrada:  a3 = datos, a5 = vars, V_S, V_BUF1, V_COP, V_COP2 (listas de
+;           CL_SIZE y buffer de BUF1 bytes, en chip)
+; salida:   las dos listas del copper listas para V_S, las columnas de la
+;           ventana dibujadas (con la CPU), V_BACK = la lista B
+; registros destruidos: d0-d7/a0-a2
+;----------------------------------------------------------------------
+scroll_init:
+        move.l  V_COP(a5),a0
+        bsr     build_copper
+        move.l  V_COP2(a5),a0
+        bsr     build_copper
+        bsr     init_lines
+        move.w  #-1,V_CCOL(a5)
+        move.l  a3,a0
+        add.l   D_CHG(a3),a0
+        addq.l  #8,a0                       ; despues del centinela (x = 0)
+        move.l  a0,V_CHG(a5)
+        bsr     apply_colors
         move.w  V_S(a5),d0
         subq.w  #1,d0
         asr.w   #4,d0
-        cmp.w   V_P(a5),d0
-        beq.s   .nocol
         move.w  d0,V_P(a5)
-        add.w   #SLOTS-1,d0                 ; p + 21: la que entra despues
-        cmp.w   D_COLS(a3),d0
-        bhs.s   .nocol
-        tst.w   V_CCOL(a5)                  ; una columna a medias: terminarla
-        bmi.s   .nc
-        move.w  d0,-(sp)
-        moveq   #99,d7
-        bsr     blit_steps
-        move.w  (sp)+,d0
-.nc:    move.w  d0,V_CCOL(a5)               ; la columna nueva se dibuja en
-        clr.w   V_CBLK(a5)                  ; varios frames (blit_steps)
-.nocol: moveq   #BLITS-1,d7
-        bsr     blit_steps
+        bsr     draw_window
+        move.l  V_COP(a5),V_BACK(a5)
+        bsr     set_pointers
+        bsr     build_mid
+        move.l  V_COP2(a5),V_BACK(a5)
+        bsr     set_pointers
+        bsr     build_mid
+        rts
+
+;----------------------------------------------------------------------
+; --- scroll_frame ---
+; entrada:  V_S = la s de este frame (cualquier direccion)
+; salida:   la columna nueva empezada, los colores del borrado al dia, la
+;           lista V_BACK escrita y puesta en COP1LC (se ve desde el frame
+;           siguiente), V_BACK = la otra
+; registros destruidos: d0-d7/a0-a2
+;----------------------------------------------------------------------
+scroll_frame:
+        ; columna nueva (cuando cambia la palabra del puntero), lo primero:
+        ; en el borrado vertical el blitter tiene todo el bus, y la ultima
+        ; copia (672 filas) corre mientras la CPU hace build_mid
+        bsr     columns
         bsr     apply_colors
         bsr     set_pointers
         ifnd    NOMID
@@ -340,16 +394,71 @@ frame:
         bne.s   .sw
         move.l  V_COP2(a5),d0
 .sw:    move.l  d0,V_BACK(a5)
-.w2:
-        ifd     BENCH
-        bsr     bench_frame
-        endc
-.w2l:    move.l  VPOSR(a4),d0                ; esperar a que empiece otro frame
-        lsr.l   #8,d0
-        and.w   #$1ff,d0
-        cmp.w   #$110,d0
-        bhs.s   .w2l
-        bra     frame
+        rts
+
+;----------------------------------------------------------------------
+; --- columns ---
+; El buffer tiene las columnas p - 2 .. p + 19. Si p sube, entra p + 19
+; (en el hueco de p - 3); si baja, entra p - 2 (en el hueco de p + 20). Se
+; dibuja en varios frames (blit_steps): la columna nueva no se ve hasta
+; que la camara recorre 32 px (a la izquierda) o 48 (a la derecha). Si la
+; camara salta mas de una columna, se redibuja la ventana entera.
+; registros destruidos: d0-d3/d7/a0-a2
+;----------------------------------------------------------------------
+columns:
+        move.w  V_S(a5),d0
+        subq.w  #1,d0
+        asr.w   #4,d0                       ; p
+        move.w  V_P(a5),d1
+        cmp.w   d1,d0
+        beq.s   .steps
+        move.w  d0,V_P(a5)
+        sub.w   d0,d1                       ; p viejo - p nuevo
+        cmp.w   #-1,d1
+        beq.s   .fw
+        cmp.w   #1,d1
+        beq.s   .bw
+        bsr     draw_window                 ; un salto
+        bra.s   .steps
+.fw:    add.w   #19,d0
+        bra.s   .new
+.bw:    subq.w  #2,d0
+.new:   tst.w   d0
+        bmi.s   .steps
+        cmp.w   D_COLS(a3),d0
+        bhs.s   .steps
+        move.w  V_CCOL(a5),d1               ; una columna a medias:
+        bmi.s   .nc
+        sub.w   d0,d1
+        cmp.w   #SLOTS,d1                   ; en el mismo hueco (la camara dio
+        beq.s   .nc                         ; la vuelta): ya no hace falta
+        cmp.w   #-SLOTS,d1
+        beq.s   .nc
+        move.w  d0,-(sp)                    ; si no, terminarla
+        moveq   #99,d7
+        bsr     blit_steps
+        move.w  (sp)+,d0
+.nc:    move.w  d0,V_CCOL(a5)
+        clr.w   V_CBLK(a5)
+.steps: moveq   #BLITS-1,d7
+        bra     blit_steps
+
+; --- draw_window --- las columnas p - 2 .. p + 19 (V_P) con la CPU
+draw_window:
+        bsr     bwait
+        move.w  #-1,V_CCOL(a5)
+        move.w  V_P(a5),d7
+        subq.w  #2,d7
+        moveq   #SLOTS-1,d6
+.c:     tst.w   d7
+        bmi.s   .n
+        cmp.w   D_COLS(a3),d7
+        bhs.s   .n
+        move.w  d7,d0
+        bsr     draw_column
+.n:     addq.w  #1,d7
+        dbf     d6,.c
+        rts
 
 ;----------------------------------------------------------------------
 ; --- set_pointers ---
@@ -418,8 +527,10 @@ set_pointers:
 
 ;----------------------------------------------------------------------
 ; --- apply_colors ---
-; aplica los cambios de color de la capa 1 con x <= s (tools/mkscroll.py)
-; registros destruidos: d0-d2/a0-a1
+; los colores de la capa 1 en el borrado: aplica los cambios con x <= s
+; (color nuevo) y deshace los que tienen x > s (color viejo), en las dos
+; listas. CHG empieza con un centinela x = 0 y termina en x = $FFFF.
+; registros destruidos: d0-d1/a0-a1
 ;----------------------------------------------------------------------
 apply_colors:
         move.l  a2,-(sp)
@@ -429,382 +540,257 @@ apply_colors:
         move.l  V_COP2(a5),a2
         lea     CL_LINES(a2),a2
         move.w  V_S(a5),d0
-.l:     cmp.w   (a0),d0
-        blo.s   .done                       ; x > s ($FFFF: fin)
+.f:     cmp.w   (a0),d0
+        blo.s   .b                          ; x > s
         moveq   #0,d1                       ; desplazamiento SIN signo: pasa
         move.w  2(a0),d1                    ; de 32 767 desde la linea 149
-        move.w  4(a0),(a1,d1.l)             ; en las dos listas
+        move.w  4(a0),(a1,d1.l)
         move.w  4(a0),(a2,d1.l)
-        addq.l  #6,a0
-        bra.s   .l
+        addq.l  #8,a0
+        bra.s   .f
+.b:     cmp.w   -8(a0),d0                   ; el anterior tiene x > s: la
+        bhs.s   .done                       ; camara volvio, deshacerlo
+        subq.l  #8,a0
+        moveq   #0,d1
+        move.w  2(a0),d1
+        move.w  6(a0),(a1,d1.l)
+        move.w  6(a0),(a2,d1.l)
+        bra.s   .b
 .done:  move.l  a0,V_CHG(a5)
         move.l  (sp)+,a2
         rts
 
 ;----------------------------------------------------------------------
-; --- init_lo ---
-; lo_tab[L] = primera carga a mitad de linea de la linea L (MLX)
+; --- init_lines ---
+; Una tabla por lista (linetab_a, linetab_b), 32 bytes por linea:
+;   +0  .l donde empiezan las cargas en el segmento (absoluta)
+;   +4  .l lo, +8 .l hi: cargas escritas, [lo, hi) en MLD (absolutas)
+;   +12 vl, +14 vu: lo escrito vale mientras vl <= s < vu
+;   +16 la palabra alta del WAIT (v << 8)
+;   +18 el salto al segmento siguiente (COP2LCH, COP2LCL, COPJMP2)
+; htab[x] = byte bajo del WAIT (h | 1) para que el MOVE caiga en x >= x.
+; entrada:  a3 = datos, V_COP, V_COP2 (build_copper ya dejo ldoff)
 ;----------------------------------------------------------------------
-init_lo:                                    ; lo_tab[L] = (MLX[L], nxt = 0)
-        lea     segoff(pc),a0               ; tablas L * SEG, L * SHSZ
-        lea     shoff(pc),a1
-        moveq   #0,d1
-        moveq   #0,d2
-        move.w  #LINES-1,d0
-.tb:    move.l  d1,(a0)+
-        move.w  d2,(a1)+
-        add.l   #SEG,d1
-        add.w   #SHSZ,d2
-        dbf     d0,.tb
-        move.w  #$ffff,V_LSA(a5)
-        move.w  #$ffff,V_LSB(a5)
-        lea     shadow_a(pc),a0             ; sombras: vu = 0, sin entradas
-        move.w  #LINES*2-1,d0
-.sh:    clr.w   (a0)
-        move.w  #4,2(a0)
-        lea     SHSZ(a0),a0
-        dbf     d0,.sh
-        lea     gmin_a(pc),a0               ; minimos por bloque = 0
-        moveq   #LINES/16*2-1,d0
-.gz:    clr.w   (a0)+
-        dbf     d0,.gz
-        lea     wake_a(pc),a0               ; wake = 0: todas en el 1er frame
-        move.w  #LINES*2-1,d0
-.wk:    clr.w   (a0)+
-        dbf     d0,.wk
-        move.l  a3,a0
-        add.l   D_MLX(a3),a0
-        lea     lo_tab(pc),a1
-        move.w  #LINES-1,d0
-.l:     move.w  (a0)+,(a1)+
-        addq.l  #2,a1                       ; +2: inicio de las cargas (build_copper)
-        dbf     d0,.l
+init_lines:
+        lea     linetab_a(pc),a0
+        move.l  V_COP(a5),d4
+        bsr.s   .tab
+        lea     linetab_b(pc),a0
+        move.l  V_COP2(a5),d4
+        bsr.s   .tab
+        move.w  #$8000,V_LSA(a5)
+        move.w  #$8000,V_LSB(a5)
+        lea     htab(pc),a0                 ; h para cambiar en x >= objetivo
+        moveq   #0,d1                       ; (P42, cabecera)
+.h:     move.w  d1,d2
+        cmp.w   #XKNEE,d2
+        bhi.s   .hk
+        addq.w  #8,d2
+        lsr.w   #3,d2                       ; q = (x + 8) >> 3
+        lsl.w   #2,d2
+        add.w   #HOFS,d2                    ; h = HOFS + 4q
+        bra.s   .hk2
+.hk:    TAILH   d2
+.hk2:   and.w   #$fe,d2
+        cmp.w   #BLANKH,d2
+        bls.s   .hk3
+        move.w  #BLANKH,d2
+.hk3:   or.w    #1,d2
+        move.b  d2,(a0)+
+        addq.w  #1,d1
+        cmp.w   #LASTX,d1
+        bls.s   .h
+        rts
+; una tabla: a0 = tabla, d4 = lista
+.tab:   add.l   #CL_LINES,d4                ; d4 = segmento
+        move.l  a3,a1
+        add.l   D_MLX(a3),a1
+        move.l  a3,d2
+        add.l   D_MLD(a3),d2                ; d2 = MLD
+        lea     ldoff(pc),a2
+        move.w  #$2c<<8,d3
+        move.w  #LINES-1,d1
+.l:     moveq   #0,d0
+        move.w  (a2)+,d0
+        add.l   d4,d0
+        move.l  d0,(a0)                     ; donde van las cargas
+        moveq   #0,d0
+        move.w  (a1)+,d0
+        mulu    #12,d0
+        add.l   d2,d0
+        move.l  d0,4(a0)                    ; lo = hi = la primera carga
+        move.l  d0,8(a0)
+        move.w  #1,12(a0)                   ; vl = 1, vu = 0: nunca vale
+        clr.w   14(a0)
+        move.w  d3,16(a0)
+        add.l   #SEG,d4
+        move.w  #$0084,18(a0)               ; salto al segmento siguiente
+        move.l  d4,d0
+        swap    d0
+        move.w  d0,20(a0)
+        move.w  #$0086,22(a0)
+        move.w  d4,24(a0)
+        move.l  #$008a0000,26(a0)
+        add.w   #$100,d3
+        lea     32(a0),a0
+        dbf     d1,.l
         rts
 
 ;----------------------------------------------------------------------
 ; --- build_mid ---
 ; entrada:  V_BACK = lista que se escribe, V_S = scroll
-; salida:   en cada segmento de linea, las cargas a mitad de linea que se
-;           ven con esta camara (WAIT + MOVE; solo MOVE si cae a menos de
-;           16 px de la anterior) y el salto al segmento siguiente.
+; salida:   en el segmento de cada linea que puede tener cargas en
+;           pantalla (LNS) y cuyo contenido ya no vale, las cargas del plan
+;           con x en [s, s + LASTX] (hasta MIDMAX) y el salto al segmento
+;           siguiente
 ; registros destruidos: d0-d1/a0-a1 (guarda el resto)
 ;
-; Incremental. Por lista y por linea hay una SOMBRA (SHSZ bytes):
-;   +0 vu: la estructura de la linea (que cargas, con o sin WAIT) vale
-;      mientras s < vu. Cambia cuando la carga mas vieja sale por la
-;      izquierda, una entra por la derecha o una saltada empieza a verse.
-;   +2 fin de las entradas (4 = ninguna)
-;   +4 por cada WAIT escrito: desplazamiento en el segmento, x objetivo
-; Con s < vu solo se recalculan las h de los WAIT (camino rapido).
-; wake[L] (por lista) = la s desde la que hay que mirar la linea: 0 si
-; tiene cargas escritas, vu si no. Un bucle minimo recorre wake y solo
-; entra en las lineas que hacen falta (de media ~35 de 224).
-; PROTOTIPO: la camara solo avanza (lo_tab y vu suponen s creciente).
+; El plan (tools/mkscroll.py) esta en coordenadas del nivel: para cada
+; carga, la x en que cae y si va con WAIT, detras de la anterior o con 1-2
+; MOVE de relleno. Aca se copia: la h del WAIT sale de htab[x - s] y la
+; primera carga de la linea va siempre con WAIT (la anterior del plan
+; quedo fuera por la izquierda).
+;
+; Lo escrito queda FIJO en pantalla: el MOVE de una carga cae entre x - s0
+; y x - s0 + 7 (rejilla de 8 px, P42; los de detras, a 16 px del
+; anterior). Sigue bien mientras caiga despues del fin del tramo anterior
+; y antes del principio del nuevo: s0 + a <= s < s0 + b (a, b en MLD). La
+; linea se reescribe cuando alguna deja de valer, cuando entra una carga
+; por la derecha (s >= x[hi] - LASTX), cuando la camara vuelve y una
+; vuelve a entrar por la izquierda (s <= x[lo - 1]) o la ultima sale por
+; la derecha (s < x[hi - 1] - LASTX). Las que salen por la izquierda NO:
+; escriben el color que el borrado ya puso. No depende de la direccion.
 ;----------------------------------------------------------------------
-SHSZ        equ 4+MIDMAX*4
-
 build_mid:
-        movem.l d2-d7/a2-a6,-(sp)
         move.l  V_BACK(a5),a0
-        lea     shadow_a(pc),a6
-        lea     wake_a(pc),a4
         lea     V_LSA(a5),a1
         cmp.l   V_COP(a5),a0
-        beq.s   .ln
-        lea     shadow_b(pc),a6
-        lea     wake_b(pc),a4
+        beq.s   .la
         lea     V_LSB(a5),a1
-.ln:    move.w  V_S(a5),d0                  ; la camara no se movio desde la
-        cmp.w   (a1),d0                     ; ultima vez que se escribio esta
-        bne.s   .moved                      ; lista: ya esta bien
-        movem.l (sp)+,d2-d7/a2-a6
-        rts
-.moved: move.w  d0,(a1)
-        lea     CL_LINES(a0),a0
-        move.l  a0,V_LB(a5)                 ; bases, para cada linea visitada
-        move.l  a6,V_SHB(a5)
-        move.l  a4,V_WKB(a5)
-        move.l  a3,a1
-        add.l   D_MLD(a3),a1                ; a1 = cargas
-        move.l  a3,a2
-        add.l   D_MLX(a3),a2
-        move.l  a2,V_MLXB(a5)
-        move.w  V_S(a5),d6                  ; d6 = s
-        move.w  d6,d5
-        add.w   #VIS,d5                     ; d5 = s + VIS
-        ; bloques de 16 lineas con el minimo de su wake: si la camara no
-        ; llego al minimo, el bloque entero se salta
-        move.l  V_WKB(a5),d0
-        lea     wake_a(pc),a0
-        cmp.l   a0,d0
-        lea     gmin_a(pc),a0
-        beq.s   .gm
-        lea     gmin_b(pc),a0
-.gm:    move.l  a0,V_GMB(a5)
-        clr.w   V_GI(a5)
-.grp:   move.l  V_GMB(a5),a0
-        move.w  V_GI(a5),d0
+.la:    move.w  V_S(a5),d0
+        move.w  (a1),d1
+        cmp.w   d1,d0                       ; la camara no se movio desde la
+        bne.s   .go                         ; ultima vez que se escribio esta
+        rts                                 ; lista: ya esta bien
+.go:    move.w  d0,(a1)
+        movem.l d2-d7/a2-a6,-(sp)
+        move.w  d0,d6                       ; d6 = s
+        sub.w   d0,d1                       ; |s vieja - s| > 16 (o nunca
+        bpl.s   .ab                         ; escrita): todas las lineas
+        neg.w   d1
+.ab:    lea     alllines(pc),a6
+        cmp.w   #16,d1
+        bhi.s   .all
+        move.w  d6,d0
+        lsr.w   #4,d0
         add.w   d0,d0
-        cmp.w   (a0,d0.w),d6
-        bhs.s   .gscan
-        lea     32(a4),a4                   ; nada que mirar en el bloque
-        bra.s   .gnext
-.gscan: moveq   #16-1,d3
-.scan:  cmp.w   (a4)+,d6                    ; s >= wake: hay que mirarla
-        bhs.s   .visit
-        dbf     d3,.scan
-.gend:  lea     -32(a4),a0                  ; nuevo minimo del bloque
-        move.w  (a0)+,d0
-        moveq   #15-1,d1
-.gmn:   cmp.w   (a0)+,d0
-        bls.s   .gmn2
-        move.w  -2(a0),d0
-.gmn2:  dbf     d1,.gmn
-        move.l  V_GMB(a5),a0
-        move.w  V_GI(a5),d1
-        add.w   d1,d1
-        move.w  d0,(a0,d1.w)
-.gnext: addq.w  #1,V_GI(a5)
-        cmp.w   #LINES/16,V_GI(a5)
-        blo.s   .grp
-        movem.l (sp)+,d2-d7/a2-a6
-        rts
-.visit: movem.l d3/a4,-(sp)
-        move.l  a4,d0
-        sub.l   V_WKB(a5),d0
-        lsr.w   #1,d0
-        subq.w  #1,d0                       ; d0 = linea
-        move.w  d0,d1
-        lsl.w   #2,d1
-        lea     segoff(pc),a0
-        move.l  (a0,d1.w),d1                ; L * SEG (tabla: sin mulu)
-        move.l  V_LB(a5),a0
-        add.l   d1,a0                       ; a0 = segmento
-        move.w  d0,d1
-        add.w   d1,d1
-        lea     shoff(pc),a6
-        move.w  (a6,d1.w),d1                ; L * SHSZ
-        move.l  V_SHB(a5),a6
-        add.w   d1,a6                       ; a6 = sombra
-        lea     lo_tab(pc),a4
-        move.w  d0,d1
-        lsl.w   #2,d1
-        add.w   d1,a4                       ; a4 = (lo, nxt)
-        move.l  V_MLXB(a5),a2
-        move.w  d0,d1
-        add.w   d1,d1
-        lea     2(a2,d1.w),a2               ; a2 = MLX[L+1]
-        move.w  d0,d7
-        add.w   #$2c,d7
-        lsl.w   #8,d7
-        or.w    #1,d7                       ; d7 = WAIT (v << 8) | 1
-        bsr     .do_line
-        move.w  (a6),d0                     ; wake = vu: la linea no se vuelve
-.wk:    movem.l (sp)+,d3/a4                 ; a mirar hasta que haga falta
-        move.w  d0,-2(a4)
-        dbf     d3,.scan
-        bra     .gend
-
-; una linea: a0 segmento, a2 = MLX[L+1], a4 = lo_tab[L], a6 = sombra, d7
-.do_line:
-        cmp.w   (a6),d6
-        bhs     .full
-        ;--- camino rapido: la misma estructura, otras h ---------------
-        move.w  2(a6),d4
-        subq.w  #4,d4
-        beq     .next
-        lsr.w   #2,d4                       ; d4 = WAITs
-        lea     4(a6),a3
-        moveq   #0,d1                       ; ultima h
-.fast:  move.w  (a3)+,d0                    ; desplazamiento del WAIT
-        move.w  (a3)+,d2                    ; x objetivo
-        sub.w   d6,d2
-        bpl.s   .fp
-        moveq   #0,d2
-.fp:    cmp.w   #XKNEE,d2                   ; h para cambiar en x >= objetivo
-        bhi.s   .fk                         ; (P42, cabecera)
-        addq.w  #8,d2
-        lsr.w   #3,d2                       ; q = (x + 8) >> 3
-        lsl.w   #2,d2
-        add.w   #HOFS,d2                    ; h = HOFS + 4q
-        bra.s   .fk2
-.fk:    TAILH   d2
-.fk2:   and.w   #$fe,d2
-        cmp.w   d1,d2
-        bhs.s   .fh
-        move.w  d1,d2
-.fh:    cmp.w   #$e2,d2
-        bls.s   .fh2
-        move.w  #$e2,d2
-.fh2:   move.w  d2,d1
-        or.w    d7,d2
-        move.w  d2,(a0,d0.w)
-        subq.w  #1,d4
-        bne.s   .fast
-        bra     .next
-        ;--- camino completo ---------------------------------------------
-.full:  move.w  2(a6),-(sp)                 ; (reservado)
-        move.w  #4,2(a6)
-        move.w  (a4),d2                     ; d2 = primera carga viva
-        move.w  (a2),d3                     ; d3 = fin de la linea
-.adv:   cmp.w   d3,d2
-        bhs.s   .adv_done
-        moveq   #0,d0
-        move.w  d2,d0
-        lsl.l   #4,d0                       ; 16 bytes por carga
-        cmp.w   (a1,d0.l),d6                ; fin del tramo anterior < s?
-        bls.s   .adv_done
-        addq.w  #1,d2
-        bra.s   .adv
-.adv_done:
-        move.w  d2,(a4)
-        move.w  #$ffff,(a6)                 ; vu: lo minimo de cada carga (.mv)
-.nx:    move.w  2(a4),d0                    ; inicio de las cargas (build_copper)
-        lea     (a0,d0.w),a3                ; a3 = donde van las cargas
-        moveq   #0,d4                       ; d4 = cargas escritas
-        moveq   #TLINE,d1                   ; d1 = T: x en que el copper puede
-                                            ; escribir. Al empezar la linea NO es
-                                            ; 0: el borrado termina ~60 px ANTES
-                                            ; de x = 0 (P43). Con T < 0, toda
-                                            ; carga que llega aca (fin anterior
-                                            ; >= s: liberacion >= 1) va con WAIT;
-                                            ; un MOVE suelto o de relleno caeria
-                                            ; antes de x = 0
-.ld:    cmp.w   d3,d2
-        bhs     .ld_done
-        moveq   #0,d0
-        move.w  d2,d0
-        lsl.l   #4,d0
-        lea     (a1,d0.l),a5                ; OJO: a5 prestado (vars)
-        cmp.w   8(a5),d5                    ; x planificada >= s + VIS: ya no
-        bhi.s   .in
-        move.w  8(a5),d0                    ; entra cuando s > x - VIS
-        sub.w   #VIS-1,d0
-        bcc.s   .vu1
-        moveq   #0,d0
-.vu1:   cmp.w   (a6),d0
-        bhs     .ld_done
-        move.w  d0,(a6)
-        bra     .ld_done
-.in:    cmp.w   (a5),d6                     ; el orden es por x planificada,
-        bhi     .next_ld                    ; no por fin anterior: saltar las
-                                            ; que ya caducaron (las pone el
-                                            ; borrado)
-        move.w  2(a5),d0                    ; principio del nuevo
-        cmp.w   d0,d5
-        bhi.s   .vis
-        sub.w   #VIS-1,d0                   ; empieza fuera: se vera cuando
-        cmp.w   (a6),d0                     ; s > principio - VIS
-        bhs     .next_ld
-        move.w  d0,(a6)
-        bra     .next_ld
-        ; modelo medido (tools/copcal.py, P39): MOVE en T, T += 16; un WAIT
-        ; cuesta 32 px; hasta 32 px de espera, 1-2 MOVE de relleno a $1FE
-.vis:   move.w  (a5),d0                     ; se puede escribir desde fin + 1
-        addq.w  #1,d0
-        sub.w   d6,d0
-        bpl.s   .pos
-        moveq   #0,d0
-.pos:   sub.w   d1,d0                       ; d0 = espera = liberacion - T
-        ble     .mv                         ; ya se puede: solo MOVE
-        cmp.w   #32,d0
-        bhi.s   .wait
-.fill:  move.l  #$01fe0000,(a3)+            ; relleno: 16 px
-        add.w   #16,d1
-        sub.w   #16,d0
-        bgt.s   .fill
-        bra.s   .mv
-.wait:  move.w  8(a5),d0                    ; WAIT en la x planificada
-        move.w  d0,-(sp)                    ; (sombra: x objetivo)
-        sub.w   d6,d0
-        bpl.s   .pw
-        moveq   #0,d0
-.pw:    move.w  d1,-(sp)
-        add.w   #32,(sp)                    ; T + 32: lo minimo que cuesta
-        cmp.w   (sp)+,d0
-        bge.s   .pw2                        ; con signo: T + 32 < 0 al empezar
-        move.w  d1,d0
-        add.w   #32,d0
-.pw2:   move.w  d0,d1                       ; T = x objetivo: COTA INFERIOR de
-                                            ; donde cae el MOVE (cae en
-                                            ; [objetivo, objetivo + 7]). El camino
-                                            ; rapido mueve este WAIT con la camara
-                                            ; y su fase en la rejilla de 8 px
-                                            ; cambia: los MOVE sin WAIT que lo
-                                            ; siguen solo son seguros si se
-                                            ; decidieron con la cota inferior
-        cmp.w   #XKNEE,d0                   ; h para cambiar en x >= objetivo
-        bhi.s   .pk                         ; (P42, cabecera)
-        addq.w  #8,d0
-        lsr.w   #3,d0
-        lsl.w   #2,d0
-        add.w   #HOFS,d0                    ; h = HOFS + 4q
-        bra.s   .pk2
-.pk:    TAILH   d0
-.pk2:   and.w   #$fe,d0
-        cmp.w   #$e2,d0
-        bls.s   .h2
-        move.w  #$e2,d0
-.h2:    or.w    d7,d0
-        move.w  d0,(a3)                     ; WAIT
-        move.w  #$fffe,2(a3)
-        move.l  a3,d0
-        sub.l   a0,d0
-        move.w  d0,-(sp)                    ; desplazamiento del WAIT
-        move.w  2(a6),d0
-        move.w  (sp)+,(a6,d0.w)
-        move.w  (sp)+,2(a6,d0.w)
-        addq.w  #4,2(a6)
-        addq.l  #4,a3
-.mv:    cmp.w   #LASTX,d1                   ; mas alla del borde derecho: se
-        bhi.s   .lastx                      ; escribiria DESPUES del borrado
-                                            ; de la linea siguiente y le
-                                            ; cambiaria el color entera
-        move.w  4(a5),(a3)+                 ; MOVE registro, color
-        move.w  6(a5),(a3)+
-        ; la escritura queda FIJA en pantalla (x = d1): vale mientras el
-        ; principio del tramo nuevo, que se corre a la izquierda con la
-        ; camara, siga despues de ella: s <= principio - d1 - VMARG
-        move.w  2(a5),d0
-        sub.w   d1,d0
-        sub.w   #VMARG-1,d0
-        cmp.w   d6,d0
-        bhi.s   .vm
-        move.w  d6,d0                       ; ya llega tarde: no reconstruir
-        add.w   #16,d0                      ; la linea en cada frame
-.vm:    cmp.w   (a6),d0
-        bhs.s   .vm2
-        move.w  d0,(a6)
-.vm2:   add.w   #16,d1
+        move.l  a3,a6
+        add.l   D_LNS(a3),a6
+        moveq   #0,d1
+        move.w  (a6,d0.w),d1                ; sin signo: LNS pasa de 32 KB
+        add.l   d1,a6                       ; LNS[s >> 4]
+.all:   lea     linetab_b(pc),a4
+        cmp.l   V_COP(a5),a0
+        bne.s   .ta
+        lea     linetab_a(pc),a4
+.ta:    move.l  a4,a5                       ; OJO: a5 prestado (vars)
+        lea     htab(pc),a2
+        sub.w   d6,a2                       ; a2 = htab - s
+        move.w  d6,d5
+        add.w   #LASTX,d5                   ; d5 = s + LASTX
+        move.w  #$fffe,d2
+.line:  move.w  (a6)+,d0                    ; linea * 32
+        bmi     .done
+        lea     (a5,d0.w),a4                ; a4 = linetab[L]
+        cmp.w   12(a4),d6
+        blt.s   .rw                         ; s < vl
+        cmp.w   14(a4),d6
+        blt.s   .line                       ; s < vu: lo escrito vale
+.rw:    move.l  4(a4),a1                    ; a1 = lo (registros de 12 bytes:
+.lof:   cmp.w   2(a1),d6                    ; clase, x, MOVE, a, b)
+        ble.s   .lob                        ; x < s: salio por la izquierda
+        lea     12(a1),a1
+        bra.s   .lof
+.lob:   cmp.w   -10(a1),d6                  ; la anterior tiene x >= s: la
+        bgt.s   .lod                        ; camara volvio (centinelas: -1
+        lea     -12(a1),a1                  ; antes, $7FFF despues)
+        bra.s   .lob
+.lod:   move.l  a1,4(a4)
+        move.l  8(a4),a0                    ; a0 = hi
+.hif:   cmp.w   2(a0),d5                    ; x <= s + LASTX: entro por la
+        blt.s   .hib                        ; derecha
+        lea     12(a0),a0
+        bra.s   .hif
+.hib:   cmp.w   -10(a0),d5                  ; la anterior tiene x > s + LASTX
+        bge.s   .hid
+        lea     -12(a0),a0
+        bra.s   .hib
+.hid:   move.w  -10(a1),d3
+        addq.w  #1,d3                       ; d3 = vl: la anterior vuelve
+        move.w  2(a0),d4
+        sub.w   #LASTX,d4                   ; d4 = vu: la siguiente entra
+        move.l  (a4),a3                     ; a3 = donde van las cargas
+        move.l  a0,d1
+        sub.l   a1,d1                       ; 12 * cargas
+        bne.s   .some
+        move.l  a0,8(a4)
+        bra.s   .jump
+.some:  cmp.w   #MIDMAX*12,d1
+        bls.s   .n
+        lea     MIDMAX*12(a1),a0            ; no entran todas: se rehace
+        move.w  2(a1),d4                    ; cuando la primera sale
         addq.w  #1,d4
-        cmp.w   #MIDMAX,d4
-        beq.s   .ld_done
-.next_ld:
-        addq.w  #1,d2
-        bra     .ld
-.lastx: move.w  d1,d0                       ; no entra (x > LASTX): la linea se
-        sub.w   #LASTX,d0                   ; vuelve a mirar cuando entre, en
-        add.w   d6,d0                       ; s + (x - LASTX). Sin esto las
-        cmp.w   (a6),d0                     ; cargas de detras quedaban sin
-        bhs.s   .ld_done                    ; escribir hasta el vu de otra
-        move.w  d0,(a6)                     ; carga (s = 4346: 4 de 6)
-.ld_done:
-        lea     vars(pc),a5
-        addq.l  #2,sp                       ; (lo que habia antes: no sirve,
-                                            ; solo cuenta los WAIT y una linea
-                                            ; puede tener cargas sin WAIT) el
-                                            ; salto se escribe siempre
-.jump:  lea     SEG(a0),a5                  ; el siguiente segmento
-        move.l  a5,d0
-        lea     vars(pc),a5
-        move.w  #$0084,(a3)+                ; COP2LCH
-        swap    d0
-        move.w  d0,(a3)+
-        move.w  #$0086,(a3)+                ; COP2LCL
-        swap    d0
-        move.w  d0,(a3)+
-        move.l  #$008a0000,(a3)+            ; COPJMP2
-.next:  rts
+.n:     move.l  a0,8(a4)
+        move.w  -10(a0),d0                  ; la ultima sale por la derecha
+        sub.w   #LASTX,d0                   ; si s < x - LASTX
+        cmp.w   d0,d3
+        bge.s   .n2
+        move.w  d0,d3
+.n2:    sub.w   d6,d3                       ; vl y vu relativas a s: se
+        sub.w   d6,d4                       ; comparan con a y b
+        move.w  16(a4),d7                   ; WAIT: v << 8
+        addq.l  #2,a1                       ; la primera, siempre con WAIT
+        bra.s   .w
+.ld:    move.w  (a1)+,d1                    ; clase
+        bne.s   .ch
+.w:     move.w  (a1)+,d0                    ; x
+        move.b  (a2,d0.w),d7                ; h | 1 para x - s
+        move.w  d7,(a3)+
+        move.w  d2,(a3)+                    ; $FFFE
+.mv:    move.l  (a1)+,(a3)+                 ; MOVE registro, color
+        cmp.w   (a1)+,d3                    ; vl = max(vl, a)
+        bge.s   .k1
+        move.w  -2(a1),d3
+.k1:    cmp.w   (a1)+,d4                    ; vu = min(vu, b)
+        ble.s   .k2
+        move.w  -2(a1),d4
+.k2:    cmp.l   a0,a1
+        bne.s   .ld
+        add.w   d6,d3
+        add.w   d6,d4
+        bra.s   .jump
+.ch:    addq.l  #2,a1                       ; (x: no hace falta)
+        subq.w  #2,d1                       ; 1: MOVE detras del anterior
+        bmi.s   .mv
+        beq.s   .f1                         ; 2: un relleno; 3: dos
+        move.l  #$01fe0000,(a3)+
+.f1:    move.l  #$01fe0000,(a3)+
+        bra.s   .mv
+.jump:  move.l  18(a4),(a3)+                ; el salto al segmento siguiente
+        move.l  22(a4),(a3)+
+        move.l  26(a4),(a3)+
+        cmp.w   d6,d3                       ; si no vale ni en s (una carga
+        bgt.s   .late                       ; que ya llega tarde o temprano),
+        cmp.w   d6,d4                       ; vl = s y vu = s + 1: se
+        bgt.s   .j2                         ; reescribe en cada frame, vaya
+.late:  move.w  d6,d3                       ; hacia donde vaya la camara (si
+        move.w  d6,d4                       ; solo se corrigiera vu, al
+        addq.w  #1,d4                       ; volver valdria lo escrito antes
+.j2:    move.w  d3,12(a4)                   ; y la ida y la vuelta darian
+        move.w  d4,14(a4)                   ; imagenes distintas: P50)
+        bra     .line
+.done:  movem.l (sp)+,d2-d7/a2-a6
+        rts
 
 ;----------------------------------------------------------------------
 ; --- draw_column ---
@@ -812,7 +798,7 @@ build_mid:
 ; salida:   la columna, en sus dos copias del buffer circular de PF1
 ; registros destruidos: d0-d3/a0-a2
 ; ciclos:   ~24 000 (CPU; 224 lineas x 3 planos x 2 copias)
-; PROTOTIPO: con la CPU. El definitivo va por blitter (§12).
+; Para el arranque y los saltos de camara; en el scroll va por blitter.
 ;----------------------------------------------------------------------
 draw_column:
         move.w  d0,d1
@@ -850,14 +836,13 @@ draw_column:
         rts
 
 ;----------------------------------------------------------------------
-; --- blit_column ---
-; entrada:  d0.w = columna de bloques del nivel
-; salida:   la columna en sus dos copias del buffer circular de PF1, con el
-;           blitter: un blit por bloque (1 palabra x 48 filas: 16 lineas x
-;           3 planos, que en el buffer entrelazado estan a ROWB1 bytes) y
-;           la segunda copia de una vez (1 palabra x 672 filas). No espera
-;           al ultimo blit.
-; registros destruidos: d0-d3/a0-a2
+; --- blit_steps ---
+; La columna nueva, repartida entre frames: hasta d7+1 pasos por llamada.
+; Paso 0..13 = un bloque (1 palabra x 48 filas: 16 lineas x 3 planos, que
+; en el buffer entrelazado estan a ROWB1 bytes); paso 14 = la segunda
+; copia de toda la columna (1 x 672 filas, sin esperar a que termine).
+; entrada:  V_CCOL (-1: nada), V_CBLK, d7 = pasos - 1
+; registros destruidos: d0-d3/d7/a0-a2
 ;----------------------------------------------------------------------
 BLTCON0R    equ $040
 BLTCON1R    equ $042
@@ -869,56 +854,6 @@ BLTSIZER    equ $058
 BLTAMODR    equ $064
 BLTDMODR    equ $066
 
-blit_column:
-        move.w  d0,d1
-        mulu    #15,d1
-        move.l  a3,a1
-        add.l   D_MAP(a3),a1
-        add.l   d1,a1                       ; a1 = MAP[c * 15]
-        moveq   #0,d1
-        move.w  d0,d1
-        divu    #SLOTS,d1
-        swap    d1
-        add.w   d1,d1
-        move.l  V_BUF1(a5),a2
-        add.w   d1,a2                       ; a2 = columna en el buffer
-        move.l  a2,-(sp)
-        move.l  a3,d2
-        add.l   D_BLK(a3),d2                ; d2 = bloques
-        bsr     bwait
-        move.l  #$09f00000,BLTCON0R(a4)     ; A -> D, BLTCON1 = 0
-        move.l  #$ffffffff,BLTAFWMR(a4)
-        move.w  #0,BLTAMODR(a4)
-        move.w  #ROWB1-2,BLTDMODR(a4)
-        moveq   #LINES/16-1,d3
-.blk:   moveq   #0,d0
-        move.b  (a1)+,d0
-        mulu    #96,d0
-        add.l   d2,d0
-        bsr     bwait
-        move.l  d0,BLTAPTR(a4)
-        move.l  a2,BLTDPTR(a4)
-        move.w  #(48<<6)|1,BLTSIZER(a4)
-        lea     16*LINEB1(a2),a2
-        dbf     d3,.blk
-        move.l  (sp)+,a2                    ; segunda copia, 44 bytes despues
-        bsr     bwait
-        move.w  #ROWB1-2,BLTAMODR(a4)
-        move.l  a2,BLTAPTR(a4)
-        lea     SLOTS*2(a2),a2
-        move.l  a2,BLTDPTR(a4)
-        move.w  #((LINES*3)<<6)|1,BLTSIZER(a4)
-        rts
-
-;----------------------------------------------------------------------
-; --- blit_steps ---
-; La columna nueva, repartida entre frames: hasta d7+1 pasos por llamada.
-; Paso 0..13 = un bloque (1 palabra x 48 filas); paso 14 = la segunda
-; copia de toda la columna (1 x 672 filas, sin esperar a que termine).
-; Hay tiempo: la columna p + 21 no se ve hasta 16 px de scroll despues.
-; entrada:  V_CCOL (-1: nada), V_CBLK, d7 = pasos - 1
-; registros destruidos: d0-d3/d7/a0-a2
-;----------------------------------------------------------------------
 blit_steps:
         tst.w   V_CCOL(a5)
         bmi.s   .done
@@ -975,12 +910,12 @@ bwait:  btst    #6,DMACONR(a4)              ; dos veces: bug del Agnus viejo
 
 ;----------------------------------------------------------------------
 ; --- build_copper ---
-; la lista fija; los colores iniciales de las dos capas por linea
-; registros destruidos: d0-d4/a0-a2
+; la lista fija; los colores iniciales de las dos capas por linea (la capa
+; 1 con cam_x = 0: apply_colors la lleva a V_S)
+; registros destruidos: d0-d5/a0-a2
 ;----------------------------------------------------------------------
 build_copper:                               ; a0 = lista
-        movem.l a2,-(sp)
-        move.l  a3,V_DATA(a5)
+        movem.l a2/a6,-(sp)
         move.l  a0,d4                       ; d4 = principio de la lista
         move.l  #$008e0000|DIWS,(a0)+       ; DIWSTRT
         move.l  #$00900000|DIWE,(a0)+       ; DIWSTOP: 224 lineas
@@ -991,7 +926,11 @@ build_copper:                               ; a0 = lista
         ifd     SPRTEST
         move.l  #$01040024,(a0)+            ; BPLCON2: sprites delante
         else
+        ifd     BPLCON2V
+        move.l  #$01040000|BPLCON2V,(a0)+
+        else
         move.l  #$01040000,(a0)+            ; BPLCON2: PF1 delante
+        endc
         endc
         move.w  #$0108,(a0)+
         move.w  #LINEB1-FETCHW*2,(a0)+      ; BPL1MOD
@@ -1011,6 +950,7 @@ build_copper:                               ; a0 = lista
         add.l   D_INI(a3),a1
         move.l  a3,a2
         add.l   D_L2P(a3),a2
+        lea     ldoff(pc),a6                ; inicio de las cargas
         moveq   #0,d2                       ; d2 = linea
 .line:  move.l  a0,d5                       ; d5 = principio del segmento
         move.w  d2,d0
@@ -1041,12 +981,8 @@ build_copper:                               ; a0 = lista
         addq.w  #2,d0
         dbf     d1,.c2
         move.l  a0,d0                       ; inicio de las cargas de la linea
-        sub.l   d5,d0                       ; -> lo_tab[L] + 2 (build_mid)
-        lea     lo_tab(pc),a3
-        move.w  d2,d1
-        lsl.w   #2,d1
-        move.w  d0,2(a3,d1.w)
-        move.l  V_DATA(a5),a3
+        sub.l   d5,d0
+        move.w  d0,(a6)+
         move.l  d5,d0                       ; salto al segmento siguiente
         add.l   #SEG,d0
         move.w  #$0084,(a0)+
@@ -1062,7 +998,7 @@ build_copper:                               ; a0 = lista
         cmp.w   #LINES,d2
         blo     .line
         move.l  #$fffffffe,(a0)+
-        movem.l (sp)+,a2
+        movem.l (sp)+,a2/a6
         rts
 
         ifd     BENCH
@@ -1118,8 +1054,7 @@ bench_init:
 
 ; el trabajo del frame termina cuando termina el blitter. Los primeros
 ; BSKIP frames (arranque) no se cuentan, y cada maximo guarda la s donde
-; ocurrio: el pico de ~300 % que se atribuia al primer frame esta en
-; s = 4504 (ROADMAP.md, Etapa 0.3).
+; ocurrio.
 BSKIP   equ 8
 bench_frame:
         bsr     bwait
@@ -1224,22 +1159,28 @@ show_results:
 res:    ds.w    19
         endc
 
+        ifnd    SCROLL_LIB
 fail:   lea     CUSTOM,a4
 .l:     move.w  #$0f00,COLOR00(a4)
         bra.s   .l
 
         even
 vars:   ds.b    V_SIZE
-lo_tab: ds.w    LINES*2                     ; build_mid: (primera carga viva, nxt)
+        endc
         even
-shadow_a: ds.b  SHSZ*LINES                  ; build_mid: sombra de cada lista
-shadow_b: ds.b  SHSZ*LINES
-segoff: ds.l    LINES                       ; build_mid: L * SEG y L * SHSZ
-shoff:  ds.w    LINES
-gmin_a: ds.w    LINES/16                    ; build_mid: minimo de wake por bloque
-gmin_b: ds.w    LINES/16                    ; de 16 lineas (0: mirar)
-wake_a: ds.w    LINES                       ; build_mid: s desde la que hay que
-wake_b: ds.w    LINES                       ; mirar cada linea (0: siempre)
+linetab_a: ds.b 32*LINES                    ; ver init_lines
+linetab_b: ds.b 32*LINES
+ldoff:  ds.w    LINES                       ; build_copper: inicio de las cargas
+htab:   ds.b    LASTX+1                     ; byte bajo del WAIT por x
+        even
+alllines:                                   ; build_mid despues de un salto
+N       set     0
+        rept    LINES
+        dc.w    N*32
+N       set     N+1
+        endr
+        dc.w    -1
+        even
         ifd     SPRTEST
 ;----------------------------------------------------------------------
 ; -DSPRTEST (Etapa 6.1): los 8 sprites, cada uno un bloque de 16 x 16 con
@@ -1296,5 +1237,7 @@ spr_ptrs:
 sprdata: ds.b   8*(4+16*4+4)
         endc
 
+        ifnd    SCROLL_LIB
 gfxname: dc.b   "graphics.library",0
         even
+        endc

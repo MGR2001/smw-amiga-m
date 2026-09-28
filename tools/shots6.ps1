@@ -11,12 +11,13 @@
 #>
 param(
     [Parameter(Mandatory = $true)][string]$Dir,
-    [int[]]$Xs = @(500, 1000, 1700, 2500, 3500, 4500)
+    [int[]]$Xs = @(500, 1000, 1700, 2500, 3500, 4500),
+    [int]$Extra = 0                 # segundos de mas (p. ej. -DRETURN)
 )
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 foreach ($x in $Xs) {
     $png = Join-Path $Dir "s$x.png"
-    $wait = 25 + [int]($x / 100)
+    $wait = 25 + [int]($x / 100) + $Extra
     for ($t = 0; $t -lt 3; $t++) {
         $start = Get-Date
         & (Join-Path $here 'shot.ps1') -Adf (Join-Path $Dir "scroll$x.adf") -Out $png -Wait $wait -Exact | Out-Null

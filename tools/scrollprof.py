@@ -7,7 +7,7 @@ Musashi (machine68k), con los datos de work/yi1_s.dat. Lo que no es CPU se
 simula lo minimo:
   - la inicializacion de `entry` (AllocMem, DoIO, tomar la maquina) se
     reproduce desde Python llamando a las mismas rutinas del binario
-    (build_copper, init_lo, draw_column, set_pointers, build_mid);
+    (scroll_init);
   - CUSTOM (a4) apunta a RAM: DMACONR = 0 (el blitter "ya termino") y
     VPOSR = linea $110, asi que la espera del principio de `frame` pasa;
   - una trampa de linea A en `.w2l` devuelve el control a Python al final
@@ -97,6 +97,7 @@ class Scroll:
         self.w2l = BASE + local[("frame", ".w2l")]
         self.mem.w16(self.w2l, self.trap)           # fin del trabajo del frame
         self.vars = BASE + syms["vars"]
+        self.s0 = 0
 
     def regs(self, a0=None, d0=None):
         M = self.M
@@ -128,21 +129,8 @@ class Scroll:
         w32(self.vars + V["V_BUF1"], BUF1)
         w32(self.vars + V["V_COP"], COPA)
         w32(self.vars + V["V_COP2"], COPB)
-        self.call("build_copper", a0=COPA)
-        self.call("build_copper", a0=COPB)
-        self.call("init_lo")
-        w16(self.vars + V["V_CCOL"], 0xFFFF)
-        w16(self.vars + V["V_S"], 0)
-        w16(self.vars + V["V_P"], 0xFFFF)
-        w32(self.vars + V["V_CHG"], DATA + self.mem.r32(DATA + 28))
-        for c in range(22):
-            self.call("draw_column", d0=c)
-        w32(self.vars + V["V_BACK"], COPA)
-        self.call("set_pointers")
-        self.call("build_mid")
-        w32(self.vars + V["V_BACK"], COPB)
-        self.call("set_pointers")
-        self.call("build_mid")
+        w16(self.vars + V["V_S"], self.s0)
+        self.call("scroll_init")
 
     def frame(self):
         """un frame: desde `frame` hasta `.w2l`. Devuelve (s, ciclos)"""
@@ -154,8 +142,9 @@ class Scroll:
 def routines(syms):
     """rangos [inicio, fin) de las rutinas globales de codigo"""
     code = sorted((a, n) for n, a in syms.items()
-                  if n in ("frame", "set_pointers", "apply_colors", "init_lo", "build_mid",
-                           "draw_column", "blit_column", "blit_steps", "bwait",
+                  if n in ("frame", "set_pointers", "apply_colors", "init_lines", "build_mid",
+                           "draw_column", "blit_steps", "bwait", "camera", "scroll_init",
+                           "scroll_frame", "columns", "draw_window",
                            "build_copper", "readtimer", "waitline", "bench_init",
                            "bench_frame", "show_results", "fail"))
     return [(a, code[i + 1][0] if i + 1 < len(code) else 1 << 30, n)

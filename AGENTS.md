@@ -1077,6 +1077,23 @@ ningún error. Los datos grandes del arnés van al **final** del binario
 restaura cuelga el banco (la captura sale sin resultados). `copystate`
 lo guarda; `copyworst` tuvo que hacerlo también.
 
+**P50 — `build_mid`: una carga que no vale ni en la s en que se escribe.**
+Las cargas que "llegan tarde" (o temprano) en el plan tienen un intervalo
+`[s0 + a, s0 + b)` que no contiene `s0`. Si solo se corrige `vu = s + 1`,
+al avanzar la línea se reescribe cada frame, pero al volver vale lo
+escrito antes (`vl = s0 + a` queda por debajo): la ida y la vuelta dan
+imágenes distintas (19 frames, 2 px cada uno). Hay que forzar las dos
+cotas: `vl = s`, `vu = s + 1`.
+
+**P51 — Después de `DDFSTOP` el copper va más rápido (sin medir).**
+El modelo (`scrollsim.py`, `mkscroll.py`) pone cada MOVE encadenado a 16 px
+del anterior, que es lo que pasa con los 6 planos leyendo. Al final de la
+línea (h >= `$C0` a 256 px) el DMA de planos termina y el MOVE cae antes:
+en la captura de 1700 a la vuelta, un WAIT en `$BD` (x = 231) + un MOVE
+detrás cambió el color en x <= 244, no en 247. Afecta a las cadenas que
+cruzan x ~ 232-255. Para arreglarlo: medir esa zona con `copcal.s` y
+meterla en el modelo, o poner un WAIT propio a cada carga en la cola.
+
 **P44 — Los "derrames" de la etapa 5 alargan el tramo anterior.**
 `mkleveld.py` asigna los píxeles que quedan fuera de todo tramo al registro
 que *todavía conserva* el color: después del fin de un tramo puede haber
