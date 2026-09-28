@@ -50,11 +50,10 @@
 | `claude/agents-md-x4v1di` | `e66cfc0` | la sesión cloud del 24/09 (etapas 5, 6, 8 y parte de la 9); ya incluida en `master` |
 | `claude/agents-future-plan-hsy1gm` | = `master` | donde se escribió este plan; mergeada a `master` por avance rápido |
 | `etapa0-cierre` | `ec34980` | Etapa 0 cerrada (PC, 2026-09-27); ya incluida en `etapa6-8` |
-| `etapa6-8` | la cabeza | **la más nueva** (PC, 2026-09-27, subida a `origin`): Etapa 0, 6.1, 8.2, 6.2, 6.3 y 6b hasta el **primer ADF jugable**. **Sin mergear a `master`: lo decide el usuario** |
+| `etapa6-8` | = `master` | PC, 2026-09-27: Etapa 0, 6.1, 8.2, 6.2, 6.3 y 6b hasta el **primer ADF jugable**; mergeada a `master` por avance rápido el mismo día (pedido del usuario) |
 
 - **Base de trabajo: `master`.** Cada sesión nueva trabaja en su propia rama
-  a partir de `master`. **Mientras `etapa6-8` no esté mergeada, la sesión
-  siguiente parte de `etapa6-8`** (tiene todo lo del 2026-09-27).
+  a partir de `master` (desde el 2026-09-27 incluye el primer ADF jugable).
 - Los dos últimos commits de código de la otra sesión (`45e3857`,
   `e66cfc0`) eran **WIP sin revisar**: optimizaciones de dos subagentes y
   cambios en `scroll.s`. El 2026-09-26 se verificó en cloud casi toda la
@@ -228,8 +227,7 @@ correr, Return = Start, Shift derecho = Select. Joystick en el puerto 2.
    adosadas que quedan, reutilización con el copper y bobs.
 5. HUD (10), audio (11), power-ups (D12), animaciones reales de muerte,
    crecer, meta y tuberías en vez del reinicio.
-6. En paralelo: Etapa 7 (capa 2 contra la referencia, PC), P51, y el merge
-   de `etapa6-8` a `master` cuando el usuario lo decida.
+6. En paralelo: Etapa 7 (capa 2 contra la referencia, PC) y P51.
 
 ---
 
