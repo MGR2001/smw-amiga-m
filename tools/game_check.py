@@ -10,6 +10,7 @@ su paleta (mario_pal, work/cc/mario_pal.bin). El estado sale de correr el
 replay en un emulador de 68000 hasta F (como gamecheck.py).
 
     python3 tools/game_check.py --shot work/g6b/6000.png --frame 6000
+    python3 tools/game_check.py --shot shot.png --frame 6000 --auto   # FS-UAE
 """
 import argparse
 import os
@@ -84,6 +85,34 @@ def mario_pixels(ram, oam, osz, g32):
     return px
 
 
+def fsuae_sample(cap, e, sc=2.125):
+    """la pantalla de una captura de FS-UAE: el origen que mejor coincide con
+    el esperado (grueso y despues fino) y el centro de cada pixel"""
+    best = None
+    for x0 in np.arange(200, 280, 0.5):
+        for y0 in np.arange(90, 130, 0.5):
+            xs = (x0 + (np.arange(0, W, 4) + 0.5) * sc).astype(int)
+            ys = (y0 + (np.arange(0, LINES, 4) + 0.5) * sc).astype(int)
+            if xs[-1] >= cap.shape[1] or ys[-1] >= cap.shape[0]:
+                continue
+            ok = (np.abs(cap[ys][:, xs] - e[::4, ::4]).max(axis=2) <= 8).mean()
+            if best is None or ok > best[0]:
+                best = (ok, x0, y0)
+    _, x0, y0 = best
+    for fx in np.arange(x0 - 0.5, x0 + 0.5, 0.125):
+        for fy in np.arange(y0 - 0.5, y0 + 0.5, 0.125):
+            xs = (fx + (np.arange(W) + 0.5) * sc).astype(int)
+            ys = (fy + (np.arange(LINES) + 0.5) * sc).astype(int)
+            ok = (np.abs(cap[ys][:, xs] - e).max(axis=2) <= 8).mean()
+            if ok > best[0]:
+                best = (ok, fx, fy)
+    _, x0, y0 = best
+    print("origen de la captura (FS-UAE x%g): (%.3f, %.3f)" % (sc, x0, y0))
+    xs = (x0 + (np.arange(W) + 0.5) * sc).astype(int)
+    ys = (y0 + (np.arange(LINES) + 0.5) * sc).astype(int)
+    return cap[ys][:, xs]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--shot", required=True)
@@ -91,6 +120,8 @@ def main():
     ap.add_argument("--bin", default=os.path.join(V.WORK, "game.bin"))
     ap.add_argument("--lst", default=os.path.join(V.WORK, "game.lst"))
     ap.add_argument("--origin", default="130,69", help="x0,y0 de la pantalla en la captura (WinUAE)")
+    ap.add_argument("--auto", action="store_true",
+                    help="captura de FS-UAE (x2,125): buscar el origen como scroll_check.py")
     ap.add_argument("--png", default=None)
     a = ap.parse_args()
 
@@ -108,11 +139,24 @@ def main():
             e[y, x] = [((w >> 8) & 15) * 17, ((w >> 4) & 15) * 17, (w & 15) * 17]
             mp[y, x] = True
     cap = np.asarray(Image.open(a.shot).convert("RGB")).astype(int)
-    x0, y0 = (int(v) for v in a.origin.split(","))
-    got = cap[y0 + 1:y0 + 2 * LINES:2, x0 + 1:x0 + 2 * W:2]   # centro de cada pixel x2
+    if a.auto:
+        got = fsuae_sample(cap, e)
+    else:
+        x0, y0 = (int(v) for v in a.origin.split(","))
+        got = cap[y0 + 1:y0 + 2 * LINES:2, x0 + 1:x0 + 2 * W:2]   # centro de cada pixel x2
     bad = np.abs(got - e).max(axis=2) > 8
     print("frame %d: camara %d, Mario %d px (paleta %d); fallos: fondo %d, Mario %d"
           % (a.frame, cam, mp.sum(), pal, (bad & ~mp).sum(), (bad & mp).sum()))
+    if a.auto:
+        # como scroll_check.py: sin las mezclas del reescalado (colores que no
+        # son del OCS) ni lo que se explica por un vecino (+-1 px, +-1 linea)
+        nb = bad & (got % 17 == 0).all(axis=2)
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                nb &= np.abs(got - np.roll(np.roll(e, dy, 0), dx, 1)).max(axis=2) > 8
+        print("fallos que no se explican por un vecino: fondo %d, Mario %d"
+              % ((nb & ~mp).sum(), (nb & mp).sum()))
+        bad = nb
     if a.png:
         img = np.vstack([e, got, np.where(bad[..., None], [255, 0, 255], got // 2 + 64)])
         Image.fromarray(img.astype(np.uint8)).resize((W * 3, LINES * 9), 0).save(a.png)
