@@ -229,14 +229,18 @@ def parse_header(data):
         "bg_color": (b1 >> 5) & 0x07,
         "level_mode": b1 & 0x1F,
         "spr_gfx": b2 & 0x0F,
-        "music": (b2 >> 4) & 0x0F,
+        "music": (b2 >> 4) & 0x07,
+        "layer3_prio": b2 >> 7,
         "timer": (b3 >> 6) & 0x03,
         "spr_palette": (b3 >> 3) & 0x07,
         "fg_palette": b3 & 0x07,
-        "tileset": b4 & 0x1F,
-        "layer3_prio": (b4 >> 5) & 0x01,
-        "item_memory": (b4 >> 6) & 0x01,
-        "vertical_scroll": (b4 >> 7) & 0x01,
+        # byte 4 = IIVVZZZZ, como lv_read.s (CODE_0584xx): tileset & $0F,
+        # item memory = bits 6-7, wm_VertScrollHead = bits 4-5 (3 -> 0 y
+        # sin scroll horizontal). Antes: 5 bits de tileset y el bit 7 como
+        # scroll vertical (P77).
+        "tileset": b4 & 0x0F,
+        "item_memory": b4 >> 6,
+        "vertical_scroll": (b4 >> 4) & 0x03,
     }
 
 
@@ -326,7 +330,9 @@ def main():
     print("  tileset         : %d" % h["tileset"])
     print("  layer3 prio     : %d" % h["layer3_prio"])
     print("  item memory     : %d" % h["item_memory"])
-    print("  scroll vertical : %d" % h["vertical_scroll"])
+    vs = h["vertical_scroll"]
+    print("  scroll vertical : %d (%s)" % (vs, ("no hay (f7f4 vuelve enseguida)", "sigue a Mario",
+          "solo en algunos casos (CODE_00F82A)", "ni vertical ni horizontal")[vs]))
 
     objs, ok, endp = decode_stream(data)
     print("\n=== FLUJO DE OBJETOS ===")
