@@ -93,7 +93,7 @@ medir todo en cloud y se guardó con `--update --force`.
 | `gamecheck.py` / `--spr` | 0 diferencias en 6181 RUN; `mario_sprite` vbcc = asm = referencia 6184/6184 | 6177 RUN; `--spr` se colgaba en cloud (P62) |
 | capturas del replay (FS-UAE), fallos que no explica un vecino | frame 6000: fondo 30, Mario 0; frame 7000: fondo 16, Mario 0 (reescalado ×2,125) | WinUAE: 0 / 0 |
 | `inputtest.py` / `diag_read.py --sim` | 35/35 · TODO OK | — |
-| FS-UAE (`regress.py --emu`) | se está midiendo (se completa en el próximo commit) | — |
+| FS-UAE (`regress.py --level --emu logic,scrollbench,scrollimg`) | `logicbench` 23,2 % corriendo / 23,4 % saltando (256 px); `scroll.s -DBENCH -DSPEED=4`: con columna media 14,9 %, **máx. 78,8 %** (s = 4584), sin columna media 12,9 %, máx. 31,1 % (s = 4820); `scroll_check --mid` (fallos que no explica un vecino) 500: 15, 1000: 32, 1700: 31, 2500: 1, 3500: **6**, 4500: 47 | 26,5 / 26,9 % y 25,2 % / 307,5 % (320 px); imagen 74 / 31 / 94 / 46 / 72 / 127 (con el origen de 320 px: P59 y el arreglo de `scroll_check`) |
 
 ### 1.4 Qué se puede hacer en cada entorno
 
