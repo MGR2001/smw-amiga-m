@@ -186,6 +186,14 @@ static void probe_init(void)
     probe_ok = 1;
 }
 
+/* level_start_sprites (manim.c): las tablas al empezar el nivel, no en el
+   primer frame (~21 000 ciclos una sola vez) */
+void mcoll_init(void)
+{
+    if (!probe_ok)
+        probe_init();
+}
+
 #ifdef LOGIC68K
 u8 f44d_c(void);                /* la referencia; f44d_asm cae aca con wm_8E */
 u8 f44d_asm(void);
