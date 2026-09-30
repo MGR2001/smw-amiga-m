@@ -1100,127 +1100,249 @@ engancharla en `regress.py`. Especificación mínima:
 
 ---
 
-## 9. Optimización: ideas concretas
+## 9. Optimización: plan e ideas (2026-09-30)
 
-**Método (siempre):** perfil → cambiar **una** cosa → `abcheck.py` →
-`regress.py --emu`. Se optimiza el **peor frame**, no la media: el frame
-que no entra en 20 ms es el que se nota. `m68kverify` imprime el frame más
-caro (hoy el 4438 sin sprites y el 7997 con sprites): empezar por ahí.
+**Método (siempre):** medir el peor frame y **dónde** ocurre → cambiar
+**una** cosa → verificar la semántica (`regress.py`; el C con `abcheck.py`;
+`scroll.s` con `scrollsim.py --ret` + `imgdiff.py`) → medir en cycle-exact
+(`regress.py --emu`). Se optimiza el **peor frame**, no la media: el frame
+que no entra en 20 ms es el que se nota.
 
-### 9.1 Dónde se va hoy el tiempo del C
+**Regla de conversión** (medida en la 8.2 y en la 6.4): en la A500, con el
+DMA de 6 planos, un trabajo cuesta ~1,3-1,4 veces lo que da Musashi.
+O sea, **~1 000-1 100 ciclos de Musashi por cada 1 % de frame** en la
+Amiga (un frame PAL son 141 876 ciclos; en la parte visible de cada línea
+el DMA de planos se lleva la mitad de las ranuras pares).
 
-`abcheck.py bb66d2c --prof`, ciclos propios por frame, en Musashi y sin
-inline, con el WIP de los subagentes:
+### 9.0 Dónde estamos y a dónde hay que llegar
 
-| función | qué es | ciclos/frame |
+Peor frame por partes (el del juego entero sin medir: es el paso O1):
+
+| parte | peor frame hoy | dónde | objetivo | falta |
+|---|---|---|---|---|
+| scroll a la ida (`build_mid` + columna) | 78,8 % (FS-UAE, 4 px/frame) | s = 4584 (postes de la meta) | ≤ 25 % | −54 puntos |
+| scroll a la vuelta | 94,8 % en Musashi (≈ 125 % en la Amiga, **estimado**) | s = 2832 | ≤ 25 % | −100 puntos |
+| lógica con sprites (`level_frame`) | 45 896 ciclos en Musashi ≈ 45 % | frame 9714 (2 pirañas, Rex, `$8E`, `$C7`) | ≤ 40 % | −6 000 ciclos |
+| Mario en sprites (`mspr_draw`) | ~10 400 ciclos ≈ 7,3 % | cada cambio de pose | ≤ 3 % | −4 000 ciclos |
+| sprites del nivel (9.2) | sin hacer | — | ≤ 8 % | diseñarlo barato (9.5) |
+| HUD / audio | sin hacer | — | ≤ 2 % / ≤ 3 % | — |
+| **margen** | — | — | **≥ 10 %** | — |
+
+La suma de los objetivos da 81 % + margen. Hoy el peor caso pasa del
+130 %. **Lo que manda es el scroll**; la lógica está cerca.
+
+### 9.1 Paso 0: medir el frame entero (O1-O3)
+
+Sin esto se optimiza a ciegas; además es la **6b.6 (compuerta D1)**.
+
+- **O1. `game.s -DBENCH`:** timer A de CIA-B al principio y al final de
+  cada parte (entrada, `level_frame`, `mspr_draw`, `scroll_frame`:
+  columna, `build_mid`, lista), **por frame**, en el replay. Se guardan el
+  peor frame de cada parte y el del total, con su frame y su s, y se
+  escriben en pantalla como bits (el método de `bench.s`), con un lector
+  `tools/game_read.py --auto`. Enganchar a `regress.py --emu game`.
+- **O2. Escenarios de estrés con snesorc:** `oracle_yi1` no recorre los
+  peores casos. Guiones `.orc` nuevos:
+  - la cámara volviendo a toda velocidad sobre s ≈ 2600-2900 y 4100-4800,
+    las zonas caras del scroll;
+  - Banzai + 4 Rex + Mario a la vez en pantalla;
+  - las 2 pirañas del frame 9714 con Mario corriendo.
+
+  Pasarlos por `m68kverify.py --replay` → `game.s -DREPLAY -DBENCH`.
+- **O3. En `regress.py`:** los ciclos del peor frame por parte en Musashi
+  (`gamecheck.py --engine musashi`, que tiene que aprender a correr
+  también `scroll_frame`) y el scroll en los **dos sentidos**
+  (`scrollprof.py -D RETURN=4864 --stopx 0`). Hoy `-DBENCH` solo mide la
+  ida (P72).
+
+### 9.2 Scroll: `build_mid` (lo más grande)
+
+Reparto del peor frame de la ida (s = 4580, 76 850 ciclos en Musashi, ver
+Etapa 6.4): 55 líneas reescritas enteras, 276 cargas (~124 ciclos cada
+una) + ~520 por línea + ~7 800 para recorrer las 108 líneas de LNS.
+Por qué se reescriben:
+
+| motivo | líneas |
+|---|---|
+| una carga "tarde" (se reescribe en **todos** los frames, P50) | 24 |
+| entra una carga por la derecha | 25 |
+| caduca una carga | 6 |
+
+A la vuelta, casi todo se reescribe en cada paso (P72). Ideas, de más
+barata a más cara:
+
+- **S1. Las cargas "tarde", arregladas en origen.** Son 34, en
+  x ≈ 4817-4861 (los postes de la meta), y cada una fuerza su línea unos 128
+  frames seguidos.
+  - (a) Clasificación fija, con la línea canónica (P71) y la h en celdas de
+    8 px: la línea se reescribe cada 8 px de s, no en cada frame.
+  - (b) En `mkleveld.py`/`mkscroll.py`, repartir los registros cerca de los
+    postes para que las ventanas se puedan cumplir. Si hace falta, aceptar
+    un derrame de 1 px donde no se ve (P44).
+  - (c) Dibujar los postes con 2 sprites de hardware adosados (15
+    colores). En la meta casi no hay enemigos: saca esas cargas del copper.
+  - Estimado: −20-30 % del peor frame de la ida.
+- **S2. Recorrer LNS por grupos de 16 líneas** con el mínimo de cada grupo
+  (el `gmin_a/b` del WIP viejo): de ~7 800 a ~1 000 ciclos en los frames en
+  que casi no cambia nada.
+- **S3. Escribir cada cambio una sola vez.** Hoy cada lista (A y B) tiene
+  su sombra (`V_LSA`/`V_LSB`) y **cada línea que cambia se reescribe dos
+  veces**: en la lista de este frame y en la del siguiente. Como un
+  segmento vale para un intervalo de s, las dos listas pueden compartirlo:
+  un pool con 2 ranuras por línea; la que cambia se escribe en la ranura
+  libre y las dos listas se reenganchan (2 palabras cada una). La trampa:
+  el salto al segmento siguiente está **dentro** del segmento, así que
+  compartirlo obliga a sacar los saltos a una "columna vertebral" por
+  lista, que gasta MOVE del copper en el borrado. Medir primero con
+  `copcal` si entran (P39, P43, P46). Estimado: hasta −50 % de
+  `build_mid` en régimen.
+- **S4. Editar en el sitio en vez de reescribir la línea** (el diseño de
+  `tools/wip64/`): rebase (solo el byte h de cada WAIT), append y truncado
+  por la derecha. En el modelo: ida 48,6 → 38 %, vuelta 78,8 → 56 %. La
+  imagen queda igual por construcción si la clasificación "tarde" es fija.
+- **S5. Repartir entre frames con un presupuesto.** Cada evento tiene una
+  holgura de b + 6 px, así que no hace falta atenderlo en el frame en que
+  aparece. Una cola por plazo (EDF) con un tope de ciclos por frame: lo
+  urgente primero, el resto después. Aplana el pico hacia la media (hoy
+  14,9 % a la ida). Las cargas muertas se neutralizan en el sitio (el MOVE
+  pasa a `$1FE`) en vez de reescribir.
+- **S6. Un plan por sentido.** El plan pone las cargas lo antes posible
+  (a ≈ 0), así que sirve hacia la derecha y casi nada hacia la izquierda
+  (P72). Un segundo plan con las cargas lo más tarde posible (ALAP) para
+  cuando la cámara va a la izquierda, o las cargas en el centro de su
+  ventana para los dos sentidos. Cuesta otro MLD en slow RAM.
+- **S7. Menos cargas desde el origen.** Cada carga que no existe ahorra
+  CPU y ranuras del copper. Mejor asignación de registros en
+  `mkleveld.py` (intervalos que se reusan, preferir el registro que ya
+  tiene el color) y más variantes de bloque. Hoy son 244; quedan ~117 KB
+  de chip. Medir antes la distribución de cargas por línea visible.
+- **S8. El blitter copia los segmentos.** Si las palabras del copper de
+  cada segmento están precalculadas en chip, un blit A → D las copia
+  mientras la CPU corre la lógica; la CPU solo parchea las h. Evaluarlo
+  después de S3-S5: depende de cuánta chip haga falta.
+
+Orden propuesto: S1a + S2 (baratas) → S4 → S5 → S3 → S6. Hecho cuando el
+máximo es ≤ 25 % **en los dos sentidos** y en los escenarios de O2, con
+`scrollsim.py --ret` (≤ 9282 px, ida = vuelta) y las capturas de las 6 x
+sin empeorar.
+
+### 9.3 Lógica (`level_frame` con sprites)
+
+Perfil del 2026-09-30 (`PROF=1 sh tools/logicbench_build.sh &&
+python3 tools/m68kprof.py --sprites --worst 5`), en ciclos propios por
+frame, sin inline:
+
+| función | media | peor frame real (9709) |
 |---|---|---|
-| `f44d` (con `f461_xy` dentro) | sondas de colisión | ~4 100 |
-| `mario_E2BD` (con `e45d` dentro) | gráficos de Mario + OAM | ~4 100 |
-| `camera_F6DB` | cámara | ~2 100 |
-| `level_frame` | bucle de ranuras de sprites + pegamento | ~2 100 |
-| `eb77`, `f7f4`, `D5F2`, `f636`, `dc4f`, `e92b` | colisión, cámara, física | ~1 000-1 300 cada una |
+| `mario_E2BD` (gráficos de Mario) | 3 970 (12 %) | 4 020 |
+| `f44d_asm` (sondas, 5,5 por frame) | 3 060 | 2 740 |
+| `spr_tile_asm` | 890 | **2 300** |
+| `sprite_run` (temporizadores, ~500 por ranura) | 980 | **2 020** |
+| `camera_F6DB` | 1 720 | 1 810 |
+| `eb77` / `sprites_all` / `f636` / `mario_D5F2` | 1 030-1 350 cada una | 1 040-1 540 |
+| `f7f4_c` (scroll vertical hacia arriba: el asm cae al C) | 510 | **1 390** |
+| `spr_obj_interact` / `spr_obj_vert` / `sprite_main` / `jumping_piranha` | 470-550 | 1 050-1 250 cada una |
 
-La media del frame bajó de 31 124 a 25 909 ciclos (−17 %) y, con sprites,
-de 44 364 a 35 779 (−19 %), con la semántica intacta.
+(El frame 4437 cuesta 53 818 porque paga `probe_init`, 21 454 ciclos: no
+es un frame del juego, P64.)
 
-### 9.2 CPU: C con vbcc para el 68000
+Ideas, por ganancia estimada en el peor frame (hacen falta −6 000):
 
-1. **Estado nativo, no `ram[]` byte a byte** (Etapa 8.2). Es la ganancia
-   grande que queda. `R16()` son 2 lecturas de byte + `lsl` + `or`, ~50
-   ciclos; un `move.w d16(a4),Dn` son 12.
-2. **`int` es de 32 bits en vbcc 68000.** Un `u8` se promociona a `int`, y
-   eso trae `ext.w`/`ext.l`/`and.l #$FF` de más. Intermedios y contadores en
-   `u16`/`s16`, y revisar el asm de las funciones caras
-   (`work/cc/<f>.code.s`): buscar `ext.l`, `and.l`, `lsl.l`, `mulu`/`muls` y
-   llamadas a rutinas del runtime de vbcc. Las operaciones `.l` cuestan 8
-   ciclos entre registros; las `.w`, 4.
-3. **Nada de multiplicar ni dividir en caliente**: `mulu` cuesta 38-70
-   ciclos y `divu` hasta 140. Tablas (ya: `L·SEG`, `L·SHSZ` en
-   `build_mid`) o desplazamientos. Una multiplicación de 32 bits no existe en
-   el 68000 y vbcc llama a una rutina. Quedan un `divu #SLOTS` y un
-   `mulu #15` en cada llamada a `blit_steps`: se pueden cambiar por un
-   contador de columna que avanza y por una tabla.
-4. **Punteros que avanzan en vez de índices:** `(An)+` cuesta 8 ciclos;
-   `d8(An,Dn)`, 14. En los bucles sobre ranuras de sprites, un puntero a la
-   ranura y desplazamientos fijos (y con P38 en mente: el puntero apunta a
-   la primera tabla y los índices son relativos).
-5. **Lo caliente en variables locales**, que vbcc pone en registros; una
-   global de small-data es `d16(a4)`.
-6. **Tablas de la ROM pasadas a nativo una vez** (ya: `probe_dx/dy`,
-   `T8X`/`T16X`): palabras big-endian alineadas, no bytes de `rom00`.
-7. **Desenrollar bucles de vueltas fijas** (ya: los 7 temporizadores de
-   `sprite_run`) y `dbf` en asm.
-8. **Asm a mano solo en las 2-3 funciones de arriba del perfil, después del
-   C nativo**, con la misma interfaz que la función en C, que queda como
-   referencia. Se verifica con `m68kverify`/`abcheck` como cualquier cambio.
-   Candidatas: `f44d` (sondas) y el camino común de `camera_F6DB`.
-9. **No optimizar lo que se va a tirar:** `e45d` (OAM) se reemplaza en la
-   6b.4 por la elección directa del frame de sprite.
-10. **Una palabra en dirección impar cuelga el 68000** (Address Error; un
-    020 no se queja). Al pasar tablas de bytes a palabras: `even` /
-    `cnop 0,2` en asm y tipos alineados en C.
+- **L1. Ensamblador a mano** (el C queda de referencia, como en la 8.2):
+  - la rama hacia arriba de `f7f4`: −1 000 en los frames en que Mario sube;
+  - `sprite_run` + el despacho de `sprite_main`: −1 000-1 500 con varios
+    sprites vivos;
+  - `mario_E2BD`: −1 500-2 000 en todos los frames;
+  - `spr_obj_interact`/`spr_obj_vert`/`spr_spr_interact` y
+    `jumping_piranha`.
+- **L2. Descartes rápidos:** `spr_spr_interact` es O(n²): descartar por
+  |dx| antes de la caja completa. Lo mismo con el contacto con Mario
+  (`DefaultInteractR` en C). Casi siempre están lejos.
+- **L3. Estado nativo** de los campos calientes de Mario (8.2, paso 2):
+  ≤ 5-8 % estimado. Queda para el final: toca todo el C.
+- Verificar cada paso con `abcheck.py <base> --sprites` (semántica IGUAL) y
+  con `regress.py`, que corre los cruces de la RAM entera (`--cross`); el
+  vbcc de cloud compila mal cosas que gcc compila bien (P38, P62).
 
-### 9.3 El DMA le roba a la CPU (lo que Musashi no ve)
+Hecho cuando el peor frame con sprites da ≤ 40 % en cycle-exact
+(`logicbench -DWORST`) y en los escenarios de O2.
 
-- Con 6 planos en lowres, durante las 224 líneas de pantalla la CPU pierde
-  ciclos: antes del WIP, la lógica costaba ~24 % de media en Musashi y
-  ~34 % medida en la A500. En las ~88 líneas sin pantalla no hay fetch de
-  planos. Medido en `bench2.s`, durante la pantalla contra después de la
-  última línea visible:
-  - la lista del copper (CPU): 38 % contra 31 %;
-  - los bobs: 34-48 % contra 23-26 %;
-  - la columna, al revés: 6 % contra 9 %.
+### 9.4 Mario en sprites (`mspr_draw`, 7,3 %)
 
-  **Medir cada trabajo en las dos franjas** (el método de `bench2.s`) y
-  ordenar el frame en consecuencia; lo que no depende de la posición del
-  haz, en general, fuera de la pantalla.
-- **Pantalla de 256 px (D10):** 20 % menos de fetch de planos en cada
-  línea.
-- **Slow RAM no acelera** (P29): sirve para liberar chip RAM.
-- **`BLTPRI` solo mientras la CPU espera al blitter** (P2): si no, le quita
-  a la CPU los ciclos que le faltan.
+Medido en el replay (6313 frames): la pose dibujada (punteros de tiles
+`wm_0D85` + la OAM relativa) cambia en el **33,5 %** de los frames, y hay
+**987** combinaciones distintas.
 
-### 9.4 Blitter
+- **M1. No redibujar si la pose no cambió:** solo SPRxPOS/SPRxCTL. −66 %
+  de media. **No** baja el peor frame, que es un cambio de pose.
+- **M2. Precalcular todas las poses:** 987 × ~544 B ≈ 530 KB: no entra en
+  chip. Descartado.
+- **M3. Caché LRU de N poses** en chip (16 × 544 B ≈ 9 KB): ayuda a la
+  media (el ciclo de caminar repite 3 poses), no al peor frame.
+- **M4. Bajar el coste del dibujo en sí:** perfilar `mspr_draw` por
+  etiquetas (como `scrollprof.py --zones`) y atacar lo que salga: filas
+  vacías, entradas que se tapan entre sí, el camino del volteo. Objetivo:
+  ≤ 3 %.
+- **M5. Hacerlo fuera de la pantalla:** es trabajo de bus puro. Hacerlo en
+  las 88 líneas sin DMA de planos lo abarata ~1,3×.
 
-- **Pocos blits grandes:** cada blit cuesta ~42 µs de CPU además de los
-  datos (P31). Con planos entrelazados, los 3 planos de un bloque van en un
-  solo blit (ya).
-- **No esperar al blitter después de lanzarlo.** Una cola de blits que se
-  sirve desde la interrupción del blitter (`INTENA` BLIT) deja a la CPU
-  trabajando; `WaitBlit` solo antes de reprogramarlo.
-- **Registros constantes una sola vez** (máscaras `BLTAFWM`/`BLTALWM`,
-  módulos, `BLTCON`): en el bucle, solo punteros y `BLTSIZE`.
-- **Repartir entre frames lo que no es urgente** (`blit_steps`: la columna
-  en 4 pasos) para bajar el pico, que es lo que cuenta.
-- **Bobs:** máscara precalculada, restaurar solo el rectángulo sucio,
-  cookie-cut `A·B + ¬A·C → D` con una palabra extra para el desplazamiento.
+### 9.5 Sprites del nivel (9.2): baratos desde el diseño
 
-### 9.5 Copper y sprites
+- Frames **precalculados** por pose (Rex, Banzai, piraña, Koopa...) en chip,
+  listos para el DMA de sprites. La CPU solo escribe las palabras de
+  control y los punteros; nada de dibujar por CPU.
+- Reusar un canal en vertical sin copper: después de la última línea de un
+  objeto van las palabras de control del siguiente (0 MOVE).
+- Colores 17-31 recargados por el copper solo donde cambian (filas de
+  color precalculadas por pose, `copsim.py`).
+- Asignador de columnas con coste acotado: ≤ ~10 objetos en pantalla,
+  ordenados por Y una vez por frame (inserción: casi ordenados de un frame
+  al siguiente).
+- Bobs en PF1 solo en el caso raro de `d8demote` (1,8 % de los frames).
+- Medir con O1 desde el primer día. Objetivo ≤ 8 %.
 
-- **Un WAIT gasta una ranura como un MOVE** (P39): cadenas de MOVE sin WAIT
-  intermedios y, para temporizar, MOVE de relleno a un registro inocuo
-  (`$1FE`).
-- **Segmentos por línea encadenados** (`COP2LC` + `COPJMP2`) y dos listas.
-  La CPU reescribe solo las líneas que cambian (ya: `wake`/`vu`). Si toda
-  la lista está en un mismo banco de 64 KB, `COP2LCH` es fijo y cada salto
-  cuesta un MOVE menos.
-- **Precalcular offline todo lo que no depende de la cámara** (en
-  `mkscroll.py`): palabras del copper listas para copiar y x planificada.
-  Copiar bloques con `movem.l` (la lista del copper: 38 % con un bucle, 15 %
-  con `movem`).
-- **Reusar un canal de sprite en vertical sin copper:** en los datos del
-  sprite, después de la última línea de un objeto van las palabras de
-  control del siguiente, que empieza al menos una línea más abajo. No cuesta
-  ninguna MOVE; el copper solo recarga los colores 17-31 entre uno y otro.
-  Esto baja la carga que `copsim.py` cuenta para `SPRxPOS`.
-- **Colores de sprite solo donde cambian**: las filas de color de cada
-  objeto son fijas por pose, así que se precalcula qué línea recarga qué.
+### 9.6 Organización del frame y DMA
 
-### 9.6 Qué NO hacer
+- Hay **88 líneas sin DMA de planos** (el 28 % del frame). Ahí la CPU va a
+  velocidad completa: el trabajo de bus puro (copiar segmentos del copper,
+  `mspr_draw`) rinde más ahí. Medir cada trabajo en las dos franjas (método
+  de `bench2.s`) y ordenar el frame según eso.
+- El blitter trabaja en paralelo: columna nueva y bobs en una cola servida
+  por la interrupción del blitter. Nunca esperar a que termine un blit si
+  la CPU tiene otra cosa que hacer (P31). `BLTPRI` solo mientras la CPU
+  espera (P2).
+- Mover código a `$C00000` libera chip pero **no acelera** (P29).
+- Si D1 termina en "dibujar a 25 Hz": la lógica sigue a 50 y el scroll se
+  calcula cada 2 frames, pero con el doble de desplazamiento por paso. El
+  pico de `build_mid` no se divide por 2 automáticamente: medirlo con O1.
+
+### 9.7 Técnicas del 68000 y de vbcc (lo que ya sirvió)
+
+1. **Estado nativo, no `ram[]` byte a byte:** `R16()` son 2 lecturas + `lsl`
+   + `or` (~50 ciclos) contra 12 de un `move.w d16(a4),Dn`.
+2. **`int` es de 32 bits en vbcc:** los `u8` se promocionan con
+   `ext`/`and.l #$FF`. Intermedios en `u16`/`s16`; revisar
+   `work/cc/<f>.code.s` buscando `ext.l`, `and.l`, `mulu` y llamadas al
+   runtime.
+3. **Nada de `mulu`/`divu` en caliente** (38-140 ciclos): tablas o
+   desplazamientos.
+4. **Punteros que avanzan** (`(An)+`, 8 ciclos) en vez de `d8(An,Dn)` (14),
+   con P38 y P62 en mente.
+5. Lo caliente en variables locales (registros); las tablas de la ROM
+   pasadas a palabras nativas una vez; desenrollar los bucles de vueltas
+   fijas; `movem.l` para copiar bloques (la lista del copper: 38 % con un
+   bucle, 15 % con `movem`).
+6. **Asm a mano solo en lo que el perfil pone arriba**, con la misma
+   interfaz que el C, que queda de referencia y para los casos raros.
+7. Una palabra en dirección impar cuelga el 68000 (`even`, `cnop 0,2`).
+   Los desplazamientos de más de 32 KB van con `(An,Dn.l)` (P40). `tst` y
+   `eor` no aceptan `(pc)` ni memoria de origen (P73).
+
+### 9.8 Qué NO hacer
 
 - Cambiar la semántica para ganar ciclos: saltarse sprites, simplificar la
-  física o la cámara. Rompe el 1:1 y el verificador lo marca: está bien que
-  lo marque.
+  física o la cámara. Rompe el 1:1, y está bien que el verificador lo marque.
 - Tomar Musashi como coste real, o medir con la config rápida (P30).
-- Mover código a `$C00000` esperando velocidad (P29).
 - Optimizar sin perfil, o por la media en vez de por el peor frame.
+- Dar por buena una optimización del scroll probada en un solo sentido
+  (P72) o solo en `oracle_yi1` (P69).
