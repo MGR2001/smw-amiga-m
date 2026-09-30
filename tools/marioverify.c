@@ -737,7 +737,8 @@ static int run_sprloop(const char *sprpath, const char *mappath)
    Cuenta los frames exactos de cada numero de sprite (etapa 9.1). */
 static int game_ported(int n)
 {
-    return n == 0xAB || n == 0xB9 || n == 0x83 || n == 0xBD || n == 0x02 || n == 0x9F || n == 0x4F;
+    return n == 0xAB || n == 0xB9 || n == 0x83 || n == 0xBD || n == 0x02 || n == 0x9F || n == 0x4F
+        || n == 0x8E || n == 0xC7;
 }
 
 static const int scmp[] = { wm_SpriteStatus, wm_SpriteXLo, wm_SpriteXHi, wm_SpriteYLo,

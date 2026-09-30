@@ -1334,6 +1334,38 @@ static void jumping_piranha(u8 x)
     spr_unsup();                            /* (ExecutePtr fuera de la tabla) */
 }
 
+/* WarpBlocksMain -> CODE_02EADA (sprite_2-2.s), el $8E (bloques "warp
+   hole" invisibles): si Mario lo toca, lo deja quieto en su X + $0A. No
+   desaparece fuera de pantalla. */
+static void warp_blocks(u8 x)
+{
+    if (!mario_spr_interact(x))             /* Tweaker167A bit 7: el contacto es suyo */
+        return;
+    W8(wm_MarioSpeedX, 0);
+    W16(wm_MarioXPos, (u16)((SPR(wm_SpriteXLo, x) | SPR(wm_SpriteXHi, x) << 8) + 0x0A));
+}
+
+/* InvisMushroom (sprite_3-2.s), el $C7: invisible; si Mario lo toca, sale
+   una seta ($74, sin portar: D12) hacia donde no va Mario */
+static void invis_mushroom(u8 x)
+{
+    u16 y;
+    if (!get_draw_info(x))                  /* GetDrawInfoBnk3: lejos, nada */
+        return;
+    if (!mario_spr_interact(x))
+        return;
+    SETSPR(wm_SpriteNum, x, 0x74);
+    init_sprite_tables(x);
+    SETSPR(wm_SpriteDecTbl2, x, 0x20);
+    y = (u16)((SPR(wm_SpriteYLo, x) | SPR(wm_SpriteYHi, x) << 8) - 0x0F);
+    SETSPR(wm_SpriteYLo, x, (u8)y);
+    SETSPR(wm_SpriteYHi, x, y >> 8);
+    SETSPR(wm_SpriteDir, x, NEG(R8(wm_MarioSpeedX)) ? 1 : 0);  /* _PopupMushroom */
+    SETSPR(wm_SpriteSpeedY, x, 0xC0);
+    W8(wm_SoundCh3, 0x02);
+    mario_events |= MEV_SPRITE;
+}
+
 static void sprite_main(u8 x, u8 n);
 
 /* _HandleSprKilled (estado 2): cae muerto, fuera de pantalla desaparece.
@@ -1401,6 +1433,8 @@ static void sprite_main(u8 x, u8 n)
     if (n == 0x02) { shellless_koopa(x); return; }
     if (n == 0x9F) { banzai_bill(x); return; }
     if (n == 0x4F) { jumping_piranha(x); return; }
+    if (n == 0x8E) { warp_blocks(x); return; }
+    if (n == 0xC7) { invis_mushroom(x); return; }
     spr_unsup();
 }
 
@@ -1444,7 +1478,7 @@ void sprite_run(u8 x)
             SETSPR(wm_SpriteDir, x, SPR(wm_SpriteDir, x) + 1);
             return;
         }
-        if (n == 0xB9) {                    /* caja de mensaje: sin init propio */
+        if (n == 0xB9 || n == 0x8E || n == 0xC7) {  /* sin init propio (_Return0185C2) */
             SETSPR(wm_SpriteStatus, x, 0x08);
             return;
         }
