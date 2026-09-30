@@ -21,7 +21,7 @@ Solo mira la capa 1 (registros $182-$18E) en los pixeles donde se ve.
   python3 tools/scrollsim.py                    # todo el nivel, SPEED=4
   python3 tools/scrollsim.py --from 1780 --to 1840 --png work/sim.png
 """
-import argparse, os, sys
+import argparse, hashlib, os, struct, sys
 
 import numpy as np
 
@@ -92,6 +92,9 @@ def main():
     ap.add_argument("--png", help="imagen (esperado / simulado / fallos) del peor frame")
     ap.add_argument("--top", type=int, default=10)
     ap.add_argument("--data", default=os.path.join(P.WORK, "yi1_s.dat"))
+    ap.add_argument("--ret", action="store_true",
+                    help="ida (--from -> --to) y vuelta (-> --from): la imagen simulada de la "
+                         "capa 1 tiene que ser IDENTICA en cada s (6.2, P50)")
     a = ap.parse_args()
     global W, T0
     W = a.vis
@@ -101,19 +104,27 @@ def main():
     d = render_d.load(os.path.join(P.WORK, "yi1_d.dat"))
     idx = render_d.l1_index(d)
     ideal = [render_d.reg_colors(d["events"][Y0 + L], d["W"]) for L in range(LINES)]
-    code, lst = P.assemble(a.src, ["SPEED=%d" % a.speed, "STOPX=%d" % a.x1, "VIS=%d" % W] + a.D)
+    defs = ["SPEED=%d" % a.speed, "STOPX=%d" % a.x1, "VIS=%d" % W]
+    if a.ret:
+        defs = ["SPEED=%d" % a.speed, "S0=%d" % a.x0, "RETURN=%d" % a.x1, "STOPX=%d" % a.x0,
+                "VIS=%d" % W]
+    code, lst = P.assemble(a.src, defs + a.D)
     syms, local = P.listing(lst)
     V = {n: v for n, v in syms.items() if n.startswith("V_")}
     sc = P.Scroll(code, syms, local, open(a.data, "rb").read(), V)
     sc.init()
     res, prev, worst = [], None, None
+    back, fwd_img, same, diff, back_tot = False, {}, 0, [], 0
     while True:
         s, _ = sc.frame()
         if s == prev:
             break
+        if prev is not None and s < prev:
+            back = True
         prev = s
         if s < a.x0:
             continue
+        img = hashlib.sha1()
         lst_adr = sc.mem.r32(P.FAKE + 0x80)             # COP1LC: lo que se ve despues
         lines = run_list(sc.mem, lst_adr)
         bad = np.zeros((LINES, W), bool)
@@ -131,7 +142,17 @@ def main():
             want_c = want[i1, cols]
             m = (i1 > 0) & (got_c != want_c)
             bad[L] = m
+            img.update(struct.pack(">H", L) + (got_c * (i1 > 0)).astype(np.int32).tobytes())
         n = int(bad.sum())
+        if back:
+            if s in fwd_img:
+                if fwd_img[s] == img.digest():
+                    same += 1
+                else:
+                    diff.append(s)
+            back_tot += n
+            continue
+        fwd_img[s] = img.digest()
         res.append((s, n))
         if worst is None or n > worst[1]:
             worst = (s, n, bad.copy())
@@ -142,6 +163,10 @@ def main():
           % (tot, tot / len(res), sum(1 for _, n in res if n)))
     for s, n in sorted(res, key=lambda r: -r[1])[:a.top]:
         print("  s = %4d  %5d px" % (s, n))
+    if a.ret:
+        print("vuelta: px mal %d; imagen igual a la ida en %d de %d frames%s"
+              % (back_tot, same, same + len(diff),
+                 "" if not diff else "; DISTINTA en s = %s" % " ".join(map(str, diff[:20]))))
     if a.png and worst:
         from PIL import Image
         s, n, bad = worst
