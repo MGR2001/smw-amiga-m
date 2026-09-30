@@ -17,13 +17,13 @@
 
 1. Leer en este orden: §1 (handoff) → §2 (presupuesto) → la etapa que toca
    (§5) → §8 (scripts de comprobación) → `AGENTS.md` §2 (reglas), §7
-   (convenciones), §8 (pitfalls P1-P76) y §11 (definición de "hecho"). Si
+   (convenciones), §8 (pitfalls P1-P77) y §11 (definición de "hecho"). Si
    la etapa es de optimización, también §9.
 2. Trabajar **un paso por vez**. Cada paso dice dónde corre, qué hacer y
    cuándo está hecho. No se empieza el siguiente con el anterior en rojo.
 3. Al cerrar un paso: commit `Etapa N.x: <qué>` y actualizar §1.2. Si aparece
    una trampa nueva, se agrega como `Pnn` en `AGENTS.md` §8 (la próxima es
-   **P77**).
+   **P78**).
 4. Al cerrar la sesión: handoff con la plantilla de §7, que reemplaza a §1.
 5. Para repartir el trabajo entre subagentes (tarjetas por etapa, niveles,
    olas, mapa de conflictos y protocolo de integración): **`SUBAGENTES.md`**.
@@ -155,23 +155,29 @@ GDEFS=" " OUT=work/live sh tools/game_build.sh                # el de jugar
      ~45 %, scroll hasta 79 % a la ida y 95 % a la vuelta en Musashi, Mario
      7 %) el peor caso **pasa del 100 %**: preparar las opciones de §2 con
      números y preguntar.
-  2. **6.4:** terminar `tools/wip64/build_mid_incremental.s` (rebase en el
+  2. **La cámara vertical de YI1 (§10.2b, hallado al final de la sesión):**
+     el nivel sí scrollea en vertical y la Amiga no lo lee; Mario se corre
+     respecto del fondo cuando la cámara sube.
+  3. **6.4:** terminar `tools/wip64/build_mid_incremental.s` (rebase en el
      sitio, append y truncado por la derecha; clasificación "tarde" fija),
      medir **ida y vuelta** con `scrollprof.py` y verificar con
      `scrollsim.py --ret` (9282 px, ida = vuelta).
-  3. **9.1:** Chuck `$95` (x `$12A0`), caparazón rojo `$DB` (x `$D10`), cinta
+  4. **9.1:** Chuck `$95` (x `$12A0`), caparazón rojo `$DB` (x `$D10`), cinta
      de meta `$7B` (x `$12E0`), seta `$74` y el resto de D12; cada uno con su
      grabación de snesorc (un guion `.orc` que llegue hasta ahí).
-  4. **9.2:** dibujar los sprites del nivel (hoy hay Rex invisibles que
+  5. **9.2:** dibujar los sprites del nivel (hoy hay Rex invisibles que
      Mario pisa: parece un doble salto).
-  5. Sueltos, **sin comprobar**: en las 4 grabaciones de snesorc, el Koopa
+  6. Sueltos, **sin comprobar**: en las 4 grabaciones de snesorc, el Koopa
      deslizante `$BD` difiere 1 frame justo al empezar el nivel (frame
      1455, ranura 7, `$AA` = SpeedY: port 0, ROM 3); en `diagpipe`,
      `sprload` da 31/33 (la ROM mete la piraña `$4F` en la ranura que un Rex
      deja libre en el mismo frame; el port no).
 - Para retomar: `sh tools/setup_cloud.sh && python3 tools/regress.py`.
-- El resto del proyecto, en tarjetas para subagentes: `SUBAGENTES.md`
-  (olas 1-6; la ola 1 no depende de la compuerta D1).
+- Todo lo que falta, con cómo lo haría: §10. Otro nivel, partidas
+  guardadas, pantalla de carga: §11. En tarjetas para subagentes:
+  `SUBAGENTES.md` (olas 1-6; la ola 1 no depende de la compuerta D1).
+- Decisiones abiertas **[usuario]**: D1 (50 Hz, con los números de §10.1),
+  D15 (velocidad, §10.12) y D16 (zona de la tubería, §10.10).
 
 ---
 
@@ -219,6 +225,8 @@ equilibrio entre 1:1 y coste. Solo queda abierta la compuerta D1.
 | ID | Decisión | Qué se hace | Consecuencias | Etapa |
 |---|---|---|---|---|
 | D1 | 50 Hz o no | **abierta**: compuerta de §2 | se decide con el peor frame del juego integrado | después de la 6b |
+| **D15** | Velocidad: el ROM (U) es NTSC y la Amiga va a 50 Hz | **abierta [usuario]**: recomendación, aceptar el 83 % de velocidad como la SNES PAL (§10.12) | con (b), +20 % de CPU de lógica | — |
+| **D16** | ¿La zona de la tubería (`obj-1.lv`) entra en el alcance? | **abierta [usuario]**: recomendación, sí (criterio 1:1; §10.10) | conversión de una segunda zona, tuberías y transición | 12 |
 | **D5** | Música | **secuenciador propio** que lee las secuencias N-SPC de SMW convertidas offline a un formato compacto de eventos (no MOD) | Conserva glissandos, vibrato, envolventes (ADSR aproximado por tick) y el tempo del SPC700 (tick por timer de CIA). **Sin mezcla por CPU**: cada voz va directa a un canal de Paula, 3 de música + 1 de efectos, con prioridad por tema; el eco se omite. Límites: ≤ 64 KB de muestras en chip RAM y **≤ 3 % de CPU** medido | 11 |
 | **D10** | Ancho de pantalla | **256 px**, como la SNES | DIW centrada; el fetch empieza más tarde, así que vuelve el sprite 7 (4 columnas adosadas); 20 % menos de DMA de planos; la cámara y la aparición de enemigos quedan 1:1 | 6.1 |
 | **D11** | HUD | **superpuesto (overlay)**, como la SNES | En las líneas del HUD el copper apunta PF1 a un bitmap fijo del HUD y PF2 sigue con su paralaje. Si en esas líneas aparece capa 1 del nivel, antes de renunciar al overlay se busca otra variante que lo conserve (10.1) y se consulta | 10 |
@@ -542,8 +550,9 @@ con el esperado en al menos 5 frames repartidos por el nivel.
   SKIP 129, RUNSYNC 4). La Amiga hace exactamente eso.
 - `tools/gamecheck.py`: el binario del juego en Unicorn, frame a frame:
   **0 diferencias** con el oráculo en los 6177 RUN. La cámara recorre 0-2492
-  y vuelve (el vertical queda en 192 toda la partida; el header de YI1 no
-  tiene scroll vertical).
+  y vuelve (el vertical queda en 192 toda la partida). **Corregido el
+  2026-09-30:** el header de YI1 **sí** tiene scroll vertical
+  (`wm_VertScrollHead` = 2); `lvparse.py` leía mal el byte 4 (P77, §10.2b).
 - Capturas (`tools/shots63.ps1`, `-DSTOPF`): frames 6000 / 7000 / 8000 /
   9000 / 10000 / 11000 → fallos que no explica un vecino **0 / 0 / 0 / 0 /
   0 / 6** (el 11000, con la cámara volviendo).
@@ -1003,7 +1012,10 @@ cerrado.
 | Índices de 16 bits con signo | escrituras 64 KB antes a partir de 32 KB | `(An,Dn.l)` con `moveq #0` antes (P40) |
 | El modelo de tiempos del copper | cargas corridas unos píxeles | calibrar con `copcal` en cada pantalla nueva (0.4, 6.1); los WAIT cuestan ranura (P39) |
 | El oráculo no cubre un caso | un sprite o una pendiente sin frames que verificar | sesión de grabación única (8.1) |
-| Chip RAM | ~340 KB antes de sprites y audio | D13: lo que solo lee la CPU, a `$C00000` |
+| Chip RAM | hoy ≈ 395 KB con todo `yi1_s.dat` en chip; + audio (64 KB) + sprites (~30 KB) no entra | D13: las 7 tablas de CPU de `yi1_s.dat` (129 KB) a `$C00000` (§10.7) |
+| La cámara vertical de YI1 | Mario se corre respecto del fondo cuando la cámara sube (`Bg1VOfs` < `$C0`) | §10.2b: segmentos por línea del nivel y la v de los WAIT |
+| Muestras de audio | todas las BRR son 92 KB ≈ 164 KB de PCM | solo las del tema y los efectos; bajar la frecuencia donde haga falta (§10.9) |
+| Lo que no cubre ningún oráculo | un camino del ROM que nadie recorrió (P69: la cámara vertical) | grabarlo con snesorc antes de darlo por verificado |
 
 ---
 
@@ -1351,3 +1363,566 @@ Medido en el replay (6313 frames): la pose dibujada (punteros de tiles
 - Optimizar sin perfil, o por la media en vez de por el peor frame.
 - Dar por buena una optimización del scroll probada en un solo sentido
   (P72) o solo en `oracle_yi1` (P69).
+
+---
+
+## 10. Todo lo que falta, y cómo lo haría (2026-09-30)
+
+La lista completa hasta el ADF final, en el orden en que lo haría. Para
+cada punto: **qué falta**, **cómo lo haría** (con las alternativas y por qué
+elijo una), los **riesgos**, **cómo se verifica** y las **tarjetas** de
+`SUBAGENTES.md` que lo parten. Los detalles de optimización están en §9;
+los pasos originales de cada etapa, en §5.
+
+### 10.1 La compuerta D1: medir el juego entero (6b.6)
+
+- **Falta:** nadie midió el peor frame del juego integrado. Solo hay
+  medidas por partes, y sumadas pasan del 130 % (§9.0).
+- **Cómo lo haría:** `game.s -DBENCH` con el timer A de CIA-B en modo
+  continuo (709 379 Hz: ~14 190 ticks por frame, cabe en 16 bits), leído en
+  las fronteras de cada parte. Se guarda el máximo de cada parte con su
+  frame y su s, y un contador de **frames que se pasan** (el VBL siguiente
+  ya llegó). El resultado se pinta al final como en `bench.s`. Se corre
+  sobre el replay y sobre escenarios de estrés grabados con snesorc (la
+  cámara volviendo sobre las zonas caras, Banzai + 4 Rex, las 2 pirañas).
+- **Mi recomendación para D1**, a confirmar con los números: **50 Hz**. Las
+  medias entran de sobra (scroll ~15 %, lógica ~25 %, Mario 7 %). Los picos
+  son estructurales: son eventos de `build_mid` que se pueden repartir entre
+  frames (§9.2 S5) y unas pocas rutinas de la lógica. Dibujar a 25 Hz queda
+  de reserva si la 6.4 no baja del 40 %.
+- **Además:** qué pasa cuando un frame se pasa igual. Hoy se pierde un VBL
+  y se ve un tirón. Con el EDF de S5, lo no urgente se pospone solo; lo
+  urgente (lógica, cargas que caducan) siempre entra primero.
+- **Verificación:** con `-DBENCH`, el binario sin el banco sale igual byte a
+  byte; los máximos caen en frames que se pueden explicar con el perfil.
+- **Tarjetas:** O1, O3, R6, O4.
+
+### 10.2 El scroll a ≤ 25 % (6.4)
+
+- **Falta:** todo. Ida 78,8 % y vuelta ~125 % (estimado).
+- **Cómo lo haría** (detalle en §9.2), en este orden:
+  1. las cargas "tarde" de los postes de la meta, que hoy obligan a
+     reescribir 24 líneas en cada frame;
+  2. recorrer LNS por grupos de 16 líneas;
+  3. edición en el sitio (rebase de la h, append y truncado por la
+     derecha);
+  4. EDF con presupuesto;
+  5. segmentos compartidos entre las dos listas, si el copper tiene
+     ranuras en el borrado;
+  6. un plan por sentido.
+
+  Del 1 al 4 se puede hacer sin tocar el formato del copper.
+- **Riesgos:** romper la ida = vuelta (P71). Por eso `scrollsim.py --ret`
+  va en cada paso. El modelo del copper después de `DDFSTOP` (P51) todavía
+  no está medido: medirlo antes del paso 5.
+- **Verificación:** la puerta común de las tarjetas S.
+- **Tarjetas:** S1a, S2, S4, S5, S3, S6, S7, E1.
+
+### 10.2b La cámara vertical en YI1 — **nuevo, hallado el 2026-09-30**
+
+- **El hecho:** YI1 **sí** tiene scroll vertical. Su cabecera trae
+  `wm_VertScrollHead` = 2 ("solo en algunos casos", `CODE_00F82A`), que es
+  lo que hay en `$1412` en todos los frames del nivel. `lvparse.py` leía mal
+  el byte 4 y decía 0 (P77, arreglado), y `oracle_yi1` nunca movió la
+  cámara. En las grabaciones de snesorc, `Bg1VOfs` baja de `$C0` a `$BC`
+  durante 36 frames (`normal`) y 51 (`diagpipe`).
+- **Qué pasa hoy en la Amiga:** `game.s` y `scroll.s` **no leen**
+  `Bg1VOfs`; la ventana está fija en las líneas 192-415. Cuando la cámara
+  sube, Mario (dibujado con la posición de pantalla que calcula el ROM) se
+  corre respecto del fondo tantos píxeles como suba la cámara: se ve
+  hundirse o flotar.
+- **Cuánto puede subir:** sin medir. Solo se vio hasta 4 px. Un guion de
+  estrés de snesorc (saltos a toda carrera desde lo alto de las tuberías y
+  de los Rex) da el mínimo real de `Bg1VOfs`. Hacia abajo el límite es
+  `$C0` (el `limit` de `f7f4`).
+- **Cómo lo haría (barato, porque el movimiento es chico y raro):**
+  - **Datos:** extender la ventana de `mkscroll.py` K líneas hacia arriba
+    (las del mínimo medido). Cada línea de más cuesta ~320 B de `L2B` y lo
+    proporcional de las tablas de CPU.
+  - **PF1 y PF2:** sumar (cam_y − 192) filas a los punteros de planos; PF2
+    con la mitad (`Bg2VOfs = Bg1VOfs >> 1`, el paralaje vertical de
+    YI1). Es gratis.
+  - **El copper:** que los segmentos queden **indexados por línea del
+    nivel**, no de pantalla. El contenido (las cargas de color) depende de
+    la línea del nivel y de s, no de cam_y; lo único que depende de cam_y
+    es la **v de los WAIT** de cada segmento. Al cambiar cam_y se parchean
+    esas v (224 × 2 palabras, del orden de 3 000 ciclos, **estimado**) y se
+    mueven el principio y el final de la cadena. No hay que reescribir
+    ninguna carga.
+  - Es el mismo paso que prepara el scroll vertical de otros niveles
+    (11.3).
+- **Verificación:** `scroll_check.py` con cam_y ≠ 192, y capturas del replay
+  de `oracle_normal` en los frames 2672-2707.
+- **Tarjetas:** R6 (`stress_vert.orc`, el guion de estrés vertical) y S8.
+
+### 10.3 La lógica a ≤ 40 % (8.2, segunda ronda)
+
+- **Falta:** −6 000 ciclos en el peor frame (45 896 → ~40 000 en Musashi).
+- **Cómo lo haría:** ensamblador en lo que marca el perfil:
+  - la rama hacia arriba de `f7f4`, que hoy cae al C;
+  - `sprite_run` entero;
+  - `mario_E2BD`;
+  - las interacciones.
+
+  Más descartes rápidos por |dx| en las colisiones sprite-sprite y
+  sprite-Mario. El estado nativo de Mario (8.2 paso 2) solo si con eso no
+  alcanza: toca todo el C y el beneficio estimado es ≤ 5-8 %.
+- **Riesgos:** el vbcc de cloud compila mal cosas que gcc compila bien (P38,
+  P62). Los cruces de RAM entera de `regress.py` y `gamecheck.py --spr` son
+  obligatorios.
+- **Tarjetas:** L1a-L1d, L2, L3.
+
+### 10.4 Las pendientes (8c)
+
+- **Falta:** la colina grande de x = `$AE0` (pendiente hacia el otro lado,
+  con 5 Rex encima).
+- **Cómo lo haría:** un guion de snesorc (a toda carrera en los dos
+  sentidos, parado, deslizándose y saltando); `marioverify full` clasifica
+  los fallos por causa y los de pendiente se arreglan en `mcoll.c`
+  transcribiendo la rutina de la pendiente que falte. Las colinas 1-4 ya dan
+  2154/2154.
+- **Tarjetas:** R1 (y un M para lo que falle).
+
+### 10.5 Los sprites que faltan: lógica (9.1)
+
+- **Falta:**
+  - Clappin' Chuck `$95`;
+  - caparazones: el rojo `$DB`, y el Koopa `$02` con caparazón;
+  - la cinta de meta `$7B`;
+  - lo que sale de los bloques: seta, flor, estrella, 1-UP y enredadera
+    (el giratorio "estrella 2/1-UP/enredadera" lo decide el ROM según el
+    estado); la luna 3-UP; el champiñón invisible dando la vida;
+  - las **bolas de fuego**, que son sprites extendidos (`ex_sprite.s`);
+  - las monedas que salen de los bloques y los sprites de puntos;
+  - las monedas de Yoshi, contadas (la 5.ª da 1-UP);
+  - la caja de reserva;
+  - las animaciones de Mario por `$71`: crecer, encoger, morir, la
+    estrella.
+
+  Además, dos diferencias chicas: el Koopa `$BD` en el primer frame del
+  nivel y un nacimiento de la piraña en `diagpipe`.
+- **Cómo lo haría:**
+  - **Cada sprite en su fichero** (`player/spr_*.c`, tarjeta I1), así se
+    trabaja en paralelo.
+  - Transcripción instrucción por instrucción, como el Rex.
+  - Para cada objeto, primero la grabación con snesorc y después el port
+    contra esa grabación.
+  - Los sprites extendidos y las animaciones de `$71` son motores propios
+    del ROM (`ex_sprite.s`, la tabla de `$71` en `player.s`): se portan
+    enteros, no solo el caso que se ve, porque la flor, la estrella y la
+    muerte los usan.
+  - El orden: lo que hoy **congela el juego en vivo** primero (el modo
+    diagnóstico dice cuál aparece más), después lo que falta para
+    terminar el nivel (la meta).
+- **Riesgos:** el coste. Cada sprite activo suma ~1 000-2 500 ciclos en el
+  peor frame (el perfil de §9.3). Medir con O1 a medida que entran.
+- **Verificación:** `marioverify <grabación> game` con
+  `sprite XX: seguidos N exactos N` y 0 resincronizaciones.
+- **Tarjetas:** R2-R5, I1, P1-P10.
+
+### 10.6 Los sprites que faltan: dibujo (9.2)
+
+- **Falta:** todo. Hoy los enemigos se simulan pero **no se ven**; Mario
+  pisa Rex invisibles, y eso puede ser el "doble salto" que vio el usuario.
+- **Cómo lo haría:**
+  - **Frames precalculados** por pose en chip, en el formato del DMA de
+    sprites (pares adosados de 15 colores). Son pocos: el Rex tiene ~8
+    frames de 16×32 contando el volteo, ~270 B cada uno. En total, menos de
+    30 KB.
+  - **Columnas:** hay 4 adosadas. Mario usa 1 o 2 según el ancho de la
+    pose, y el resto va a los enemigos.
+  - **Reuso vertical:** un canal sirve a varios objetos si entre uno y otro
+    queda al menos una línea libre. Dos formas: las palabras de control del
+    siguiente en el mismo flujo, que obliga a copiar los datos; o un
+    `SPRxPT` nuevo por copper en la línea libre, que no copia nada. Elijo
+    la segunda; la copia queda para cuando el copper no tenga ranura.
+  - **Colores:** los pares adosados usan todos COLOR17-31, así que Mario y
+    un enemigo en la misma línea comparten la paleta. Medido: la peor unión
+    son 11 colores (≤ 15). El copper recarga por línea solo lo que cambia
+    (`copsim.py` es la referencia).
+  - **Bobs:** cuando no alcanzan las columnas, casi siempre el Banzai
+    Bill (64×64) va a PF1 como bob (`d8demote.py`: 1,8 % de los frames
+    quedan con algún color aproximado). PF1 tiene **un solo buffer**
+    (circular): el bob se borra y se dibuja **detrás del haz** (cuando el
+    haz ya pasó esas líneas) o se paga un segundo buffer de PF1 (+59 KB de
+    chip). Lo decide el diseño G2, con la medida.
+- **Riesgos:** el ancho de banda del copper en las líneas con muchas cargas
+  de la capa 1 y a la vez colores de sprites (las 1916 cargas que no entran
+  de `copsim.py` son todas de la capa 1); el orden de prioridad
+  sprite/playfield (`BPLCON2`).
+- **Verificación:** `sprcop_verify.py` contra `copsim.py` y capturas del
+  replay con los enemigos, contra la OAM grabada.
+- **Tarjetas:** G1-G7.
+
+### 10.7 Carga y memoria (6b.1)
+
+- **Falta:** el loader definitivo, el enlazado absoluto (vlink), la
+  compresión y un mapa de memoria que alcance para todo.
+- **La cuenta de la chip** (hoy ≈ 395 KB de 512):
+  - `yi1_s.dat` son 223 600 B y hoy van **enteros a chip**. De eso, el
+    chipset solo lee `BLK` (23 424, el blitter) y `L2B` (71 232, el DMA de
+    planos). `MAP`, `INI`, `CHG`, `L2P`, `MLX`, `MLD` y `LNS` (129 000 B)
+    los lee solo la CPU.
+  - Moverlos a `$C00000` (D13) deja la chip en **≈ 266 KB**, con sitio
+    para el audio (≤ 64 KB), los gráficos de sprites (< 30 KB), el HUD y la
+    zona de la tubería (10.10).
+  - **Sin esto no entra todo**: 395 + 64 + 30 ya pasa de 490 KB.
+- **Cómo lo haría:**
+  1. partir `yi1_s.dat` en una parte de chip y otra de CPU (`mkscroll.py`
+     ya sabe dónde empieza cada sección);
+  2. `memmap.py` que compruebe el mapa desde el listado;
+  3. vlink con direcciones fijas: se van P36/P52 y los `GETBASE`;
+  4. compresión LZ solo si el tiempo de carga lo pide. El ADF va por el
+     46 % y leer 412 KB con trackdisk tarda del orden de 15-20 s
+     (**estimado**; medirlo).
+
+  Todo se carga con `trackdisk` mientras el SO vive (D13); después de tomar
+  la máquina no hay que leer del disco.
+- **Riesgos:** que el binario enlazado en absoluto rompa las herramientas
+  que lo cargan en `BASE` (`m68kverify`, `gamecheck`, `gamesim`, `abcheck`):
+  tarjeta E3.
+- **Tarjetas:** C1-C5, E3.
+
+### 10.8 HUD, caja de mensajes y pausa (10)
+
+- **Falta:** la barra de estado, **las 2 cajas de mensaje** del nivel (la
+  lógica del sprite `$B9` está, pero el texto no se muestra) y la pausa.
+- **Cómo lo haría:**
+  - **Barra (D11, overlay).** En sus líneas, el copper apunta PF1 a un
+    bitmap fijo con retardo 0 y carga los 7 colores del HUD. PF2 sigue con
+    su paralaje. Es el mismo mecanismo de recarga por línea que ya existe.
+    Primero, medir si la capa 1 aparece alguna vez en esas líneas (H1):
+    con la cámara en Y = 192 es casi todo cielo. Los dígitos se blitean
+    solo cuando cambian: el tiempo cambia cada ~40 frames y el resto casi
+    nunca.
+  - **Cajas de mensaje.** En YI1 son solo 2 textos, que están en
+    `strings/level_messages.a`. Los **renderizaría offline** a dos bitmaps
+    con la fuente `gb-1`. En la Amiga, mostrar uno es cambiar punteros y
+    colores en el copper en las líneas de la ventana, con el juego
+    congelado como en la SNES. La animación de apertura se hace creciendo
+    esas líneas frame a frame (`dialog.s` dice cuántas).
+  - **Pausa.** Start congela la lógica (la rutina del ROM) y baja el
+    volumen de la música.
+- **Verificación:** `marioverify hud` contra los contadores grabados (R7);
+  capturas de la barra y de la caja contra la referencia.
+- **Tarjetas:** H1-H5, R7 (y una H6 para las cajas de mensaje, que se
+  agrega cuando esté H3).
+
+### 10.9 Audio (11)
+
+- **Falta:** todo.
+- **Números:**
+  - todas las muestras BRR del juego son 92 KB (`sound/samples`), unos
+    164 KB en PCM de 8 bits: no entran en 64 KB. Hay que quedarse con las
+    del tema del nivel y los efectos, y bajar la frecuencia de muestreo de
+    alguna si hace falta;
+  - música: el tema del nivel está en `sound/music1`; las secuencias son de
+    N-SPC.
+- **Cómo lo haría** (el cambio más grande respecto de la idea original de
+  D5): **no escribir un intérprete de N-SPC**, sino **capturar las
+  escrituras al DSP** con snesorc (el SPC700 emulado de snesrev), tick a
+  tick, mientras suena el tema. Por voz:
+  - la fuente de la muestra (SRCN), la altura (P), el volumen y la
+    envolvente (ADSR/GAIN), y los KON/KOFF;
+  - la altura se pasa a periodo de Paula y la envolvente a una tabla de
+    volumen por tick;
+  - las 8 voces se reparten en 3 canales por prioridad (melodía, bajo,
+    percusión), robando la voz cuando otra calla;
+  - se captura un bucle del tema;
+  - los efectos igual: se dispara cada uno solo, escribiendo en los
+    puertos de sonido (`$1DF9-$1DFC`), y se graba lo que hace el DSP.
+
+  El 68000 solo recorre flujos de eventos por tick (timer de CIA): es
+  casi nada de CPU, y exacto en tiempo y en altura. Lo que se pierde (eco,
+  filtros, modulación entre voces) D5 ya lo daba por perdido.
+- **Riesgos:** voces que no caben en 3 canales en los momentos densos del
+  tema (medir en la captura cuántas suenan a la vez); el periodo mínimo de
+  Paula (124) para las notas agudas de muestras con mucha frecuencia de
+  muestreo.
+- **Verificación:** render offline de los eventos contra el WAV de snesorc
+  (R8): notas a ±1 tick y ±5 cents; en FS-UAE, a oído.
+- **Tarjetas:** R8, A1-A7 (A2 y A3 cambian: "capturar el DSP" en vez de
+  "leer N-SPC").
+
+### 10.10 La zona de la tubería (`obj-1.lv`) — **nuevo**
+
+- **Qué es:** el nivel tiene una segunda zona: `obj-1.lv`, 2 pantallas,
+  tileset 3, música 1, con nubes, monedas y tuberías. Se llega por una
+  tubería: en `oracle_yi1`, Mario entra en una en el frame 11425 (P68). El
+  nivel tiene una salida de pantalla (pantalla 18, destino `$CB`).
+- **Falta:** todo: la conversión de la zona, entrar y salir por tubería,
+  la transición y el regreso.
+- **Cómo lo haría:**
+  - generalizar la cadena del nivel (`mklvl` → `mkd8in` → `mkleveld` →
+    `mkscroll`) para que reciba el nivel como parámetro, y generar
+    `yi1b_s.dat`. Son 2 pantallas: poca memoria;
+  - en la Amiga, la transición es un fundido, cambiar los punteros del
+    scroll (otra `yi1_s`), la paleta y la cámara, y seguir;
+  - la lógica: las animaciones de tubería de `$71` y la carga de la
+    subzona (cabecera, sprites si los hay, posición de entrada) del ROM;
+  - grabarlo con snesorc (el camino de `oracle_yi1` hasta la tubería).
+- **Decisión [usuario] (D16):** entra en el alcance si "Yoshi's Island 1"
+  quiere decir el nivel entero (criterio 1:1: sí). Si no, la tubería se
+  queda cerrada.
+- **Tarjetas:** a crear cuando se decida (conversión M, transición M,
+  lógica de tubería M, grabación C).
+
+### 10.11 Pulido y final del nivel (12)
+
+- **Falta:**
+  - la muerte con su animación, y reaparecer (en el punto medio si se
+    pasó);
+  - el **punto medio**: el objeto `Midway/Goal point` + `Midway point
+    rope` del nivel; al tocarlo, marca y Mario grande;
+  - la **meta**: la cinta, "course clear", la cuenta de puntos
+    (`lv_end_seq.s`) y el fundido;
+  - el tiempo agotado;
+  - los fundidos de entrada y salida;
+  - Mario detrás del poste de la meta.
+- **Cómo lo haría:**
+  - **Fundidos:** el OCS no tiene brillo global, así que hay que
+    reescribir todos los colores. Durante un fundido la lógica está parada
+    y sobra CPU: se regeneran los MOVE de color de las dos listas con una
+    tabla de 16 pasos por componente.
+  - **Mario detrás del poste:** `BPLCON2` por línea con el copper (la
+    prioridad es por playfield, no por píxel: en esas líneas Mario queda
+    detrás de toda la capa 1, que en la meta es casi solo el poste).
+  - **Muerte, punto medio y meta:** son rutinas del ROM que se transcriben
+    contra grabaciones de snesorc, como todo lo demás.
+- **Tarjetas:** Z1-Z6, R4, R5.
+
+### 10.12 La velocidad: 50 Hz contra 60 — **decisión nueva (D15) [usuario]**
+
+- **El hecho:** el port corre **un frame de lógica del ROM (U), que es
+  NTSC, por cada frame PAL**. El juego va a 50/60 = **83 % de la velocidad
+  de la SNES americana**, igual que les pasaba a los juegos PAL de SNES
+  que no se ajustaban. La música no cambia de tempo, porque el tick sale
+  de un timer de CIA (D5).
+- **Opciones:**
+  - (a) aceptarlo, como la SNES PAL; es lo que hay hoy y no cuesta nada;
+  - (b) correr 6 frames de lógica cada 5 de pantalla: +20 % de CPU de
+    lógica, que hoy no hay;
+  - (c) ajustar la física: rompe el 1:1 con el oráculo.
+- **Mi recomendación:** (a), y dejarlo escrito.
+
+### 10.13 Hardware real y pruebas finales
+
+- **Falta:** que el juego corra alguna vez en una A500 de verdad.
+- **Riesgos, ordenados:**
+  - el handshake del teclado (medido en WinUAE, no en un 8520 real);
+  - la temporización del copper (calibrada en WinUAE: WinUAE cycle-exact es
+    muy fiel, pero conviene una captura real de `copcal`);
+  - la detección de la A501 (P8);
+  - la lectura del disco en KS 1.2/1.3.
+- **Cómo lo haría:** un ADF de diagnóstico con `copcal`, el teclado
+  mostrando los códigos y `logicbench`, para que el usuario le saque una
+  foto a la pantalla. El modo diagnóstico del juego (P58) sirve también
+  para los fallos en el hardware real: una foto de la página 2 alcanza
+  para reproducirlo.
+- **Tarjetas:** U1-U4, Z7.
+
+### 10.14 Verificación continua
+
+- **Falta:**
+  - el replay completo **hasta la meta** como prueba de `regress.py`: hoy
+    `oracle_yi1` se corta antes;
+  - una grabación de snesorc que cubra todo el nivel de punta a punta;
+  - las métricas del frame entero (O3).
+- **Idea, sin decidir:** correr `setup_cloud.sh` + `regress.py` en GitHub
+  Actions en cada push. La ROM se arma desde el fuente público y no se
+  publica nada derivado de ella, pero se arma en máquinas de GitHub.
+  **[usuario]**: consultar antes, por R9.
+- **Tarjetas:** Z8, O3.
+
+### 10.15 Orden global
+
+1. **Ola 1 (ya, sin esperar a D1):** 10.1 (medir), las grabaciones (R0-R6),
+   las cargas "tarde" y LNS (S1a+S2), `f7f4` en asm (L1a), un fichero por
+   sprite (I1).
+2. **Decisiones [usuario]:** D1 (con los números de 10.1), D15 (velocidad)
+   y D16 (zona de la tubería).
+3. **Ola 2-3:** el resto de 10.2, **10.2b** (la cámara vertical de YI1)
+   y 10.3 hasta que el peor frame entre; la 9.1 que congela el juego en
+   vivo; el diseño de la 9.2 y del audio.
+4. **Ola 4-5:** dibujo de sprites, carga y memoria (antes de que el audio
+   pida la chip), HUD, audio.
+5. **Ola 6:** pulido, meta, zona de la tubería si entra, replay hasta la
+   meta.
+6. **Final:** hardware real y el ADF de entrega.
+
+Cómo repartirlo entre subagentes (niveles, tarjetas, protocolo):
+`SUBAGENTES.md`.
+
+---
+
+## 11. Más allá de YI1: otro nivel y la lógica extra del juego
+
+Esto **no** está en el alcance de hoy (`AGENTS.md` §1: un nivel). Queda
+escrito para cuando YI1 esté terminado, y para no cerrar puertas mientras
+tanto: las decisiones de las etapas 6b.1, 9.2 y 11 tienen que dejar sitio
+para esto.
+
+### 11.1 Qué es de YI1 y qué es genérico
+
+| pieza | hoy | para otro nivel |
+|---|---|---|
+| handlers de objetos (capa 1) | los que usa YI1, 1:1 | `lvparse.py --dump` del nivel nuevo: transcribir los que falten (mismo método, P16-P27) |
+| tileset, Map16, paletas | tileset 7, `set_0`, `MAP16AppTable` | genérico en `mklvl.py`/`map16.py`/`palette.py`, pero **probado solo con YI1** |
+| capa 2 | `Layer2Mountains`, paralaje a media velocidad | `mkbg.py` tiene que leer el fondo y el ajuste de scroll del nivel (`DATA_05F000`) |
+| scroll vertical | ventana fija, líneas 192-415; YI1 lo necesita poco (10.2b) | `world_1/3` sigue a Mario todo el tiempo (`wm_VertScrollHead` = 1). Es el trabajo más grande (11.3) |
+| colores (formato (d)) | 7 registros por línea de PF1 + cargas a mitad de línea | por nivel: medir primero con `dpfsplit.py` (derrames, cargas por línea) |
+| sprites | los 11 tipos de YI1 | cada tipo nuevo se porta y se graba (9.1). Algunos son motores enteros: **Yoshi**, plataformas, agua |
+| Mario | chico, grande, fuego | la **capa** (pluma) es un motor aparte (`MARIO_UNSUP_CAPE`); nadar (`WATER`), trepar (`CLIMB`) |
+| herramientas | nombres y constantes fijos: `yi1_*.dat`, `LEVEL = "3340088027"` en `mkmario.py`, 20 pantallas, la ventana Y | un **descriptor de nivel** que lean todas (11.2) |
+
+### 11.2 El proceso, paso a paso
+
+0. **Elegir el nivel** con una tabla de viabilidad. De cada nivel, con
+   `lvparse.py` y un recuento de `spr.lv`: pantallas, modo, tileset, scroll
+   vertical, capa 2, sprites nuevos y si aparecen Yoshi o la capa. Hoy, en
+   el mundo 1:
+
+   | nivel (carpeta) | pantallas | modo | tileset | scroll V (`wm_VertScrollHead`) | sprites en `spr.lv` | comentario |
+   |---|---|---|---|---|---|---|
+   | `world_1/1` (YI1) | 20 + 2 | 0 | 7 | 2 (en algunos casos) | 11 tipos | el de hoy |
+   | `yellow_switch` | 3 + 3 | 0 | 4 | 0 (no hay) | `$3E` ×1 | el más chico con juego: el interruptor del palacio (`MARIO_UNSUP_TILE`) |
+   | `world_1/2` | 20 + 2 | 0 | 0 | 2 (como YI1) | `$00`, `$01`, `$05`×8, `$3E`, `$4D`×2, `$4E`×3, `$4F`, `$7B`, `$91`×2, `$B9`×2, `$DA`, `$DB`×2 | Koopas y caparazones (reusa P4), otro tileset; confirmar si sale Yoshi de un bloque |
+   | `world_1/3` | 21 + 2 | 0 | 0 | **1 (sigue a Mario)** | `$05`×2, `$09`, `$0B`×4, `$55`×2, `$57`×2, `$59`×3, `$5A`×5, `$5F`×8, `$7B`, `$B9`×2 | scroll vertical de verdad y muchos sprites de plataforma |
+   | `world_1/4` | 11 + 2 + 4 | 0 | 8 | 0 (la subzona de 4 pantallas: 2) | `$05`×3, `$15`×2, `$18`, `$3E`, `$47`×3, `$5D`×13, `$A4`×9, `$DB` | 13 + 9 sprites de dos tipos nuevos: ver qué son |
+   | `castle_1` | 8 + 4 + 1 | 0 / 0 / 11 | 1 / 1 / 0 | 0 / 3 / 0 | 7 tipos + jefe | modo 11 y un jefe: al final |
+
+   Los nombres de los sprites están en la tabla de punteros de
+   `sprite_1-main.s`; la carpeta no es el número de nivel, así que hay que
+   confirmar cuál es cuál con el translevel.
+   Los valores salen de `lvparse.py` **después** de arreglar la lectura del
+   byte 4 (P77).
+   **Recomendación:** después de YI1, `world_1/2` (reusa casi todo: el
+   mismo modo de scroll vertical que YI1, que ya estará hecho por 10.2b, y
+   Koopas) o `yellow_switch` (chico, para probar la generalización barata).
+1. **Generalizar las herramientas (una sola vez).** Un descriptor por nivel
+   (`levels/<nombre>.json`: rutas de `obj*.lv`/`spr.lv`, cabecera, ventana
+   de cámara, nombres de salida) que lean `mklvl`, `mkbg`, `mkd8in`,
+   `mkleveld`, `mkscroll`, `mkmapbin`, `mkmario`, `smwgen` y los
+   verificadores. Buscar con `grep` las constantes de YI1 (`yi1_`, `105`,
+   `3340088027`, `192`, `20 * 0x1B0`...). Criterio: con el descriptor de
+   YI1, **todo sale igual byte a byte** (`regress.py --level`).
+2. **Capa 1 1:1:** `mklvl.py` + `m16diff.py` contra el mapa del nivel de
+   SNESMaps (§5c de `AGENTS.md`: el mismo método; la referencia la tiene
+   que bajar el usuario, en la PC). Objetivo: 100 % de bloques.
+3. **Capa 2:** `mkbg.py` con el fondo y el paralaje del nivel.
+4. **Formato (d):** `mkd8in` → `mkleveld`. Mirar derrames, cargas por línea
+   y `scrollsim`: si un nivel pide más de lo que el copper da, se sabe acá
+   y no en la Amiga.
+5. **`mkscroll` → `<nivel>_s.dat`**, y `scroll.s` parametrizado por el
+   descriptor (ancho, ventana).
+6. **Sprites nuevos** (9.1 + 9.2): un guion de snesorc por tipo, el port
+   contra la grabación y los frames precalculados.
+7. **Música** (11): la captura del DSP del tema del nivel.
+8. **Oráculo del nivel:** un guion de snesorc que llegue (por el mapa o con
+   `poke` del translevel) y lo juegue de punta a punta; `marioverify
+   full/loop/game` con su mapa (`mkmapbin` por descriptor).
+9. **Integración:** la tabla de niveles del juego, la carga entre niveles
+   (11.4) y el paso de uno a otro (salir por la meta → el siguiente).
+
+### 11.3 El scroll vertical (el trabajo más grande de otro nivel)
+
+El scroll de hoy está hecho sobre una ventana fija de 224 líneas (192-415
+del nivel). YI1 se mueve poco y rara vez (10.2b, que resuelve el caso
+chico); un nivel como `world_1/3` sigue a Mario todo el tiempo. Con scroll
+vertical de verdad:
+
+- **PF1:** buffer circular también en vertical (filas de bloques nuevas por
+  arriba o por abajo, como las columnas) y el reenganche vertical por
+  copper: cambiar `BPL1PT`-`BPL5PT` en la línea donde da la vuelta.
+- **Colores por línea:** el plan de cargas de `mkscroll` está en
+  coordenadas del nivel (x, y). Con la cámara en Y, la línea de pantalla L
+  muestra la línea del nivel L + cam_y, así que la lista del copper se
+  rearma entera cuando cambia cam_y: **todas las líneas cambian**. Idea
+  (la de 10.2b, llevada a todo el nivel): segmentos indexados por línea
+  del nivel, en los que solo cambia la v de los WAIT, en un pool que cubra
+  la ventana más un margen arriba y abajo, que se rellena por la fila que
+  entra (como las columnas de PF1). Se combina con los "segmentos
+  compartidos" de §9.2 S3.
+- **PF2:** su propio paralaje vertical (mover `BPL2/4/6PT`: gratis).
+- Probarlo primero en YI1 con 10.2b, antes de ir a un nivel nuevo.
+
+### 11.4 Cargar entre niveles
+
+Hoy todo se lee con `trackdisk` antes de tomar la máquina (D13). Con varios
+niveles hay que leer del disco **con la máquina tomada**:
+
+- **(a) Loader por hardware (lo que hacen los juegos):** `DSKLEN`/`DSKPT`,
+  una pista por vez al buffer, decodificar el MFM (CPU o blitter) y
+  descomprimir. Es lo más robusto, permite música y una pantalla de carga
+  animada mientras lee, y funciona igual en KS 1.2 y 1.3. Es trabajo de
+  nivel F, con el riesgo de las diferencias entre disqueteras reales.
+- **(b) Devolverle la máquina al SO para cargar:** restaurar
+  interrupciones, DMA y la vista, leer con `trackdisk` y volver a tomarla.
+  Es más simple, pero lento y frágil (el SO se quedó sin su chip RAM).
+- **Recomendación:** (a), con un formato de disco propio: una tabla de
+  pistas en el bootblock y cada nivel comprimido en pistas enteras.
+- **Espacio en el disco:** YI1 ocupa hoy 412 KB (46 % del ADF). Sin
+  comprimir entra como mucho un nivel más; comprimido (~50 %, estimado),
+  3-4. Más allá, un segundo disco (DF1 o pedir el cambio).
+- **Memoria:** un solo nivel residente. El código común queda en slow RAM
+  (~190 KB hoy, y crece con cada tipo de sprite). La parte de CPU del nivel
+  (~130 KB, 10.7) y la de chip (~95 KB: `BLK` + `L2B`) se cargan por nivel,
+  junto con las muestras de su música.
+
+### 11.5 Pantalla de carga, título y demo
+
+- **Pantalla de carga:** una imagen fija de 5 planos (el logo "Nintendo
+  Presents" de `spr-1` o el título, renderizados offline con las
+  herramientas de la etapa 1) y una barra de progreso con el copper (un
+  color que avanza por línea, sin CPU). Con el loader por hardware (11.4),
+  además música desde la interrupción del VBL mientras lee.
+- **Título:** la pantalla de título de SMW son capas 1/2/3 + sprites; una
+  versión fija renderizada offline alcanza.
+- **Demo de atracción:** en la SNES, el título corre partidas grabadas. El
+  port ya tiene el **modo replay** (`-DREPLAY`): el título puede reproducir
+  `yi1_replay.bin` o una grabación de snesorc tal cual, sin código nuevo de
+  lógica.
+
+### 11.6 Partidas guardadas
+
+- **Qué guarda SMW:** 3 ficheros en la SRAM, con los niveles pasados y los
+  eventos del mapa, los palacios, las monedas de Yoshi por nivel y una suma
+  de control; se guarda al pasar castillos, casas fantasma y palacios. Las
+  vidas no se guardan. El formato y las direcciones están en el fuente
+  (buscar la rutina de guardado en `game.s`/`map.s`).
+- **Cómo lo haría en la Amiga:**
+  - **(a) Un sector reservado del disco**, con el mismo contenido que la
+    SRAM y su suma de control. Escribir por hardware con la máquina tomada
+    (codificar el MFM + `DSKLEN` de escritura), que es delicado; o
+    devolver la máquina al SO un momento y escribir con `trackdisk`, lo más
+    seguro para una escritura de 1 sector. Hace falta que el disco no esté
+    protegido contra escritura; si lo está, avisar y seguir.
+  - **(b) Contraseñas:** sin escribir en el disco; cabe todo en pocos
+    caracteres para un mundo, y no hay riesgo de corromper el disco.
+  - Recomendación: (b) mientras haya pocos niveles; (a) si se llega a un
+    mundo entero.
+- **El mapa (overworld)** es otro motor entero (capas propias, el Mario del
+  mapa, caminos, eventos). Para unos pocos niveles alcanza una **pantalla
+  de selección** fija; el mapa de verdad solo si el proyecto crece a un
+  mundo.
+
+### 11.7 Otros extras (baratos, cuando haya tiempo)
+
+- **Pausa con opciones:** reasignar teclas (la tabla `keytab` de D14) y
+  elegir teclado o joystick.
+- **Game over y continuar:** la lógica del ROM, con el contador de vidas.
+- **Marcador de tiempo real y "estadísticas":** fuera del 1:1; solo si el
+  usuario lo pide.
+
+### 11.8 Cosas que conviene decidir YA pensando en esto
+
+- **6b.1 (vlink y mapa de memoria):** separar desde el principio lo común
+  (código, Mario, HUD) de lo que es de cada nivel (bloques, capa 2, plan
+  del copper, gráficos de sus sprites, muestras), en regiones de memoria
+  distintas.
+- **9.2 (sprites):** gráficos precalculados **por tipo de sprite**, con una
+  tabla de tipos cargada por nivel; nada fijo al Rex.
+- **11 (audio):** los eventos y las muestras **por tema**, con las muestras
+  compartidas (efectos) aparte.
+- **Herramientas:** cada herramienta nueva que se escriba para YI1 recibe
+  ya el nivel como parámetro, aunque hoy solo haya uno.

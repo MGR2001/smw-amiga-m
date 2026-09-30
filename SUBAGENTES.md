@@ -137,9 +137,9 @@ y el coordinador resuelve los conflictos al integrar.
 
 ```
 Ola 1 (ya)   I1 · O1 · R0 → R1…R6 · S1a+S2 · L1a
-Ola 2        O3 · O4 [usuario: D1] · P1+P2 · P3 · MA1 · S4 (F) · L1c
+Ola 2        O3 · O4 [usuario: D1, D15, D16] · P1+P2 · P3 · MA1 · S4 (F) · L1c
 Ola 3        S5 (F) · L1b+L1d+L2 · G1 · G2 (F) · C1 · H1 · A1 · A2 (F) · R7
-Ola 4        S3 → S6 (F) · G3 · G4 · G6 · C2 (F) · C3 · H2 · A3 · R8 · P4…P10
+Ola 4        S3 → S8 → S6 (F) · G3 · G4 · G6 · C2 (F) · C3 · H2 · A3 · R8 · P4…P10
 Ola 5        G5 (F) · C4 · H4 · A4 · MA2 · E1 · E2 · E3
 Ola 6        G7 · H3 · H5 · A5 · A6 · A7 · C5 · Z1…Z6 → Z8
 Final        U1…U4 · Z7 (usuario / PC)
@@ -267,7 +267,9 @@ Puerta: `orc_has.py` muestra cada objeto y el cambio de `$19`/`$71`.
 **C · R0** · `stress_back.orc` (volver a toda velocidad sobre s ≈
 2600-2900 y 4100-4800), `stress_sprites.orc` (Banzai + 4 Rex + Mario a la
 vez), `stress_piranha.orc` (las 2 pirañas del frame 9714 con Mario
-corriendo). Puerta: `orc_has.py` confirma los sprites a la vista a la vez;
+corriendo) y `stress_vert.orc` (subir la cámara lo más posible: saltos a
+toda carrera desde las tuberías y rebotando en Rex; da el mínimo de
+`Bg1VOfs` para S8). Puerta: `orc_has.py` confirma los sprites a la vista a la vez;
 la cámara (`$1A`) recorre esos tramos.
 
 #### R7 — Contadores del HUD en el volcado
@@ -325,6 +327,14 @@ borrado (P43, P46); si no entra, documentar por qué y descartar.
 #### S6 — Un plan por sentido **(F)**
 **F · S5** · plan ALAP para ir a la izquierda (o cargas centradas en su
 ventana), elegido por la dirección de la cámara; otro MLD en slow RAM.
+
+#### S8 — La cámara vertical de YI1 (ROADMAP §10.2b) **(F)**
+**F · R6 (el mínimo de `Bg1VOfs`) · `scroll.s`, `mkscroll.py`, `game.s` (pasarle cam_y)** ·
+ventana de datos extendida K líneas hacia arriba; punteros de PF1/PF2 con
+(cam_y − 192) y la mitad; segmentos del copper indexados por línea del
+nivel, con la v de los WAIT parcheada cuando cambia cam_y. Puerta extra:
+capturas del replay de `oracle_normal` en los frames 2672-2707 (la cámara
+en `$BC`) iguales al esperado; `scroll_check.py` con cam_y ≠ 192.
 
 #### S7 — Menos cargas desde el origen
 **M · — · `mkleveld.py`, `mkscroll.py`** · primero la **estadística**

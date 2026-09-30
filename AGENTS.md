@@ -1302,6 +1302,17 @@ captura se toma antes de llegar y `game_check` da miles de fallos.
 listo en los 2 s que espera el script ("unable to open display"). Correrlas
 de a una.
 
+**P77 — `lvparse.py` leía mal los bytes 2 y 4 de la cabecera (arreglado
+2026-09-30), y YI1 SÍ tiene scroll vertical.** El byte 4 es `IIVVZZZZ`
+(`lv_read.s`: tileset `& $0F`, item memory bits 6-7, `wm_VertScrollHead` =
+bits 4-5, con 3 → 0 y sin scroll horizontal). `lvparse` tomaba 5 bits de
+tileset y el bit 7 como "scroll vertical", y en el byte 2 metía la
+prioridad de la capa 3 en la música. De ahí salió "el header de YI1 no
+tiene scroll vertical": vale **2** ("solo en algunos casos",
+`CODE_00F82A`), y en las grabaciones de snesorc la cámara sube hasta 4 px
+(`Bg1VOfs` = `$BC`). La Amiga no lee `Bg1VOfs` (ROADMAP §10.2b). Para las
+cabeceras, la fuente de verdad es `lv_read.s`.
+
 **P44 — Los "derrames" de la etapa 5 alargan el tramo anterior.**
 `mkleveld.py` asigna los píxeles que quedan fuera de todo tramo al registro
 que *todavía conserva* el color: después del fin de un tramo puede haber
@@ -1416,6 +1427,8 @@ justo lo que hace la SNES con CGRAM.
 | **D12** | Power-ups | **todos los de Yoshi's Island 1**: seta, flor + bolas de fuego, estrella, 1-UP, luna 3-UP, champiñón invisible (no hay pluma en el nivel) | **cerrado** (usuario, 2026-09-26) |
 | **D13** | Carga y memoria | loader propio con `trackdisk`; lo que lee el chipset a chip RAM y el código y los datos de CPU a `$C00000`, todo en **direcciones fijas enlazadas en absoluto** (vlink) | **cerrado** (usuario, 2026-09-26); esquema en `ROADMAP.md` §3 |
 | **D14** | Controles | **teclado primero** (flechas, Z = B, X = A, A = Y, S = X, Return = Start, Shift der. = Select), joystick como alternativa | **cerrado** (usuario, 2026-09-26) |
+| **D15** | Velocidad (ROM NTSC en una Amiga PAL) | aceptar el 83 % como la SNES PAL, o 6 frames de lógica cada 5 | **abierta [usuario]**, ROADMAP §10.12 |
+| **D16** | Zona de la tubería (`obj-1.lv`, 2 pantallas) | dentro o fuera del alcance | **abierta [usuario]**, ROADMAP §10.10 |
 
 ### D3 — los sprites reales de Yoshi's Island 1
 
