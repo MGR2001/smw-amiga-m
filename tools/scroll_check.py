@@ -69,7 +69,8 @@ def main():
     global W
     W = a.w
     # zona donde buscar el origen: la de FS-UAE, o la de la ventana de WinUAE
-    rx, ry = ((150, 200), (90, 125)) if a.sc == SC else ((40, 160), (40, 100))
+    # (a 256 px la DIW empieza 32 px lowres despues: ~68 px mas en FS-UAE)
+    rx, ry = ((150, 200 + (320 - W) * 17 // 16), (90, 125)) if a.sc == SC else ((40, 160), (40, 100))
     SCa = a.sc
     d = render_d.load(os.path.join(HERE, "..", "work", "yi1_d.dat"))
     e = expect(d, render_d.l1_index(d), a.s, a.mid)
