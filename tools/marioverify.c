@@ -18,7 +18,8 @@
  *   work/marioverify work/oracle_yi1.bin
  *   work/marioverify work/oracle_yi1.bin full [work/yi1_map16.bin [CAMPO]]   (8b)
  *   work/marioverify work/oracle_yi1.bin fulldump FRAME salida.bin   (estado para logicbench)
- *   work/marioverify work/oracle_yi1.bin gfx [work/oracle_yi1_oam.bin]   (graficos de Mario)
+ *   work/marioverify work/oracle_yi1.bin gfx [work/oracle_yi1_oam.bin]   (graficos de Mario;
+ *       por defecto, el _oam.bin al lado del oraculo)
  *   work/marioverify work/oracle_yi1.bin loop   (lazo cerrado: solo el joypad)
  *   work/marioverify work/oracle_yi1.bin sprload [spr.lv]   (cargador de sprites, etapa 9)
  *   FULL_FRAME=N work/mvtrace ... full   (un solo frame; mvtrace = -DMCOLL_TRACE)
@@ -991,6 +992,13 @@ int main(int argc, char **argv)
 {
     const char *path = argc > 1 ? argv[1] : "work/oracle_yi1.bin";
     const char *only = argc > 2 ? argv[2] : NULL;    /* mostrar solo este campo */
+    /* la OAM grabada va al lado del oraculo (oracle2bin.py: X.bin -> X_oam.bin) */
+    static char oam_def[512];
+    size_t pl = strlen(path);
+    if (pl > 4 && pl < sizeof oam_def - 8 && !strcmp(path + pl - 4, ".bin"))
+        sprintf(oam_def, "%.*s_oam.bin", (int)(pl - 4), path);
+    else
+        strcpy(oam_def, "work/oracle_yi1_oam.bin");
     /* marioverify oraculo.bin dump FRAME salida.bin: vuelca el estado
        preparado de ese frame (para player/logicbench.s) */
     unsigned dump_frame = (argc > 4 && !strcmp(argv[2], "dump")) ? (unsigned)atoi(argv[3]) : 0;
@@ -1026,11 +1034,11 @@ int main(int argc, char **argv)
         return run_loop(argc > 3 ? argv[3] : "work/yi1_map16.bin");
 #ifdef NOOAM
     if (only && !strcmp(only, "mspr"))
-        return run_mspr(argc > 3 ? argv[3] : "work/oracle_yi1_oam.bin",
+        return run_mspr(argc > 3 ? argv[3] : oam_def,
                         argc > 4 ? argv[4] : "work/cc/gfx32.bin");
 #endif
     if (only && !strcmp(only, "gfx"))
-        return run_gfx(argc > 3 ? argv[3] : "work/oracle_yi1_oam.bin");
+        return run_gfx(argc > 3 ? argv[3] : oam_def);
     if (only && !strcmp(only, "fulldump") && argc > 4) {
         fdump_frame = (unsigned)atoi(argv[3]);
         fdump_path = argv[4];

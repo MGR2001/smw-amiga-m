@@ -29,6 +29,8 @@ from palette import load_palette_bank, build_cgram, snes_to_amiga12   # noqa: E4
 
 WORK = os.path.join(HERE, "..", "work")
 ROM = os.path.join(HERE, "..", "..", "smwre", "smw.sfc")
+if not os.path.exists(ROM):                     # cloud: la ROM ensamblada (setup_cloud.sh)
+    ROM = os.path.join(WORK, "smw.sfc")
 LEVEL = "3340088027"            # header de Yoshi's Island 1 (obj.lv)
 DATA_00E2A2 = 0xE2A2            # 8 punteros (banco 0) a paletas de 10 colores
 PLAYER_CGRAM_BASE = 134

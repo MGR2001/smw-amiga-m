@@ -212,6 +212,59 @@ def game_sprite_checks(r, out):
         r.put("pc.game.spr_%s.distintos" % n, int(seg) - int(ok), "min")
 
 
+# oraculos guionizados de snesorc (tools/snesorc/*.orc -> work/oracle_X.txt,
+# en git): el .bin se regenera si falta o si el .txt es mas nuevo
+SNESORC = ("normal", "diagpipe", "hills", "banzai")
+
+
+def orc_checks(r):
+    for n in SNESORC:
+        txt = os.path.join(WORK, "oracle_%s.txt" % n)
+        binf = os.path.join(WORK, "oracle_%s.bin" % n)
+        if not os.path.exists(txt):
+            continue
+        if not os.path.exists(binf) or os.path.getmtime(txt) > os.path.getmtime(binf):
+            code, out = sh([PY, "tools/oracle2bin.py", "--inp", txt, "--out", binf])
+            if code:
+                r.note("oracle2bin " + n, False, out[-300:])
+                continue
+        k = "orc.%s." % n
+        for mode in ("full", "gfx", "loop", "game", "sprload"):
+            code, out = sh([MV, binf, mode], timeout=300)
+            r.logs["marioverify %s %s" % (n, mode)] = out
+            if code:
+                r.note("marioverify %s %s" % (n, mode), False, "codigo %d: %s" % (code, out[-300:]))
+                continue
+            if mode == "full":
+                t = num(r"TODOS los campos\s+(\d+)/(\d+)\s+(\d+)/(\d+)", out)
+                if t:
+                    r.put(k + "full.ok", t[0] + t[2], "max")
+                    r.put(k + "full.tot", t[1] + t[3], "eq")
+            elif mode == "gfx":
+                t = num(r"OAM de Mario exacta: (\d+)\s+MarioScrPosX/Y exacta: (\d+)", out)
+                if t:
+                    r.put(k + "gfx.oam_ok", t[0], "max")
+                    r.put(k + "gfx.scr_ok", t[1], "max")
+            elif mode == "loop":
+                t = num(r"resincronizaciones: (\d+)\s*\n\s*tramo mas largo sin diferencias: (\d+)", out)
+                if t:
+                    r.put(k + "loop.resync", t[0], "min")
+                    r.put(k + "loop.tramo", t[1], "max")
+            elif mode == "game":
+                t = num(r"resincronizaciones de Mario: (\d+)\s+tramo mas largo: (\d+)", out)
+                if t:
+                    r.put(k + "game.resync", t[0], "min")
+                    r.put(k + "game.tramo", t[1], "max")
+                bad = sum(int(a) - int(b) for a, b in
+                          re.findall(r"sprite [0-9A-F]{2}: seguidos (\d+) exactos (\d+)", out))
+                r.put(k + "game.spr_distintos", bad, "min")
+            elif mode == "sprload":
+                t = num(r"oraculo: (\d+)\s+del port: (\d+)\s+exactos: (\d+)\s+distintos: (\d+)", out)
+                if t:
+                    r.put(k + "sprload.exactos", t[2], "max")
+                    r.put(k + "sprload.distintos", t[3], "min")
+
+
 # --------------------------------------------------------------------------
 # 68000: tools/m68kverify.py sobre el binario que arma vbcc (Musashi)
 # --------------------------------------------------------------------------
@@ -445,6 +498,8 @@ def main():
     r = Run()
     ok_pc, ok_68k = (os.path.exists(MV), not a.quick) if a.no_build else build(r, not a.quick)
     pc = pc_checks(r) if ok_pc else {}
+    if ok_pc:
+        orc_checks(r)
     if ok_68k:
         m68k_checks(r, pc)
     if a.level:
