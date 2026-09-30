@@ -87,24 +87,30 @@ MCS u16 f7f4(u16 limit, u16 bg1v)
         a = v2;
         goto l_F883;
     }
-    /* CODE_00F82A: hacia arriba, solo en algunos casos */
+    /* CODE_00F82A: hacia arriba. Con X != 0 (pared, planeo, trepar, globo,
+       nube, Yoshi con alas, nadar volando) el ROM salta a `++` =
+       STX wm_EnableVertScroll y hace scroll con la Y de siempre: no es un
+       RTS. Con X = 0, CODE_00F875 si VertScrollHead = 1 o si el scroll
+       vertical ya estaba habilitado; si no, Y = 4. */
     x = R8(wm_WallWalkStatus);
     if (x < 0x06)
         x = (u8)((R8(wm_YoshiHasWingsB) >> 1) | R8(wm_GlideTimer) | R8(wm_IsClimbing)
                  | R8(wm_PBalloonFrame) | R8(wm_IsInLakituCloud) | R8(wm_BouncingWithYoshi));
-    if (x)
-        return bg1v;
-    if (R8(wm_OnYoshi) && R8(wm_YoshiHasWings) >= 0x02)
-        return bg1v;
-    if (R8(wm_IsSwimming) && R8(wm_IsFlying))
-        return bg1v;
-    if (R8(wm_VertScrollHead) == 1) {       /* CODE_00F875 */
-        if (!R8(wm_ScrScrollToPlayer)) {
+    if (!x) {
+        if (R8(wm_OnYoshi) && R8(wm_YoshiHasWings) >= 0x02)
+            x = R8(wm_YoshiHasWings);
+        else if (R8(wm_IsSwimming) && R8(wm_IsFlying))
+            x = R8(wm_IsFlying);
+    }
+    if (x) {
+        W8(wm_EnableVertScroll, x);
+    } else if (R8(wm_VertScrollHead) == 1 || R8(wm_EnableVertScroll)) {
+        if (!R8(wm_ScrScrollToPlayer)) {    /* CODE_00F875 */
             if (R8(wm_IsFlying))
                 return bg1v;
             W8(wm_ScrScrollToPlayer, R8(wm_ScrScrollToPlayer) + 1);
         }
-    } else if (!R8(wm_EnableVertScroll)) {
+    } else {
         y = 4;
     }
     a = v2;                                 /* _00F881 */
