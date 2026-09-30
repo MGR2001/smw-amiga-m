@@ -352,23 +352,45 @@ void level_frame(void)
     if (mario_unsupported)
         return;
     sprites_begin();
-    if (level_sprites) {                    /* CODE_01808C: ranuras 11..0 */
-        u8 k = 12;
-#if defined(__VBCC__) && !defined(NOASM)
-        logic68k_init();                    /* punteros de player/logic68k.s */
-#endif
-        do {
-            k--;
-            if (RX8(wm_SpriteStatus, k)) {
-                sprite_run(k);
-                mario_unsupported = MARIO_OK;   /* un sprite sin portar no para el frame */
-            } else {                        /* ranura vacia: lo que hace sprite_run */
-                W8(wm_SprProcessIndex, k);  /* (EraseSprite) sin llamarla */
-                RX8(wm_SprIndexInLvl, k) = 0xFF;
-            }
-        } while (k);
-    }
+    if (level_sprites)
+        sprites_all();
     blocks_update();
     if (level_sprites)
         sprite_load_level();                /* al final de CODE_028AB1 */
+}
+
+/* CODE_01808C: las ranuras 11..0 (sin el principio, sprites_begin) */
+void sprites_all(void)
+{
+    u8 k = 12;
+#if defined(__VBCC__) && !defined(NOASM)
+    logic68k_init();                        /* punteros de player/logic68k.s */
+#endif
+    do {
+        k--;
+        if (RX8(wm_SpriteStatus, k)) {
+            sprite_run(k);
+            mario_unsupported = MARIO_OK;   /* un sprite sin portar no para el frame */
+        } else {                            /* ranura vacia: lo que hace sprite_run */
+            W8(wm_SprProcessIndex, k);      /* (EraseSprite) sin llamarla */
+            RX8(wm_SprIndexInLvl, k) = 0xFF;
+        }
+    } while (k);
+}
+
+/* El principio del nivel para el port, con el estado del PRIMER frame ya
+   cargado (verificadores; game.s, op LEVEL del replay): lo que hace
+   CODE_02A751 al cargar el nivel (sprite_level_start + una pasada de
+   CODE_01808C, que inicializa los sprites creados) y la parte de sprites
+   de ese primer frame (las ranuras y el cargador), que el estado grabado
+   ya trae hecha para Mario. */
+void level_start_sprites(void)
+{
+    mcoll_init();
+    sprite_level_start();
+    sprites_begin();                        /* CODE_02A751 -> CODE_01808C */
+    sprites_all();
+    sprites_begin();                        /* el primer frame */
+    sprites_all();
+    sprite_load_level();
 }

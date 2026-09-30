@@ -46,6 +46,11 @@ ORACLE = os.path.join(WORK, "oracle_yi1.bin")
 PY = sys.executable
 CSRC = ["tools/marioverify.c", "player/mario.c", "player/mcoll.c", "player/manim.c",
         "player/mgfx.c", "player/mcam.c", "player/msprite.c", "player/gen/smwrom00.c"]
+# el C del port como biblioteca, con las opciones del build de la Amiga (-DNOOAM),
+# para el cruce de la RAM entera con el binario del 68000 (m68kverify --cross)
+LIBSRC = ["player/mario.c", "player/mcoll.c", "player/manim.c", "player/mgfx.c", "player/mcam.c",
+          "player/msprite.c", "player/mspr.c", "player/gen/smwrom00.c"]
+LIB = os.path.join(WORK, "libport.so")
 SCROLL_X = (500, 1000, 1700, 2500, 3500, 4500)
 
 # tolerancias relativas de las medidas de tiempo (Musashi es determinista:
@@ -110,6 +115,10 @@ def build(r, want_68k):
     r.note("build PC", True, "work/marioverify desde el codigo actual")
     if not want_68k:
         return True, False
+    if os.name != "nt":
+        code, out = sh([cc, "-shared", "-fPIC", "-O2", "-DNOOAM", "-Iplayer", "-o", LIB] + LIBSRC)
+        if code:
+            r.note("build PC (biblioteca)", False, out[-800:])
     v = vbcc_dir()
     if not v:
         r.note("build 68000", False, "no encuentro vbcc (VBCC=...): se saltan las pruebas del 68000")
@@ -190,7 +199,17 @@ def pc_checks(r):
             if t:
                 r.put("pc.game.rex_seguidos", t[0], "info")
                 r.put("pc.game.rex_exactos", t[1], "max")
+            game_sprite_checks(r, out)
     return res
+
+
+def game_sprite_checks(r, out):
+    """etapa 9.1: marioverify game, frames exactos por numero de sprite (los que
+    corre el port: seguidos = frames comparados, exactos = los 11 campos grabados)"""
+    for n, seg, ok in re.findall(r"sprite ([0-9A-F]{2}): seguidos (\d+) exactos (\d+)", out):
+        r.put("pc.game.spr_%s.seguidos" % n, int(seg), "info")
+        r.put("pc.game.spr_%s.exactos" % n, int(ok), "max")
+        r.put("pc.game.spr_%s.distintos" % n, int(seg) - int(ok), "min")
 
 
 # --------------------------------------------------------------------------
@@ -202,8 +221,9 @@ def m68k_checks(r, pc):
     except ImportError:
         r.note("68000", False, "falta machine68k (pip install machine68k): no se verifico el binario")
         return
-    runs = (("full", ["--mode", "full"]), ("loop", ["--mode", "loop"]),
-            ("spr", ["--mode", "loop", "--sprites"]))
+    cross = ["--cross", LIB] if os.path.exists(LIB) else []
+    runs = (("full", ["--mode", "full"]), ("loop", ["--mode", "loop"] + cross),
+            ("spr", ["--mode", "loop", "--sprites"] + cross))
     for key, extra in runs:
         code, out = sh([PY, "tools/m68kverify.py", "--engine", "musashi"] + extra, timeout=1800)
         r.logs["m68kverify " + key] = out
@@ -230,6 +250,12 @@ def m68k_checks(r, pc):
             if key == "loop" and pc.get("loop") is not None:
                 r.note("cruce loop PC=68000", t[1] == pc["loop"],
                        "resincronizaciones: 68000 %d, PC %d" % (t[1], pc["loop"]))
+        t = num(r"cruce con el C del PC \(RAM entera tras cada llamada\): (\d+) llamadas, (\d+) distintas", out)
+        if t:
+            r.note("cruce RAM %s PC=68000" % key, t[1] == 0,
+                   "%d llamadas a level_frame/level_start_sprites, %d con la RAM distinta" % t)
+        elif cross:
+            r.note("cruce RAM %s PC=68000" % key, False, "m68kverify --cross no dio el resultado")
         t = num(r"_level_frame: media (\d+), p99 (\d+), max (\d+)", out)
         if t:
             r.put("m68k.%s.ciclos_media" % key, t[0], "min", TOL["cyc"])

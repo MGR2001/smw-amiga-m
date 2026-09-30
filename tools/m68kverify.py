@@ -143,6 +143,12 @@ def main():
     ap.add_argument("--replay", default=None,
                     help="loop: escribir el replay del tramo mas largo para player/game.s "
                          "(-DREPLAY, etapa 6.3): el joypad de cada frame y las resincronizaciones")
+    ap.add_argument("--cross", default=None, metavar="LIB",
+                    help="loop: el C del PC (gcc -shared -DNOOAM, p. ej. work/libport.so) en "
+                         "paralelo: antes de cada llamada se le copia la RAM y el mapa del 68000 y "
+                         "despues se comparan enteros (P38: un fallo de vbcc o de logic68k.s)")
+    ap.add_argument("--show", default="",
+                    help="loop: imprimir los ciclos de cada frame en este rango (F0-F1)")
     ap.add_argument("--spr", default=os.path.join(HERE, "..", "..", "smw-src-master", "project",
                                                   "mw_e10", "levels", "data", "world_1", "1", "spr.lv"))
     a = ap.parse_args()
@@ -167,8 +173,16 @@ def main():
     cpu.write(BASE + syms["_map16_lo"], struct.pack(">I", MAP))
     cpu.write(BASE + syms["_map16_hi"], struct.pack(">I", MAP + len(map0) // 2))
 
+    pc = PCPort(a.cross, len(map0), a.spr if a.sprites else None) if a.cross else None
+
     def call(sym):
-        return cpu.call(BASE + syms[sym], BASE)
+        if pc is None or sym not in ("_level_frame", "_level_start_sprites"):
+            return cpu.call(BASE + syms[sym], BASE)
+        pc.before(cpu.read(RAM, 0x2000), cpu.read(MAP, len(map0)))
+        cyc = cpu.call(BASE + syms[sym], BASE)
+        pc.after(sym[1:], cpu.read(RAM, 0x2000), cpu.read(MAP, len(map0)),
+                 struct.unpack(">i", cpu.read(BASE + syms["_mario_unsupported"], 4))[0])
+        return cyc
 
     def rec(i):
         o = i * REC
@@ -181,7 +195,10 @@ def main():
         return r[3][adr - 0x13C0]
 
     if a.mode == "loop":
-        return run_loop(a, cpu, call, rec, orc, n, RAM, MAP, map0, syms)
+        ret = run_loop(a, cpu, call, rec, orc, n, RAM, MAP, map0, syms)
+        if pc is not None:
+            pc.report()
+        return ret
 
     pairs = allok = unsup = 0
     bad = [0] * len(FIELDS)
@@ -249,6 +266,55 @@ def main():
                   % (100 * mean / PAL_FRAME, 100 * worst[0] / PAL_FRAME, PAL_FRAME))
 
 
+class PCPort:
+    """--cross: el mismo C compilado para el PC (ctypes) llamado con la RAM y el
+    mapa que tiene el 68000 justo antes de cada llamada; despues se comparan
+    ram[], el mapa y mario_unsupported. Asi cada diferencia es de UNA llamada
+    (no se arrastra) y no depende del oraculo: vbcc (P38) o logic68k.s."""
+
+    def __init__(self, path, maplen, sprpath):
+        import ctypes
+        self.C = ctypes
+        self.lib = ctypes.CDLL(os.path.abspath(path))
+        self.ram = (ctypes.c_ubyte * 0x2000).in_dll(self.lib, "ram")
+        self.map = (ctypes.c_ubyte * maplen)()
+        ctypes.c_void_p.in_dll(self.lib, "map16_lo").value = ctypes.addressof(self.map)
+        ctypes.c_void_p.in_dll(self.lib, "map16_hi").value = ctypes.addressof(self.map) + maplen // 2
+        self.unsup = ctypes.c_int.in_dll(self.lib, "mario_unsupported")
+        if sprpath:
+            data = open(sprpath, "rb").read()
+            self.spr = (ctypes.c_ubyte * len(data)).from_buffer_copy(data)
+            ctypes.c_void_p.in_dll(self.lib, "spr_level").value = ctypes.addressof(self.spr)
+            ctypes.c_ubyte.in_dll(self.lib, "level_sprites").value = 1
+        self.calls = self.bad = 0
+        self.shown = []
+
+    def before(self, ram, mp):
+        self.C.memmove(self.ram, ram, 0x2000)
+        self.C.memmove(self.map, mp, len(mp))
+        self.unsup.value = 0
+
+    def after(self, fn, ram, mp, unsup):
+        getattr(self.lib, fn)()
+        self.calls += 1
+        pr, pm = bytes(self.ram), bytes(self.map)
+        if pr == ram and pm == mp and self.unsup.value == unsup:
+            return
+        self.bad += 1
+        if len(self.shown) < 10:
+            d = ["$%04X=%02X/%02X" % (k, ram[k], pr[k]) for k in range(0x2000) if ram[k] != pr[k]][:8]
+            d += ["mapa+%d" % k for k in range(len(mp)) if mp[k] != pm[k]][:2]
+            if self.unsup.value != unsup:
+                d.append("unsup %d/%d" % (unsup, self.unsup.value))
+            self.shown.append("%s: %s" % (fn, " ".join(d)))
+
+    def report(self):
+        print("cruce con el C del PC (RAM entera tras cada llamada): %d llamadas, %d distintas"
+              % (self.calls, self.bad))
+        for t in self.shown:
+            print("  (68000/PC) " + t)
+
+
 # tablas de sprite que el port conserva al resincronizar a Mario (--sprites)
 SPR_KEEP = [0x14C8, 0x9E, 0xE4, 0x14E0, 0xD8, 0x14D4, 0xB6, 0xAA, 0xC2, 0x14F8, 0x14EC]
 
@@ -275,6 +341,24 @@ def run_loop(a, cpu, call, rec, orc, n, RAM, MAP, map0, syms):
         cpu.write(RAM + 0x1692, bytes([spr[0] & 0x3F]))    # wm_SpriteMemory
         cpu.write(RAM + 0x1430, b"\xff\xff")               # Lowest/HighestSolidSprTile
 
+    def level_start(r):
+        """como marioverify game: si el tramo empieza al principio del nivel, los
+        sprites iniciales los crea el port (_level_start_sprites con el estado
+        del primer frame) y tienen que dar los grabados. Deja la RAM lista para
+        el sync() normal (que conserva las tablas de SPR_KEEP)"""
+        if "_level_start_sprites" not in syms:  # binario viejo (abcheck con una base anterior)
+            return False
+        sync(r, bytes(0x2000))
+        call("_level_start_sprites")
+        ram = cpu.read(RAM, 0x2000)
+        for k in range(12):
+            if not ram[0x14C8 + k] and not orc(r, 0x14C8 + k):
+                continue
+            for t in SPR_KEEP:
+                if t + k < 0x1500 and ram[t + k] != orc(r, t + k):   # XAcc 8-11: sin grabar
+                    return False
+        return True
+
     def newseg_sprites(r):
         """como marioverify game: los sprites ya a la vista cuentan como cargados
         (el oraculo no los tiene: nacieron antes de empezar a grabar)"""
@@ -290,6 +374,8 @@ def run_loop(a, cpu, call, rec, orc, n, RAM, MAP, map0, syms):
     synced = False
     costs = []
     prev = None
+    lstarts = 0
+    seglvl = False
     # --replay: el tramo mas largo de la grabacion, frame a frame (ver replay_write)
     seg = longest_segment(rec, n) if a.replay else None
     ops, states, sprinit = [], [], None
@@ -304,10 +390,18 @@ def run_loop(a, cpu, call, rec, orc, n, RAM, MAP, map0, syms):
         if newseg:
             cpu.write(MAP, map0)
             cpu.write(RAM, bytes(0x2000))
+            lvl = False
             if spr is not None:
-                newseg_sprites(r)
+                lvl = not (orc(r, ANIM) or orc(r, LOCKED)) and level_start(r)
+                if lvl:
+                    lstarts += 1
+                else:
+                    cpu.write(MAP, map0)
+                    cpu.write(RAM, bytes(0x2000))
+                    newseg_sprites(r)
             if inseg:
                 sprinit = cpu.read(RAM + 0x1938, 128)
+                seglvl = lvl
             synced = False
         if orc(r, ANIM) or orc(r, LOCKED):
             synced = False
@@ -320,7 +414,9 @@ def run_loop(a, cpu, call, rec, orc, n, RAM, MAP, map0, syms):
             longest = max(longest, cur)
             cur = 0
             if inseg:
-                ops.append((REP_SYNC, r[2][0x15:0x19]))
+                # el primer frame de un tramo que empieza al principio del
+                # nivel: SYNC + _level_start_sprites + SYNC (ver level_start)
+                ops.append((REP_LEVEL if seglvl and not ops else REP_SYNC, r[2][0x15:0x19]))
                 states.append(r[2] + r[3])
             continue
         cpu.write(RAM + 0x15, r[2][0x15:0x19])
@@ -345,6 +441,10 @@ def run_loop(a, cpu, call, rec, orc, n, RAM, MAP, map0, syms):
                 ops.append((REP_RUN, r[2][0x15:0x19]))
             continue
         resync += 1
+        if resync <= 20:
+            bad = [nm for nm, adr, w in FIELDS + LOOP_FIELDS
+                   if bytes(ram[adr:adr + w]) != bytes(orc(r, adr + t) for t in range(w))]
+            print("  frame %d: tras %d frames, difiere %s" % (r[0], cur, ", ".join(bad)))
         longest = max(longest, cur)
         cur = 0
         sync(r, ram)
@@ -357,6 +457,14 @@ def run_loop(a, cpu, call, rec, orc, n, RAM, MAP, map0, syms):
     print("binario 68000 en lazo cerrado (%s%s): %d frames, %d resincronizaciones, "
           "tramo mas largo %d frames" % (a.engine, ", con sprites" if spr else "", frames, resync,
                                          longest))
+    if spr is not None:
+        print("tramos que empiezan al principio del nivel (sprites iniciales del port = oraculo): %d"
+              % lstarts)
+    if a.show and costs:
+        f0, f1 = (int(x) for x in a.show.split("-"))
+        for cy, f in costs:
+            if f0 <= f <= f1:
+                print("  frame %d: %d ciclos" % (f, cy))
     if a.engine == "musashi" and costs:
         c = sorted(x[0] for x in costs)
         mean = sum(c) / len(c)
@@ -370,11 +478,14 @@ def run_loop(a, cpu, call, rec, orc, n, RAM, MAP, map0, syms):
 # replay (--replay) para player/game.s -DREPLAY. Lo que hace el lazo cerrado
 # de arriba en cada frame del tramo, para que la Amiga haga exactamente lo
 # mismo (y siga la grabacion igual que aca):
-REP_RUN, REP_SYNC, REP_SKIP, REP_RUNSYNC = 0, 1, 2, 3
+REP_RUN, REP_SYNC, REP_SKIP, REP_RUNSYNC, REP_LEVEL = 0, 1, 2, 3, 4
 #   RUN      joypad ($15-$18) + level_frame
 #   SYNC     cargar el estado grabado (sync()), sin level_frame
 #   SKIP     nada (Mario en una animacion o sprites congelados: no portado)
 #   RUNSYNC  joypad + level_frame, y despues cargar el estado (resincronizar)
+#   LEVEL    (solo el primer op, si el tramo empieza al principio del nivel)
+#            cargar el estado con las tablas de sprites a 0, _level_start_sprites
+#            (los sprites iniciales) y cargar otra vez el mismo estado
 # Formato (big-endian):
 #   +0  "SMWR"  u16 frames  u16 primer frame  u16 estados  u16 0
 #   +12 u32 desplazamiento de OPS, u32 de STS
@@ -410,9 +521,9 @@ def replay_write(path, first, ops, states, sprinit, spr):
     out += b"".join(bytes([op, 0]) + bytes(j) for op, j in ops)
     out += b"".join(bytes(st) for st in states)
     open(path, "wb").write(out)
-    k = [sum(1 for op, _ in ops if op == t) for t in range(4)]
-    print("replay: %s, frames %d-%d (%d): RUN %d, SYNC %d, SKIP %d, RUNSYNC %d; %d bytes"
-          % (path, first, first + len(ops) - 1, len(ops), k[0], k[1], k[2], k[3], len(out)))
+    k = [sum(1 for op, _ in ops if op == t) for t in range(5)]
+    print("replay: %s, frames %d-%d (%d): RUN %d, SYNC %d, SKIP %d, RUNSYNC %d, LEVEL %d; %d bytes"
+          % (path, first, first + len(ops) - 1, len(ops), k[0], k[1], k[2], k[3], k[4], len(out)))
 
 
 LOOP_FIELDS = [("Bg1HOfs $1A", 0x1A, 2), ("Bg1VOfs $1C", 0x1C, 2), ("Bg2HOfs $1E", 0x1E, 2),

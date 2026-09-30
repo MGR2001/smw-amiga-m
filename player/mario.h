@@ -56,6 +56,7 @@ void mario_D7E4(void);      /* CODE_00D7E4: gravedad, planeo */
 /* Etapa 8b: CODE_00CD24 (movimiento DC2D + colision E92B + F595) y el
    frame entero del jugador (colision + 8a). */
 void mario_collide(void);
+void mcoll_init(void);      /* tablas nativas de las sondas (una vez, al empezar el nivel) */
 void blocks_update(void);   /* CODE_02902D: bloques que rebotan (fase de sprites) */
 
 /* manim.c: el frame entero del jugador (CODE_00C500 + ResetAni: colision,
@@ -71,7 +72,9 @@ void camera_F6DB(void);
 
 /* manim.c: el principio de CODE_01808C y un frame de nivel entero */
 void sprites_begin(void);
+void sprites_all(void);         /* CODE_01808C: las 12 ranuras */
 void level_frame(void);
+void level_start_sprites(void); /* principio del nivel: sprites iniciales + primer frame */
 
 /* msprite.c: etapa 9 */
 extern const u16 scr_ofs[32];
@@ -82,6 +85,7 @@ extern const u8 *spr_level;     /* spr.lv del nivel */
 extern u8 spr_spawned;          /* ranuras creadas por el cargador en este frame */
 extern u8 level_sprites;        /* manim.c: 1 = level_frame corre tambien los sprites */
 void sprite_load_level(void);   /* LoadSprFromLevel */
+void sprite_level_start(void);  /* CODE_02ABF2 + CODE_02ACA1: los sprites al cargar el nivel */
 void sprite_run(u8 x);          /* CODE_0180D2 + HandleSprite de la ranura x (Rex) */
 void sprite_tweakers(u8 x);     /* LoadTweakerBytes */
 

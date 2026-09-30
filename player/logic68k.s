@@ -221,9 +221,9 @@ _spr_pos_axis_asm:
         smi     d2                          ; hi = $FF si d < 0
         lsl.b   #4,d0                       ; v << 4
         move.b  wm_SpriteYAcc(a1),d3
-        add.b   d0,d3                       ; X = acarreo c
-        move.b  d3,wm_SpriteYAcc(a1)        ; (move no toca X)
-        scs     d0                          ; d0 = -c
+        add.b   d0,d3                       ; X = C = acarreo c
+        scs     d0                          ; d0 = -c (antes del move: el move
+        move.b  d3,wm_SpriteYAcc(a1)        ; borra C; X no lo toca)
         move.b  wm_SpriteYLo(a1),d3
         addx.b  d1,d3                       ; YLo + d + c
         move.b  d3,wm_SpriteYLo(a1)

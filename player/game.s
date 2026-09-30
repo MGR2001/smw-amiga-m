@@ -304,6 +304,7 @@ OP_RUN      equ 0
 OP_SYNC     equ 1
 OP_SKIP     equ 2
 OP_RUNSYNC  equ 3
+OP_LEVEL    equ 4                           ; principio del nivel (levelstart)
 
 game_step:
         lea     g_left(pc),a0
@@ -319,6 +320,8 @@ game_step:
         beq.s   .done
         cmp.b   #OP_SYNC,d0
         beq.s   .sync
+        cmp.b   #OP_LEVEL,d0
+        beq.s   .level
         move.l  d0,-(sp)
         GETBASE a0                 ; joypad -> $15-$18
         add.l   #_ram+$15-binstart,a0
@@ -334,8 +337,46 @@ game_step:
         lea     g_sts(pc),a1
         add.l   #576,(a1)
         bra     loadstate
+.level: move.l  g_sts(pc),a0
+        lea     g_sts(pc),a1
+        add.l   #576,(a1)
+        bra     levelstart
 .done:  rts
         endc
+
+;----------------------------------------------------------------------
+; --- levelstart --- el primer frame de un tramo que empieza al principio
+; del nivel (op LEVEL, m68kverify.py): el estado con las tablas de los
+; sprites a 0, level_start_sprites (manim.c: los sprites iniciales y la
+; parte de sprites del primer frame) y el mismo estado otra vez (Mario y
+; lo demas como el grabado; los sprites, los del port)
+; entrada:  a0 = el estado (576 bytes)
+; registros destruidos: d0-d1/a0-a1
+;----------------------------------------------------------------------
+levelstart:
+        movem.l d2/a2,-(sp)
+        move.l  a0,a2
+        GETBASE a1
+        add.l   #_ram-binstart,a1
+        lea     spr_keep(pc),a0
+        moveq   #SPR_KEEPN-1,d1
+.z:     move.w  (a0)+,d0
+        moveq   #12-1,d2
+.zb:    clr.b   (a1,d0.w)                   ; (d0 < $2000: P40 ok)
+        addq.w  #1,d0
+        dbf     d2,.zb
+        dbf     d1,.z
+        move.l  a2,a0
+        bsr     loadstate
+        movem.l d0-d7/a0-a6,-(sp)
+        GETBASE a4
+        move.l  a4,a0
+        add.l   #_level_start_sprites-binstart,a0
+        jsr     (a0)
+        movem.l (sp)+,d0-d7/a0-a6
+        move.l  a2,a0
+        movem.l (sp)+,d2/a2
+        bra     loadstate
 
 ; replay_init: punteros a los ops y a los estados; wm_SprLoadStatus. En
 ; vivo solo se usa el primer estado (el del principio de la partida)
@@ -428,7 +469,12 @@ live_restart:
         clr.w   (a0)
         bsr     replay_init                 ; wm_SprLoadStatus y g_sts
 live_start:
-        move.l  g_sts(pc),a0                ; el primer estado (SYNC)
+        move.l  g_sts(pc),a0                ; el primer estado (SYNC o LEVEL)
+        GETBASE a1
+        add.l   #replay-binstart,a1
+        add.l   12(a1),a1                   ; el primer op
+        cmp.b   #4,(a1)                     ; OP_LEVEL (m68kverify.py REP_LEVEL)
+        beq     levelstart
         bra     loadstate
 
 game_step:

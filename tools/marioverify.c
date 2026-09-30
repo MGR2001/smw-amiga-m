@@ -642,6 +642,10 @@ static int run_sprloop(const char *sprpath, const char *mappath)
         for (k = 0; k < 4; k++) { take(j, wm_MarioXPos + k); take(j, wm_Bg1HOfs + k); }
         take(j, wm_PlayerXPosLv); take(j, wm_PlayerXPosLv + 1);
         take(j, wm_Layer1ScrollDir); take(j, wm_FrameA); take(j, wm_SpritesLocked);
+        /* un congelamiento que empieza en N+1 lo puso un sprite (HurtMario
+           desde el Rex): los que corren antes todavia no lo ven */
+        if (!orc(i, wm_SpritesLocked) && !orc(i, wm_MarioAnimation) && orc(j, wm_MarioAnimation) == 1)
+            ram[wm_SpritesLocked] = 0;
         take(j, wm_SlopeSteepness); take(j, wm_SlopeSteepness + 1);
         for (k = 0; k < 2; k++) { take(j, wm_PlayerYPosLv + k); }
         take(j, wm_IsDucking); take(j, wm_MarioPowerUp); take(j, wm_IsSpinJump);
@@ -722,19 +726,62 @@ static int run_sprloop(const char *sprpath, const char *mappath)
 /* ------------------------------------------------------------------ */
 /* Modo "game": el frame de nivel entero en lazo cerrado. Mario desde el
    joypad (como "loop") y, en el mismo frame y en el orden del juego, los
-   sprites (los Rex que nacen a la vista los corre el port; el resto se
-   copia del oraculo, como en "sprloop"). Asi los pisotones de Mario salen
-   de los Rex del port. Resincroniza a Mario en cada diferencia (sin tocar
-   los sprites que sigue el port). */
+   sprites: los portados (game_ported) que nacen a la vista los corre el
+   port; el resto se copia del oraculo, como en "sprloop". Asi los
+   pisotones de Mario salen de los sprites del port. Resincroniza a Mario en
+   cada diferencia (sin tocar los sprites que sigue el port).
+   Si el tramo empieza al principio del nivel (los sprites del primer frame
+   son los que crea level_start_sprites con ese estado), los sprites
+   iniciales tambien son del port desde el primer frame; si no, se marcan
+   cargados los que estan a la vista (no se conocen sus tablas).
+   Cuenta los frames exactos de cada numero de sprite (etapa 9.1). */
+static int game_ported(int n)
+{
+    return n == 0xAB || n == 0xB9 || n == 0x83 || n == 0xBD || n == 0x02 || n == 0x9F || n == 0x4F
+        || n == 0x8E || n == 0xC7;
+}
+
+static const int scmp[] = { wm_SpriteStatus, wm_SpriteXLo, wm_SpriteXHi, wm_SpriteYLo,
+                            wm_SpriteYHi, wm_SpriteSpeedX, wm_SpriteSpeedY, wm_SpriteState,
+                            wm_SpriteXAcc, wm_SpriteYAcc, wm_SpriteNum };
+#define NSCMP 11
+
+/* la ranura k del port = la del oraculo en el frame i (los campos grabados;
+   XAcc de las ranuras 8-11 no se graba) */
+static int spr_same(long i, int k)
+{
+    int c;
+    if (!ram[wm_SpriteStatus + k] && !orc(i, wm_SpriteStatus + k))
+        return 1;
+    for (c = 0; c < NSCMP; c++) {
+        int v = orc(i, scmp[c] + k);
+        if (v >= 0 && ram[scmp[c] + k] != v)
+            return 0;
+    }
+    return 1;
+}
+
+/* estado grabado del frame i; las ranuras que sigue el port se quedan */
+static void game_load(long i, const int *follow, const u8 *spr)
+{
+    static u8 keep[0x2000];
+    int k, c;
+    memcpy(keep, ram, sizeof keep);
+    load(i);
+    for (k = 0; k < 12; k++)
+        if (follow[k]) for (c = 0; c < NSCMP; c++) ram[scmp[c] + k] = keep[scmp[c] + k];
+    ram[0x1931] = 0x07;
+    ram[wm_SpriteMemory] = spr[0] & 0x3F;
+    ram[wm_LowestSolidSprTile] = ram[wm_HighestSolidSprTile] = 0xFF;
+}
+
 static int run_game(const char *sprpath, const char *mappath)
 {
-    static u8 spr[1024], map0[0x8000], map[0x8000], keep[0x2000];
-    static const int scmp[] = { wm_SpriteStatus, wm_SpriteXLo, wm_SpriteXHi, wm_SpriteYLo,
-                                wm_SpriteYHi, wm_SpriteSpeedX, wm_SpriteSpeedY, wm_SpriteState,
-                                wm_SpriteXAcc, wm_SpriteYAcc, wm_SpriteNum };
-    long i, frames = 0, resync = 0, longest = 0, cur = 0, rexf = 0, rexok = 0;
+    static u8 spr[1024], map0[0x8000], map[0x8000], snap[0x2000];
+    static long sfr[256], sok[256];
+    long i, frames = 0, resync = 0, longest = 0, cur = 0, rexf = 0, rexok = 0, lstart = 0;
     long cause[NFF + 2];
-    int k, c, synced = 0, follow[12] = {0}, shown = 0;
+    int k, c, synced = 0, follow[12] = {0}, shown = 0, pnum[12], fresh = 0, skip, hurt;
     size_t mlen;
     FILE *f = fopen(sprpath, "rb");
     if (!f) { perror(sprpath); return 2; }
@@ -754,26 +801,63 @@ static int run_game(const char *sprpath, const char *mappath)
         int newseg = i == 0 || frame_of(i) != frame_of(i - 1) + 1 || db[(i - 1) * REC + 4] != 0x29;
         if (db[i * REC + 4] != 0x29) { synced = 0; continue; }
         if (newseg) {
-            int y, idx;
+            int y, idx, same = 1;
             unsigned cam = orc(i, wm_Bg1HOfs) | orc(i, wm_Bg1HOfs + 1) << 8;
             memcpy(map, map0, mlen);
             memset(ram, 0, sizeof ram);
             for (k = 0; k < 12; k++) follow[k] = 0;
-            for (y = 1, idx = 0; spr[y] != 0xFF; y += 3, idx++) {
-                unsigned sx = (((spr[y] << 3) & 0x10) | (spr[y + 1] & 0x0F)) << 8 | (spr[y + 1] & 0xF0);
-                if (sx + 0x30 >= cam && sx < cam + 0x120) ram[wm_SprLoadStatus + idx] = 1;
-            }
-            synced = 0;
-        }
-        if (orc(i, wm_MarioAnimation) || orc(i, wm_SpritesLocked)) { synced = 0; continue; }
-        if (!synced) {
-            memcpy(keep, ram, sizeof keep);
+            /* ?principio del nivel? los sprites iniciales del port con el
+               estado del primer frame, contra los grabados */
             load(i);
-            for (k = 0; k < 12; k++)            /* los sprites que sigue el port se quedan */
-                if (follow[k]) for (c = 0; c < 11; c++) ram[scmp[c] + k] = keep[scmp[c] + k];
             ram[0x1931] = 0x07;
             ram[wm_SpriteMemory] = spr[0] & 0x3F;
             ram[wm_LowestSolidSprTile] = ram[wm_HighestSolidSprTile] = 0xFF;
+            mario_unsupported = 0;
+            if (orc(i, wm_MarioAnimation) || orc(i, wm_SpritesLocked))
+                same = 0;                       /* el primer frame no se corre */
+            else
+                level_start_sprites();
+            for (k = 0; k < 12 && same; k++) same &= spr_same(i, k);
+            if (same) {
+                lstart++;
+                for (k = 0; k < 12; k++)
+                    follow[k] = ram[wm_SpriteStatus + k] && game_ported(ram[wm_SpriteNum + k]);
+                printf("  frame %u: principio del nivel, sprites iniciales del port = oraculo\n", frame_of(i));
+            } else {
+                memcpy(map, map0, mlen);
+                memset(ram, 0, sizeof ram);
+                for (y = 1, idx = 0; spr[y] != 0xFF; y += 3, idx++) {
+                    unsigned sx = (((spr[y] << 3) & 0x10) | (spr[y + 1] & 0x0F)) << 8 | (spr[y + 1] & 0xF0);
+                    if (sx + 0x30 >= cam && sx < cam + 0x120) ram[wm_SprLoadStatus + idx] = 1;
+                }
+            }
+            synced = 0;
+            fresh = 1;
+        }
+        /* Mario en una animacion o sprites congelados (sin portar): no se
+           corre, salvo el frame en que empieza, en el que el juego si corrio
+           los sprites (un Rex que dania a Mario lo congela todo en su
+           rutina): ahi corre el frame del port, pero no se compara a Mario */
+        skip = orc(i, wm_MarioAnimation) || orc(i, wm_SpritesLocked);
+        if (skip && !synced) continue;
+        if (!synced) {
+            game_load(i, follow, spr);
+            if (!fresh) {
+                /* despues de frames saltados (Mario en una animacion, sprites
+                   congelados): el juego corrio los sprites en este frame y el
+                   estado grabado ya lo trae; los del port lo corren aca (con
+                   el Mario grabado, que despues se vuelve a cargar) */
+                for (k = 11; k >= 0; k--) {
+                    int u = mario_unsupported;
+                    if (!follow[k]) continue;
+                    mario_unsupported = 0;
+                    sprite_run((u8)k);
+                    if (mario_unsupported) follow[k] = 0;
+                    mario_unsupported = u;
+                }
+                game_load(i, follow, spr);
+            }
+            fresh = 0;
             synced = 1;
             if (cur > longest) longest = cur;
             cur = 0;
@@ -789,10 +873,25 @@ static int run_game(const char *sprpath, const char *mappath)
         W16(wm_PlayerXPosLv, R16(wm_MarioXPos));        /* CODE_00A2F3 */
         W16(wm_PlayerYPosLv, R16(wm_MarioYPos));
         if (!mario_unsupported) mario_player();
+        if (skip && mario_unsupported) {        /* lo congelo Mario (tuberia, meta...): */
+            synced = 0;                         /* los sprites no llegaron a correr */
+            continue;
+        }
+        if (skip) memcpy(snap, ram, sizeof snap);
+        hurt = 0;
         if (!mario_unsupported) sprites_begin();
+        for (k = 0; k < 12; k++) pnum[k] = follow[k] ? ram[wm_SpriteNum + k] : -1;
         for (k = 11; k >= 0; k--) {
             if (!follow[k]) {
-                for (c = 0; c < 11; c++) take(i, scmp[c] + k);
+                int was = ram[wm_SpriteStatus + k];
+                int sx = ram[wm_SpriteXLo + k] | ram[wm_SpriteXHi + k] << 8;
+                int cx = R16(wm_Bg1HOfs);
+                for (c = 0; c < NSCMP; c++) take(i, scmp[c] + k);
+                /* salio de pantalla (y no murio a la vista): el juego libera
+                   su indice en el nivel (_OffScrEraseSprite), como en sprload */
+                if (was >= 8 && !ram[wm_SpriteStatus + k] && ram[wm_SprIndexInLvl + k] != 0xFF
+                    && (sx < cx - 0x20 || sx > cx + 0x110))
+                    ram[wm_SprLoadStatus + ram[wm_SprIndexInLvl + k]] = 0;
                 if (orc(i, wm_SpriteStatus + k) == 1 && (i == 0 || orc(i - 1, wm_SpriteStatus + k) != 1))
                     ram[wm_SpriteStatus + k] = 0;
                 if (ram[wm_SpriteStatus + k]) sprite_tweakers((u8)k);
@@ -800,34 +899,53 @@ static int run_game(const char *sprpath, const char *mappath)
             }
             {
                 int u = mario_unsupported;
+                unsigned ev = mario_events;
+                u8 ht = R8(wm_PlayerHurtTimer) | R8(wm_StarPowerTimer) | R8(wm_MarioAnimation);
                 mario_unsupported = 0;
                 sprite_run((u8)k);
                 if (mario_unsupported) follow[k] = 0;
                 mario_unsupported = u;
+                /* HurtMario (sin portar: MEV_HURT) congela a los que vienen
+                   detras en este mismo frame (SpritesLocked = $2F) */
+                if ((mario_events & ~ev & MEV_HURT) && !ht) {
+                    W8(wm_SpritesLocked, 0x2F);
+                    hurt = 1;
+                }
             }
+        }
+        if (skip && !hurt) {                    /* lo congelo otra cosa, antes que a los */
+            memcpy(ram, snap, sizeof snap);     /* sprites: se deshace su parte del frame */
+            synced = 0;
+            continue;
         }
         blocks_update();
         sprite_load_level();
         for (k = 0; k < 12; k++)
-            if (((spr_spawned >> k) & 1) && (ram[wm_SpriteNum + k] == 0xAB || ram[wm_SpriteNum + k] == 0xB9
-                 || ram[wm_SpriteNum + k] == 0x83))
+            if (((spr_spawned >> k) & 1) && game_ported(ram[wm_SpriteNum + k]))
                 follow[k] = 1;
         frames++;
         for (k = 0; k < 12; k++) {
-            int okr = 1;
+            int okr, n;
             if (!follow[k]) continue;
             if (!ram[wm_SpriteStatus + k] && !orc(i, wm_SpriteStatus + k)) { follow[k] = 0; continue; }
             rexf++;
-            for (c = 0; c < 10; c++) if (ram[scmp[c] + k] != orc(i, scmp[c] + k)) okr = 0;
+            okr = spr_same(i, k);
+            n = pnum[k] >= 0 ? pnum[k] : ram[wm_SpriteNum + k];     /* el que corrio */
+            sfr[n]++;
+            sok[n] += okr;
             rexok += okr;
             if (!okr && getenv("GAME_SHOW")) {
-                printf("  rex frame %u ranura %d:", frame_of(i), k);
-                for (c = 0; c < 10; c++) if (ram[scmp[c] + k] != orc(i, scmp[c] + k))
+                printf("  sprite %02X frame %u ranura %d:", n, frame_of(i), k);
+                for (c = 0; c < NSCMP; c++) if (orc(i, scmp[c] + k) >= 0 && ram[scmp[c] + k] != orc(i, scmp[c] + k))
                     printf(" [%04X] %02X/%02X", scmp[c], ram[scmp[c] + k], orc(i, scmp[c] + k));
                 printf("\n");
             }
             if (!okr) {
-                for (c = 0; c < 10; c++) take(i, scmp[c] + k);
+                if (ram[wm_SpriteNum + k] != orc(i, wm_SpriteNum + k)) {
+                    take(i, wm_SpriteNum + k);
+                    sprite_tweakers((u8)k);
+                }
+                for (c = 0; c < NSCMP; c++) take(i, scmp[c] + k);
                 if (orc(i, wm_SpriteSpeedX + k)) ram[wm_SpriteDir + k] = (orc(i, wm_SpriteSpeedX + k) & 0x80) ? 1 : 0;
                 if (orc(i, wm_SpriteStatus + k) != 8) follow[k] = 0;
             }
@@ -838,6 +956,7 @@ static int run_game(const char *sprpath, const char *mappath)
                     follow[k] = 1;
                     ram[wm_SpriteDir + k] = (ram[wm_SpriteSpeedX + k] & 0x80) ? 1 : 0;
                 }
+        if (skip) { synced = 0; continue; }
         if (mario_unsupported) bad = NFF;
         for (k = 0; k < NFF && bad < 0; k++) {
             int a = ffields[k].adr;
@@ -852,16 +971,15 @@ static int run_game(const char *sprpath, const char *mappath)
                    orc(i, wm_IsOnSolidSpr) ? "  [sobre un sprite]" : "");
         if (cur > longest) longest = cur;
         cur = 0;
-        memcpy(keep, ram, sizeof keep);
-        load(i);
-        for (k = 0; k < 12; k++)
-            if (follow[k]) for (c = 0; c < 11; c++) ram[scmp[c] + k] = keep[scmp[c] + k];
-        ram[0x1931] = 0x07;
+        game_load(i, follow, spr);
     }
     if (cur > longest) longest = cur;
     printf("\n[game] frames: %ld  resincronizaciones de Mario: %ld  tramo mas largo: %ld\n",
            frames, resync, longest);
     printf("       Rex seguidos: %ld Rex-frames, exactos %ld\n", rexf, rexok);
+    printf("       tramos que empiezan al principio del nivel: %ld\n", lstart);
+    for (k = 0; k < 256; k++)
+        if (sfr[k]) printf("       sprite %02X: seguidos %ld exactos %ld\n", k, sfr[k], sok[k]);
     printf("       primer campo distinto:");
     for (k = 0; k < NFF; k++) if (cause[k]) printf(" %s:%ld", ffields[k].name, cause[k]);
     if (cause[NFF]) printf(" sin-portar:%ld", cause[NFF]);
