@@ -119,19 +119,23 @@ int mario_sprite(u16 *spr, u16 vy0, u16 hx0)
             ((u8 *)cv[i])[j] = 0;
     /* las entradas, de la de mas prioridad a la de menos */
     for (e = 0; e < 4; e++) {
-        u8 *o = mario_oam + 4 * e;
-        u8 prop = o[3], hf = (prop >> 6) & 1, vf = (prop >> 7) & 1;
+        /* los 4 bytes de la entrada a variables: con `u8 *o` y `prop = o[3]`
+           el vbcc de cloud dejaba o + 3 en el registro y leia o[0..2] desde
+           ahi (x = prop, y = el tile...): escribia fuera de cv (P38) */
+        u8 o0 = mario_oam[4 * e], o1 = mario_oam[4 * e + 1];
+        u8 o2 = mario_oam[4 * e + 2], prop = mario_oam[4 * e + 3];
+        u8 hf = (prop >> 6) & 1, vf = (prop >> 7) & 1;
         int big = mario_osz[e] & 2, nt = big ? 2 : 1, tx, ty, r;
-        if (o[1] == 0xF0)
+        if (o1 == 0xF0)
             continue;
-        ex = o[0] | ((mario_osz[e] & 1) << 8);
+        ex = o0 | ((mario_osz[e] & 1) << 8);
         if (ex >= 256)
             ex -= 512;
-        ey = o[1] >= 0xF0 ? o[1] - 256 : o[1];
+        ey = o1 >= 0xF0 ? o1 - 256 : o1;
         for (ty = 0; ty < nt; ty++)
             for (tx = 0; tx < nt; tx++) {
                 /* el tile de la VRAM que va en (tx, ty) de la entrada */
-                const u8 *t = vram_tile((u8)(o[2] + (hf ? nt - 1 - tx : tx)
+                const u8 *t = vram_tile((u8)(o2 + (hf ? nt - 1 - tx : tx)
                                              + 16 * (vf ? nt - 1 - ty : ty)));
                 if (!t)
                     continue;
