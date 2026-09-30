@@ -50,7 +50,7 @@
 | rama | contenido |
 |---|---|
 | `master` | base hasta el 2026-09-27: primer ADF jugable (etapas 0, 6.1-6.3, 8.2, 6b) |
-| `claude/brave-ritchie-mm5o6r` | sesión cloud del 2026-09-30, sobre `master`: oráculos sin usuario (snesorc), Etapa 9.1 (6 sprites más, `game` sin resincronizaciones), entrada y modo diagnóstico (6b.7), tres bugs arreglados (cámara vertical, copper de la línea 255, `mario_sprite` mal compilado) y herramientas de la 6.4. **Sin mergear a `master`**: lo decide el usuario |
+| `claude/brave-ritchie-mm5o6r` | sesión cloud del 2026-09-30, sobre `master`: oráculos sin usuario (snesorc), Etapa 9.1 (6 sprites más, `game` sin resincronizaciones), entrada y modo diagnóstico (6b.7), tres bugs arreglados (cámara vertical, copper de la línea 255, `mario_sprite` mal compilado) y herramientas de la 6.4. **Mergeada a `master` el 2026-09-30** (pedido del usuario, avance rápido) |
 
 - Trabajo en paralelo con 4 subagentes, cada uno en su worktree; el
   coordinador integró, arregló lo que quedó flojo y verificó todo junto.
@@ -134,6 +134,11 @@ GDEFS=" " OUT=work/live sh tools/game_build.sh                # el de jugar
    chip + 512 KB slow, `work/play.uae`). Nunca se probó con teclas: el
    modo diagnóstico (ESPACIO cambia de página; RETURN, Z, A o el botón
    vuelven a empezar), el handshake del teclado y los dobles saltos (P55).
+   **Esperado:** si Mario se queda quieto al empezar, el Koopa deslizante
+   (que se simula pero todavía no se dibuja) lo mata en el frame 219, y el
+   diagnóstico muestra `MOTIVO 10 DANO`, `FRAME 00DB`. El juego original
+   hace lo mismo en el mismo frame (`$71` = 9; comprobado con snesorc); lo
+   que falta es la animación de muerte (P8, Z1) y dibujar al Koopa (9.2).
    Si se congela: captura de la **página 2** y
    `python3 tools/diag_read.py --shot X.png --repro --bin work/live/game.bin`
    (el `game.bin` del ADF que se usó) dice en qué frame y por qué.
@@ -141,7 +146,7 @@ GDEFS=" " OUT=work/live sh tools/game_build.sh                # el de jugar
 3. **Usuario, opcional:** probar en una A500 real.
 4. Las grabaciones de la 8.1 ya no necesitan al usuario (snesorc). Solo el
    audio de referencia de la 11 quedaría para la PC, si snesrev no lo da.
-5. **[usuario] Mergear `claude/brave-ritchie-mm5o6r` a `master`.**
+5. ~~Mergear `claude/brave-ritchie-mm5o6r` a `master`~~: hecho el 2026-09-30.
 
 ### 1.8 Lo que falta, en sesiones (estimado el 2026-09-30)
 
