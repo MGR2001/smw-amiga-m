@@ -151,6 +151,60 @@ def routines(syms):
             for i, (a, n) in enumerate(code)]
 
 
+def labels(lst):
+    """todas las etiquetas con codigo (globales y locales), ordenadas:
+    [(direccion, 'rutina.etiqueta')]"""
+    out, glob = [], None
+    for ln in open(lst, encoding="latin-1"):
+        m = re.match(r"^(?:\d\d:([0-9A-F]{8}) \S*)?\s+\d+: ([A-Za-z_.]\w*):", ln)
+        if not m:
+            continue
+        lab = m.group(2)
+        if not lab.startswith("."):
+            glob = lab
+            name = lab
+        else:
+            name = "%s%s" % (glob, lab)
+        if m.group(1):
+            out.append((int(m.group(1), 16), name))
+    return sorted(out)
+
+
+def zones(sc, lst, top=40):
+    """perfil por zonas (etiquetas locales) de UN frame, instruccion a
+    instruccion (m.execute(1) devuelve los ciclos de cada una). Da, por
+    zona, las veces que se entra (ejecuciones de su primera instruccion),
+    instrucciones y ciclos. Una etiqueta sin codigo en su linea no cuenta:
+    sus ciclos van a la anterior."""
+    import bisect
+    labs = labels(lst)
+    starts = [BASE + a for a, _ in labs]
+    cyc, ins, ent = {}, {}, {}
+    sc.regs()
+    sc.cpu.w_reg(sc.M.Register.A7, STACK - 4)
+    sc.mem.w32(STACK - 4, RET)
+    sc.cpu.w_pc(BASE + sc.syms["frame"])
+    tot = 0
+    while True:
+        pc = sc.cpu.r_pc()
+        if pc == sc.w2l:
+            break
+        i = bisect.bisect_right(starts, pc) - 1
+        n = labs[i][1] if i >= 0 else "?"
+        if i >= 0 and pc == starts[i]:
+            ent[n] = ent.get(n, 0) + 1
+        r = sc.m.execute(1)
+        cyc[n] = cyc.get(n, 0) + r.cycles
+        ins[n] = ins.get(n, 0) + 1
+        tot += r.cycles
+    s = sc.v16(sc.V["V_S"])
+    print("frame s = %d: %d ciclos (%.1f %%) instruccion a instruccion" % (s, tot, 100 * tot / PAL))
+    print("  %-26s %8s %7s %8s %6s" % ("zona", "entradas", "instr", "ciclos", "%"))
+    for n, c in sorted(cyc.items(), key=lambda r: -r[1])[:top]:
+        print("  %-26s %8d %7d %8d %5.1f%%" % (n, ent.get(n, 0), ins[n], c, 100 * c / tot))
+    return s, tot
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--src", default=os.path.join(ROOT, "player", "scroll.s"))
@@ -161,6 +215,8 @@ def main():
     ap.add_argument("-D", action="append", default=[], help="define extra para vasm")
     ap.add_argument("--top", type=int, default=5)
     ap.add_argument("--at", type=int, help="perfil por rutina del frame con esta s")
+    ap.add_argument("--zones", action="store_true",
+                    help="con --at: perfil por zona (etiqueta local), en ciclos")
     ap.add_argument("--csv", help="escribir s,ciclos de cada frame")
     a = ap.parse_args()
 
@@ -178,7 +234,10 @@ def main():
         if a.at is not None and sc.v16(V["V_S"]) + a.speed >= a.at:
             s_next = min(sc.v16(V["V_S"]) + a.speed, a.stopx)
             if s_next == a.at:
-                profile(sc, syms)
+                if a.zones:
+                    zones(sc, lst)
+                else:
+                    profile(sc, syms)
                 return
         s, c = sc.frame()
         if s == prev:

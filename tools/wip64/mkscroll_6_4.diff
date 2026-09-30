@@ -1,0 +1,110 @@
+diff --git a/tools/mkscroll.py b/tools/mkscroll.py
+index 98109ab..df78dc5 100644
+--- a/tools/mkscroll.py
++++ b/tools/mkscroll.py
+@@ -34,20 +34,28 @@ Formato (big-endian):
+   L2B  capa 2, 224 lineas x 3 planos x 106 bytes (848 px: el periodo de
+        512 mas 336, para que el puntero no tenga que dar la vuelta)
+   L2P  224 lineas x 7 colores (registros 9..15)
+-  MLX  225 x u16: primera carga de cada linea en MLD
+-  MLD  cargas a mitad de linea de la capa 1, en coordenadas del nivel, 12
++  MLX  225 x u16: primera carga de cada linea en MLD (n.o de registro)
++  MLD  cargas a mitad de linea de la capa 1, en coordenadas del nivel, 20
+        bytes: u16 clase (0 = WAIT en x; 1 = MOVE detras de la anterior; 2,
+        3 = 1 o 2 MOVE de relleno y el MOVE), u16 x planificada (plan():
+        modelo medido del copper; creciente dentro de la linea), u16 registro
+-       ($182..$18E), u16 color, s16 a = fin del tramo anterior + 1 - x,
+-       s16 b = principio del nuevo - x - 6. Por linea, en el orden del plan,
+-       entre dos centinelas: antes, x = $FFFF (-1 con signo) y despues,
+-       x = $7FFF. La Amiga escribe las de x en [s0, s0 + LASTX]
+-       (la primera, siempre con WAIT) y esa escritura, fija en pantalla,
+-       sigue bien mientras s0 + a <= s < s0 + b (el MOVE cae entre x y
+-       x + 7: ver scroll.s, build_mid). MLX apunta a la primera carga
++       ($182..$18E), u16 color, s16 a = lo - x, s16 b = hi - x - 6 (lo = fin
++       del tramo anterior + 1, hi = principio del nuevo), u16 flags (bit 0:
++       "tarde", a > 0 o b <= 0: escrita con la base s no cae en su ventana),
++       s16 lonext = lo de la siguiente carga del mismo registro ($7FFF si no
++       hay), s16 PL = max min(lo, x + 1) de las cargas anteriores de la
++       linea que alguna vez hacen falta (ventana < NEEDW; -$8000 si no hay),
++       s16 SR = min max(hi, x) de esta y las siguientes que alguna vez hacen
++       falta ($7FFF): la linea tiene que mirarse cuando s < PL(klo) o
++       s + LASTX >= SR(khi). Por
++       linea, en el orden del plan, entre dos centinelas: antes, x = $FFFF
++       (-1 con signo) y despues, x = $7FFF. Escrita con base s0 (el WAIT con
++       la h de x - s0), una carga cae entre x - s0 y x - s0 + 7 de pantalla y
++       vale mientras s0 + a <= s < s0 + b; "muerta" (s >= lo: el borrado ya
++       tiene su color) no molesta mientras s < lonext. Ver scroll.s,
++       build_mid. MLX apunta a la primera carga
+   LNS  lineas que build_mid tiene que mirar: u16 x (W/16 + 1) desplazamientos
+-       (desde LNS) de listas de u16 (linea * 32, $FFFF al final), una por
++       (desde LNS) de listas de u16 (linea * LT, $FFFF al final), una por
+        cada 16 px de s (k = s >> 4): las lineas con alguna carga en pantalla
+        para alguna s en [16k - 16, 16k + 32). Asi tambien se limpian las
+        que se quedan sin cargas (la camara no se mueve mas de 16 px entre
+@@ -69,6 +77,10 @@ WORK = os.path.join(HERE, "..", "work")
+ Y0, LINES = 192, 224
+ LASTXMAX = 316              # LASTX de scroll.s a 320 px (a 256: 255); MSK con el mayor
+ SEG = 220                   # bytes por linea en la lista del copper (scroll.s: SEG)
++MLDR = 20                   # bytes por carga en MLD (scroll.s: MLDR)
++LT = 144                    # bytes por linea en linetab (scroll.s: LT); LNS guarda linea * LT
++NEEDW = 320                 # una carga con ventana (hi - lo) >= NEEDW nunca hace falta
++                            # (entera en pantalla): no entra en PL / SR
+ 
+ 
+ def plan(loads):
+@@ -144,23 +156,47 @@ def main():
+     pxs = [[] for _ in range(LINES)]
+     late = 0
+     for L in range(LINES):
+-        mldb += struct.pack(">HHHHHH", 0, 0xFFFF, 0, 0, 0, 0)
+-        mlx.append(len(mldb) // 12)
+         out, lt = plan(mld[L])
+         late += lt
+-        for tx, k, (pe, cs, r, c) in out:
+-            mldb += struct.pack(">HHHHhh", k, tx, r, c, pe + 1 - tx, cs - tx - 6)
++        n = len(out)
++        lo = [pe + 1 for _, _, (pe, cs, r, c) in out]
++        hi = [cs for _, _, (pe, cs, r, c) in out]
++        need = [hi[k] - lo[k] < NEEDW for k in range(n)]
++        # lonext: lo de la siguiente carga del MISMO registro (su CHG se
++        # aplica en s >= lonext: desde ahi la carga muerta ya no es inocua)
++        lonext, seen = [0x7FFF] * n, {}
++        for k in range(n - 1, -1, -1):
++            r = out[k][2][2]
++            lonext[k] = seen.get(r, 0x7FFF)
++            seen[r] = lo[k]
++        # umbrales de entrada: una carga que no esta escrita hace falta cuando
++        # su ventana entera esta en pantalla (s < lo y hi <= s + LASTX) y se
++        # puede escribir cuando su x esta en pantalla (s <= x <= s + LASTX)
++        tx = [q[0] for q in out]
++        pl = [-0x8000] * (n + 1)
++        for k in range(n):
++            pl[k + 1] = max(pl[k], min(lo[k], tx[k] + 1) if need[k] else -0x8000)
++        sr = [0x7FFF] * (n + 1)
++        for k in range(n - 1, -1, -1):
++            sr[k] = min(sr[k + 1], max(hi[k], tx[k]) if need[k] else 0x7FFF)
++        mldb += struct.pack(">HHHHhhhhhh", 0, 0xFFFF, 0, 0, 0, 0, 0, 0x7FFF, -0x8000, sr[0])
++        mlx.append(len(mldb) // MLDR)
++        for k, (tx, cl, (pe, cs, r, c)) in enumerate(out):
++            a, b = lo[k] - tx, cs - tx - 6
++            tarde = 1 if (a > 0 or b <= 0) else 0       # nunca vale con la base s (P50)
++            mldb += struct.pack(">HHHHhhhhhh", cl, tx, r, c, a, b, tarde, lonext[k],
++                                pl[k], sr[k])
+             pxs[L].append(tx)
+-        mldb += struct.pack(">HHHHHH", 0, 0x7FFF, 0, 0, 0, 0)
+-    mlx.append(len(mldb) // 12)
++        mldb += struct.pack(">HHHHhhhhhh", 0, 0x7FFF, 0, 0, 0, 0, 0, 0x7FFF, pl[n], 0x7FFF)
++    mlx.append(len(mldb) // MLDR)
+     print("cargas a mitad de linea que llegan tarde en el plan (modelo medido): %d de %d"
+-          % (late, len(mldb) // 12 - 2 * LINES))
++          % (late, len(mldb) // MLDR - 2 * LINES))
+     nk = W // 16 + 1
+     lns_o, lns_d = [], bytearray()
+     for k in range(nk):
+         lo, hi = 16 * k - 16, 16 * k + 31 + LASTXMAX
+         lns_o.append(2 * nk + len(lns_d))
+-        ls = [32 * L for L in range(LINES) if any(lo <= x <= hi for x in pxs[L])]
++        ls = [LT * L for L in range(LINES) if any(lo <= x <= hi for x in pxs[L])]
+         lns_d += struct.pack(">%dH" % (len(ls) + 1), *ls, 0xFFFF)
+     lns = struct.pack(">%dH" % nk, *lns_o) + bytes(lns_d)
+     rows0 = Y0 // 16
