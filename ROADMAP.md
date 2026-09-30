@@ -143,6 +143,33 @@ GDEFS=" " OUT=work/live sh tools/game_build.sh                # el de jugar
    audio de referencia de la 11 quedaría para la PC, si snesrev no lo da.
 5. **[usuario] Mergear `claude/brave-ritchie-mm5o6r` a `master`.**
 
+### 1.8 Lo que falta, en sesiones (estimado el 2026-09-30)
+
+Una "sesión" = como la del 2026-09-30: un coordinador + 3-5 subagentes,
+unas horas. Detalle de cada punto en §10; tarjetas en `SUBAGENTES.md`.
+
+| # | bloque | sesiones | depende de |
+|---|---|---|---|
+| 1 | Ola 1: medir el frame entero (O1), grabaciones de snesorc (R0-R6), cargas "tarde" + LNS (S1a+S2), `f7f4` en asm, un fichero por sprite | 1 | — |
+| 2 | **50 Hz: scroll** (edición en el sitio, EDF, segmentos compartidos, un plan por sentido) + **la cámara vertical de YI1** (S8) | 2-3 | 1 |
+| 3 | **50 Hz: lógica** (asm donde marca el perfil, descartes rápidos) y Mario sin redibujar | 1 | 1 |
+| 4 | Sprites que faltan: lógica (Chuck, caparazones, meta, power-ups, bolas de fuego, animaciones de Mario, monedas, reserva) | 2 | 1 |
+| 5 | Sprites: dibujo en la Amiga (conversor, asignador, copper, bobs) | 2-3 | 2, 4 |
+| 6 | Carga y memoria (tablas de CPU a slow RAM, vlink, loader, compresión) | 1-2 | — |
+| 7 | HUD, cajas de mensaje y pausa | 1 | 6 |
+| 8 | Audio (captura del DSP, muestras, secuenciador, efectos) | 2 | 6 |
+| 9 | Zona de la tubería (D16) | 1 | 6 |
+| 10 | Pulido: muerte, punto medio, meta, tiempo, fundidos, prioridad del poste; replay hasta la meta | 1-2 | 4 |
+| 11 | Segunda ronda de optimización con todo junto (sprites dibujados + HUD + audio suman coste) | 1 | 5, 7, 8 |
+| 12 | Cierre: pruebas en WinUAE KS 1.2/1.3, arreglos de lo que encuentre el usuario, ADF final | 1 | todo |
+| | **total** | **16-20** (≈ 15 si todo sale a la primera) | |
+
+En paralelo, del lado del usuario (PC): jugar cada ADF nuevo en WinUAE
+(U1), la Etapa 7 contra la referencia (U2) y, si quiere, una A500 real.
+El riesgo que más puede mover la cuenta es el 2 (el scroll a 50 Hz: la
+sesión del 2026-09-30 no lo cerró); si después de 3 sesiones no entra, se
+le llevan los números al usuario (D1).
+
 ### Lo último que se hizo y lo siguiente
 
 - **Hecho el 2026-09-30:** los oráculos en cloud, la 9.1 sin
@@ -176,8 +203,8 @@ GDEFS=" " OUT=work/live sh tools/game_build.sh                # el de jugar
 - Todo lo que falta, con cómo lo haría: §10. Otro nivel, partidas
   guardadas, pantalla de carga: §11. En tarjetas para subagentes:
   `SUBAGENTES.md` (olas 1-6; la ola 1 no depende de la compuerta D1).
-- Decisiones abiertas **[usuario]**: D1 (50 Hz, con los números de §10.1),
-  D15 (velocidad, §10.12) y D16 (zona de la tubería, §10.10).
+- Decisiones del usuario del 2026-09-30: **D1 = 50 Hz, todo lo posible**;
+  **D15 = se acepta el 83 %**; **D16 = la zona de la tubería entra**.
 
 ---
 
@@ -224,9 +251,9 @@ equilibrio entre 1:1 y coste. Solo queda abierta la compuerta D1.
 
 | ID | Decisión | Qué se hace | Consecuencias | Etapa |
 |---|---|---|---|---|
-| D1 | 50 Hz o no | **abierta**: compuerta de §2 | se decide con el peor frame del juego integrado | después de la 6b |
-| **D15** | Velocidad: el ROM (U) es NTSC y la Amiga va a 50 Hz | **abierta [usuario]**: recomendación, aceptar el 83 % de velocidad como la SNES PAL (§10.12) | con (b), +20 % de CPU de lógica | — |
-| **D16** | ¿La zona de la tubería (`obj-1.lv`) entra en el alcance? | **abierta [usuario]**: recomendación, sí (criterio 1:1; §10.10) | conversión de una segunda zona, tuberías y transición | 12 |
+| D1 | 50 Hz o no | **cerrada (usuario, 2026-09-30): 50 Hz, haciendo todo lo posible**; "si no se puede, no se puede" | la optimización (§9, §10.1-10.3) va antes que todo lo que suma coste. Si agotadas las ideas el peor frame sigue sin entrar, se le presentan al usuario los números y el plan B (dibujo a 25 Hz) | todas |
+| **D15** | Velocidad: el ROM (U) es NTSC y la Amiga va a 50 Hz | **cerrada (usuario, 2026-09-30): se acepta** el 83 % de velocidad, como la SNES PAL (§10.12) | nada que hacer; la música mantiene el tempo (tick por CIA) | — |
+| **D16** | ¿La zona de la tubería (`obj-1.lv`) entra en el alcance? | **cerrada (usuario, 2026-09-30): entra** (§10.10) | conversión de una segunda zona, tuberías y transición | 12 |
 | **D5** | Música | **secuenciador propio** que lee las secuencias N-SPC de SMW convertidas offline a un formato compacto de eventos (no MOD) | Conserva glissandos, vibrato, envolventes (ADSR aproximado por tick) y el tempo del SPC700 (tick por timer de CIA). **Sin mezcla por CPU**: cada voz va directa a un canal de Paula, 3 de música + 1 de efectos, con prioridad por tema; el eco se omite. Límites: ≤ 64 KB de muestras en chip RAM y **≤ 3 % de CPU** medido | 11 |
 | **D10** | Ancho de pantalla | **256 px**, como la SNES | DIW centrada; el fetch empieza más tarde, así que vuelve el sprite 7 (4 columnas adosadas); 20 % menos de DMA de planos; la cámara y la aparición de enemigos quedan 1:1 | 6.1 |
 | **D11** | HUD | **superpuesto (overlay)**, como la SNES | En las líneas del HUD el copper apunta PF1 a un bitmap fijo del HUD y PF2 sigue con su paralaje. Si en esas líneas aparece capa 1 del nivel, antes de renunciar al overlay se busca otra variante que lo conserve (10.1) y se consulta | 10 |
@@ -1367,6 +1394,11 @@ Medido en el replay (6313 frames): la pose dibujada (punteros de tiles
 ---
 
 ## 10. Todo lo que falta, y cómo lo haría (2026-09-30)
+
+> Decisiones del usuario del mismo día: D1 = 50 Hz haciendo todo lo
+> posible, D15 = se acepta la velocidad PAL, D16 = la zona de la tubería
+> entra. Donde abajo dice "decisión [usuario]" o "recomendación", ya está
+> decidido así.
 
 La lista completa hasta el ADF final, en el orden en que lo haría. Para
 cada punto: **qué falta**, **cómo lo haría** (con las alternativas y por qué

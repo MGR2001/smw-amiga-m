@@ -137,7 +137,7 @@ y el coordinador resuelve los conflictos al integrar.
 
 ```
 Ola 1 (ya)   I1 · O1 · R0 → R1…R6 · S1a+S2 · L1a
-Ola 2        O3 · O4 [usuario: D1, D15, D16] · P1+P2 · P3 · MA1 · S4 (F) · L1c
+Ola 2        O3 · O4 · P1+P2 · P3 · MA1 · S4 (F) · L1c
 Ola 3        S5 (F) · L1b+L1d+L2 · G1 · G2 (F) · C1 · H1 · A1 · A2 (F) · R7
 Ola 4        S3 → S8 → S6 (F) · G3 · G4 · G6 · C2 (F) · C3 · H2 · A3 · R8 · P4…P10
 Ola 5        G5 (F) · C4 · H4 · A4 · MA2 · E1 · E2 · E3
@@ -151,9 +151,11 @@ en paralelo (cada guion es su fichero). P4…P10 van en paralelo gracias a
 I1 (cada sprite en su `player/spr_*.c`), salvo P8, que toca la lógica de
 Mario y va sola. Z1…Z6 tocan todos `game.s`: un agente, en serie.
 
-- La **compuerta D1** (O4) puede cambiar el alcance de las olas 3-6 (por
-  ejemplo, si se dibuja a 25 Hz): no lanzar la ola 3 antes de la
-  respuesta del usuario.
+- D1, D15 y D16 están decididas (2026-09-30: 50 Hz haciendo todo lo
+  posible, velocidad PAL aceptada, la zona de la tubería entra). O4 ya no
+  espera una decisión: es el informe que dice qué optimizar primero. Solo
+  se vuelve al usuario si, agotadas las ideas de §9, el peor frame no
+  entra.
 - Después de cada ola: integración completa (§2.4) y handoff en
   `ROADMAP.md` §1.
 - Tamaño de ola razonable: **3-5 subagentes a la vez**. Más, y la revisión
@@ -210,7 +212,7 @@ Ver R6.
   y `--emu game` corre O1 en FS-UAE.
 - Puerta: métricas nuevas presentes y estables en dos corridas seguidas.
 
-#### O4 — Informe de la compuerta D1 **[usuario]**
+#### O4 — Informe del peor frame (D1 ya decidida: 50 Hz, todo lo posible)
 **F (coordinador) · O1, O3, R6**
 - Hace: tabla del peor frame del juego integrado (replay + escenarios de
   estrés) por parte, contra ROADMAP §2; las tres opciones de §2 con

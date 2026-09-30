@@ -1413,7 +1413,7 @@ justo lo que hace la SNES con CGRAM.
 
 | ID | Decisión | Opciones | Estado |
 |---|---|---|---|
-| D1 | Compromiso de scroll/color/frecuencia | **1 px (`BPLCON1`) / 5 planos, 31 colores / 50 Hz** | **cerrado** con la etapa 4: scroll + 5 bobs = 48-68 % del frame. Queda por medir la lógica de juego (etapas 8-9); si no entra, 25 Hz |
+| D1 | Compromiso de scroll/color/frecuencia | **1 px (`BPLCON1`) / 5 planos, 31 colores / 50 Hz** | **cerrado** con la etapa 4: scroll + 5 bobs = 48-68 % del frame. **Confirmado por el usuario el 2026-09-30: 50 Hz, haciendo todo lo posible**; 25 Hz solo si agotada la optimización no entra (ROADMAP §3) |
 | D2 | Nivel objetivo | **Yoshi's Island 1** (`world_1/1/`) | cerrado |
 | **D3** | Enemigos del demo | Los que tiene el nivel de verdad (`spr.lv`, ver abajo). **Goomba y Koopa Troopa NO aparecen en Yoshi's Island 1** | **corregido** — mínimo: Rex + Banzai Bill + Jumping Piranha |
 | D4 | Lenguaje principal | C para lógica + asm para hardware | cerrado |
@@ -1427,8 +1427,8 @@ justo lo que hace la SNES con CGRAM.
 | **D12** | Power-ups | **todos los de Yoshi's Island 1**: seta, flor + bolas de fuego, estrella, 1-UP, luna 3-UP, champiñón invisible (no hay pluma en el nivel) | **cerrado** (usuario, 2026-09-26) |
 | **D13** | Carga y memoria | loader propio con `trackdisk`; lo que lee el chipset a chip RAM y el código y los datos de CPU a `$C00000`, todo en **direcciones fijas enlazadas en absoluto** (vlink) | **cerrado** (usuario, 2026-09-26); esquema en `ROADMAP.md` §3 |
 | **D14** | Controles | **teclado primero** (flechas, Z = B, X = A, A = Y, S = X, Return = Start, Shift der. = Select), joystick como alternativa | **cerrado** (usuario, 2026-09-26) |
-| **D15** | Velocidad (ROM NTSC en una Amiga PAL) | aceptar el 83 % como la SNES PAL, o 6 frames de lógica cada 5 | **abierta [usuario]**, ROADMAP §10.12 |
-| **D16** | Zona de la tubería (`obj-1.lv`, 2 pantallas) | dentro o fuera del alcance | **abierta [usuario]**, ROADMAP §10.10 |
+| **D15** | Velocidad (ROM NTSC en una Amiga PAL) | **se acepta el 83 %**, como la SNES PAL | **cerrado** (usuario, 2026-09-30), ROADMAP §10.12 |
+| **D16** | Zona de la tubería (`obj-1.lv`, 2 pantallas) | **entra en el alcance** | **cerrado** (usuario, 2026-09-30), ROADMAP §10.10 |
 
 ### D3 — los sprites reales de Yoshi's Island 1
 
