@@ -25,6 +25,9 @@
    una trampa nueva, se agrega como `Pnn` en `AGENTS.md` §8 (la próxima es
    **P77**).
 4. Al cerrar la sesión: handoff con la plantilla de §7, que reemplaza a §1.
+5. Para repartir el trabajo entre subagentes (tarjetas por etapa, niveles,
+   olas, mapa de conflictos y protocolo de integración): **`SUBAGENTES.md`**.
+   Worktree por tarea: `sh tools/wt_new.sh <tarjeta>`.
 
 **Reglas del proceso (no negociables, vienen de lo que ya costó caro):**
 
@@ -167,6 +170,8 @@ GDEFS=" " OUT=work/live sh tools/game_build.sh                # el de jugar
      `sprload` da 31/33 (la ROM mete la piraña `$4F` en la ranura que un Rex
      deja libre en el mismo frame; el port no).
 - Para retomar: `sh tools/setup_cloud.sh && python3 tools/regress.py`.
+- El resto del proyecto, en tarjetas para subagentes: `SUBAGENTES.md`
+  (olas 1-6; la ola 1 no depende de la compuerta D1).
 
 ---
 

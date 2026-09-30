@@ -8,6 +8,9 @@
 > y handoff vigente, 2026-09-30). Las secciones "Dónde quedó el trabajo" y
 > "Handoff cloud → sesión local" de abajo son el detalle histórico del
 > 2026-09-24.
+>
+> **Cómo repartirlo entre subagentes: `SUBAGENTES.md`** (tarjetas de todo lo
+> que falta, con nivel, puerta y ficheros que tocan).
 
 ---
 
