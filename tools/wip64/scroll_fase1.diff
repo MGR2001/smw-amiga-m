@@ -1,0 +1,365 @@
+diff --git a/player/scroll.s b/player/scroll.s
+index 95153b0..604395a 100644
+--- a/player/scroll.s
++++ b/player/scroll.s
+@@ -625,7 +625,7 @@ init_lines:
+         move.l  d0,(a0)                     ; donde van las cargas
+         moveq   #0,d0
+         move.w  (a1)+,d0
+-        mulu    #12,d0
++        mulu    #MLDR,d0
+         add.l   d2,d0
+         move.l  d0,4(a0)                    ; lo = hi = la primera carga
+         move.l  d0,8(a0)
+@@ -650,26 +650,52 @@ init_lines:
+ ; entrada:  V_BACK = lista que se escribe, V_S = scroll
+ ; salida:   en el segmento de cada linea que puede tener cargas en
+ ;           pantalla (LNS) y cuyo contenido ya no vale, las cargas del plan
+-;           con x en [s, s + LASTX] (hasta MIDMAX) y el salto al segmento
+-;           siguiente
++;           y el salto al segmento siguiente
+ ; registros destruidos: d0-d1/a0-a1 (guarda el resto)
+ ;
+ ; El plan (tools/mkscroll.py) esta en coordenadas del nivel: para cada
+ ; carga, la x en que cae y si va con WAIT, detras de la anterior o con 1-2
+-; MOVE de relleno. Aca se copia: la h del WAIT sale de htab[x - s] y la
+-; primera carga de la linea va siempre con WAIT (la anterior del plan
+-; quedo fuera por la izquierda).
++; MOVE de relleno. Aca se copia con una BASE s0: la h del WAIT sale de
++; htab[x - s0] y la primera carga escrita va siempre con WAIT. Todas las
++; cargas de la linea con la misma base: los huecos del plan se conservan.
+ ;
+ ; Lo escrito queda FIJO en pantalla: el MOVE de una carga cae entre x - s0
+-; y x - s0 + 7 (rejilla de 8 px, P42; los de detras, a 16 px del
+-; anterior). Sigue bien mientras caiga despues del fin del tramo anterior
+-; y antes del principio del nuevo: s0 + a <= s < s0 + b (a, b en MLD). La
+-; linea se reescribe cuando alguna deja de valer, cuando entra una carga
+-; por la derecha (s >= x[hi] - LASTX), cuando la camara vuelve y una
+-; vuelve a entrar por la izquierda (s <= x[lo - 1]) o la ultima sale por
+-; la derecha (s < x[hi - 1] - LASTX). Las que salen por la izquierda NO:
+-; escriben el color que el borrado ya puso. No depende de la direccion.
++; y x - s0 + 7 (rejilla de 8 px, P42; los de detras, a 16 px del anterior)
++; y vale (el color cambia despues del fin del tramo anterior y antes del
++; principio del nuevo) mientras s0 + a <= s < s0 + b. Una carga "muerta"
++; (s >= lo = x + a: el borrado ya tiene su color, CHG) no molesta mientras
++; la siguiente del mismo registro no se aplique en el borrado
++; (s < lonext). Una carga hace falta cuando su ventana [lo, hi] esta
++; entera en pantalla; las de la izquierda de la primera escrita y las de
++; la derecha de la ultima entran por los umbrales PL y SR (mkscroll.py).
++;
++; La base se elige segun hacia donde va la camara (6.4): a la derecha, la
++; mayor que deja validas las cargas vivas (caen lo mas a la izquierda
++; posible: valen mas tiempo); a la izquierda, la menor. Si no hay ninguna
++; (una carga con a > 0 o b <= 0: "tarde", P50), la canonica s0 = s, como
++; antes: la imagen de esas cargas depende solo de s, y es la misma
++; mientras no cambie su celda de la rejilla (x - s + 8) >> 3. Asi la ida y
++; la vuelta dan la misma imagen (P50) y la de hoy es la de antes: las
++; cargas validas pintan bien, las tarde como si se escribieran en s.
++;
++; La linea se reescribe cuando s sale de [vl, vu):
++;   vl = max(PL(klo), por carga: s0 + a, o lo si la carga caduca antes de
++;        morir, o el principio de su celda si es tarde)
++;   vu = min(SR(khi) - LASTX, por carga: lonext, s0 + b si esta viva y
++;        caduca antes de morir (e = lo - b > s0), el fin de su celda)
+ ;----------------------------------------------------------------------
++MLDR    equ 20                  ; bytes por carga en MLD (tools/mkscroll.py)
++M_CLS   equ 0
++M_X     equ 2
++M_MOVE  equ 4
++M_A     equ 8
++M_B     equ 10
++M_E     equ 12
++M_LON   equ 14
++M_PL    equ 16
++M_SR    equ 18
++LT      equ 32                  ; bytes por linea en linetab (mkscroll.py: LNS)
++
+ build_mid:
+         move.l  V_BACK(a5),a0
+         lea     V_LSA(a5),a1
+@@ -684,6 +710,9 @@ build_mid:
+ .go:    move.w  d0,(a1)
+         movem.l d2-d7/a2-a6,-(sp)
+         move.w  d0,d6                       ; d6 = s
++        lea     mdir(pc),a1                 ; direccion: 1 = a la izquierda
++        cmp.w   d1,d0                       ; (s vieja > s; $8000 = nunca:
++        slt     (a1)                        ; a la derecha)
+         sub.w   d0,d1                       ; |s vieja - s| > 16 (o nunca
+         bpl.s   .ab                         ; escrita): todas las lineas
+         neg.w   d1
+@@ -703,100 +732,196 @@ build_mid:
+         bne.s   .ta
+         lea     linetab_a(pc),a4
+ .ta:    move.l  a4,a5                       ; OJO: a5 prestado (vars)
+-        lea     htab(pc),a2
+-        sub.w   d6,a2                       ; a2 = htab - s
+         move.w  d6,d5
+         add.w   #LASTX,d5                   ; d5 = s + LASTX
+-        move.w  #$fffe,d2
+-.line:  move.w  (a6)+,d0                    ; linea * 32
++.line:  move.w  (a6)+,d0                    ; linea * LT
+         bmi     .done
+         lea     (a5,d0.w),a4                ; a4 = linetab[L]
+         cmp.w   12(a4),d6
+         blt.s   .rw                         ; s < vl
+         cmp.w   14(a4),d6
+         blt.s   .line                       ; s < vu: lo escrito vale
+-.rw:    move.l  4(a4),a1                    ; a1 = lo (registros de 12 bytes:
+-.lof:   cmp.w   2(a1),d6                    ; clase, x, MOVE, a, b)
+-        ble.s   .lob                        ; x < s: salio por la izquierda
+-        lea     12(a1),a1
++        ;--- klo: la primera con x >= s (registros de MLDR bytes;
++        ; centinelas: x = -1 antes, $7FFF despues)
++.rw:    move.l  4(a4),a1
++.lof:   cmp.w   M_X(a1),d6
++        ble.s   .lob                        ; x >= s
++        lea     MLDR(a1),a1
+         bra.s   .lof
+-.lob:   cmp.w   -10(a1),d6                  ; la anterior tiene x >= s: la
+-        bgt.s   .lod                        ; camara volvio (centinelas: -1
+-        lea     -12(a1),a1                  ; antes, $7FFF despues)
++.lob:   cmp.w   M_X-MLDR(a1),d6             ; la anterior tiene x >= s: la
++        bgt.s   .lod                        ; camara volvio
++        lea     -MLDR(a1),a1
+         bra.s   .lob
+-.lod:   move.l  a1,4(a4)
+-        move.l  8(a4),a0                    ; a0 = hi
+-.hif:   cmp.w   2(a0),d5                    ; x <= s + LASTX: entro por la
+-        blt.s   .hib                        ; derecha
+-        lea     12(a0),a0
++.lod:   move.b  mdir(pc),d0                 ; a la derecha, sin las muertas
++        bne.s   .kl                         ; del principio (lo = x + a <= s)
++.dea:   move.w  M_X(a1),d0
++        add.w   M_A(a1),d0
++        cmp.w   d6,d0
++        bgt.s   .kl
++        lea     MLDR(a1),a1
++        bra.s   .dea
++.kl:    move.l  a1,4(a4)
++        ;--- khi: la primera con x > s + LASTX
++        move.l  8(a4),a0
++        cmp.l   a1,a0
++        bhs.s   .hif
++        move.l  a1,a0
++.hif:   cmp.w   M_X(a0),d5
++        blt.s   .hib                        ; x > s + LASTX
++        lea     MLDR(a0),a0
+         bra.s   .hif
+-.hib:   cmp.w   -10(a0),d5                  ; la anterior tiene x > s + LASTX
++.hib:   cmp.l   a1,a0
++        beq.s   .hid
++        cmp.w   M_X-MLDR(a0),d5             ; la anterior tiene x > s + LASTX
+         bge.s   .hid
+-        lea     -12(a0),a0
++        lea     -MLDR(a0),a0
+         bra.s   .hib
+-.hid:   move.w  -10(a1),d3
+-        addq.w  #1,d3                       ; d3 = vl: la anterior vuelve
+-        move.w  2(a0),d4
+-        sub.w   #LASTX,d4                   ; d4 = vu: la siguiente entra
+-        move.l  (a4),a3                     ; a3 = donde van las cargas
+-        move.l  a0,d1
+-        sub.l   a1,d1                       ; 12 * cargas
+-        bne.s   .some
+-        move.l  a0,8(a4)
+-        bra.s   .jump
+-.some:  cmp.w   #MIDMAX*12,d1
+-        bls.s   .n
+-        lea     MIDMAX*12(a1),a0            ; no entran todas: se rehace
+-        move.w  2(a1),d4                    ; cuando la primera sale
++.hid:   move.w  M_SR(a0),d4                 ; vu = SR(khi) - LASTX
++        sub.w   #LASTX,d4
++        move.l  a0,d0
++        sub.l   a1,d0
++        cmp.w   #MIDMAX*MLDR,d0
++        bls.s   .nc
++        lea     MIDMAX*MLDR(a1),a0          ; no entran todas: se rehace
++        move.w  M_X(a1),d4                  ; cuando la primera sale
+         addq.w  #1,d4
+-.n:     move.l  a0,8(a4)
+-        move.w  -10(a0),d0                  ; la ultima sale por la derecha
+-        sub.w   #LASTX,d0                   ; si s < x - LASTX
++.nc:    move.l  a0,8(a4)
++        move.w  M_PL(a1),d3                 ; vl = PL(klo)
++        cmp.l   a1,a0
++        beq     .jump                       ; nada escrito
++        ;--- la base: delta en (-minb, -maxa] sobre las vivas escritas y
++        ; con todas en pantalla (x - s0 en [0, LASTX])
++        move.l  d3,-(sp)
++        move.l  d4,-(sp)
++        move.w  #-16000,d3                  ; maxa
++        move.w  #16000,d4                   ; minb
++        move.l  a1,a3
++.dl:    move.w  M_X(a3),d0
++        add.w   M_A(a3),d0
++        cmp.w   d6,d0
++        ble.s   .dn                         ; muerta
++        move.w  M_A(a3),d0
+         cmp.w   d0,d3
+-        bge.s   .n2
++        bge.s   .d1
+         move.w  d0,d3
+-.n2:    sub.w   d6,d3                       ; vl y vu relativas a s: se
+-        sub.w   d6,d4                       ; comparan con a y b
+-        move.w  16(a4),d7                   ; WAIT: v << 8
+-        addq.l  #2,a1                       ; la primera, siempre con WAIT
+-        bra.s   .w
+-.ld:    move.w  (a1)+,d1                    ; clase
+-        bne.s   .ch
+-.w:     move.w  (a1)+,d0                    ; x
+-        move.b  (a2,d0.w),d7                ; h | 1 para x - s
++.d1:    move.w  M_B(a3),d0
++        cmp.w   d0,d4
++        ble.s   .dn
++        move.w  d0,d4
++.dn:    lea     MLDR(a3),a3
++        cmp.l   a0,a3
++        bne.s   .dl
++        neg.w   d3                          ; d3 = -maxa (el mayor delta)
++        neg.w   d4
++        addq.w  #1,d4                       ; d4 = 1 - minb (el menor)
++        move.w  M_X(a1),d0                  ; la primera: x - s0 >= 0
++        sub.w   d6,d0
++        cmp.w   d0,d3
++        ble.s   .h2
++        move.w  d0,d3
++.h2:    move.w  M_X-MLDR(a0),d0             ; la ultima: x - s0 <= LASTX
++        sub.w   d5,d0
++        cmp.w   d0,d4
++        bge.s   .l2
++        move.w  d0,d4
++.l2:    move.w  16(a4),d7                   ; WAIT: v << 8
++        bclr    #31,d7
++        cmp.w   d3,d4
++        bgt.s   .can                        ; no hay: canonica
++        move.b  mdir(pc),d0
++        beq.s   .rt
++        move.w  d4,d3                       ; a la izquierda, la menor
++.rt:    move.w  d3,d2
++        add.w   d6,d2                       ; d2 = s0
++        bra.s   .bs
++.can:   move.w  d6,d2                       ; s0 = s
++        bset    #31,d7
++.bs:    move.l  (sp)+,d4
++        move.l  (sp)+,d3
++        lea     htab(pc),a2
++        sub.w   d2,a2                       ; a2 = htab - s0
++        move.l  (a4),a3                     ; a3 = donde van las cargas
++        bra.s   .w                          ; la primera, siempre con WAIT
++.ld:    move.w  M_CLS(a1),d1                ; clase
++        bne     .ch
++.w:     move.w  M_X(a1),d0
++        move.b  (a2,d0.w),d7                ; h | 1 para x - s0
+         move.w  d7,(a3)+
+-        move.w  d2,(a3)+                    ; $FFFE
+-.mv:    move.l  (a1)+,(a3)+                 ; MOVE registro, color
+-        cmp.w   (a1)+,d3                    ; vl = max(vl, a)
+-        bge.s   .k1
+-        move.w  -2(a1),d3
+-.k1:    cmp.w   (a1)+,d4                    ; vu = min(vu, b)
++        move.w  #$fffe,(a3)+
++.mv:    move.l  M_MOVE(a1),(a3)+            ; MOVE registro, color
++        ;--- validez de esta carga
++        move.w  M_X(a1),d0
++        add.w   M_A(a1),d0                  ; lo
++        cmp.w   d6,d0
++        ble.s   .vde                        ; muerta
++        btst    #31,d7
++        beq.s   .vok
++        tst.w   M_A(a1)                     ; canonica: tarde si a > 0 o
++        bgt.s   .cel                        ; b <= 0
++        tst.w   M_B(a1)
++        ble.s   .cel
++.vok:   move.w  M_A(a1),d0
++        add.w   d2,d0                       ; s0 + a
++        cmp.w   d0,d3
++        bge.s   .v1
++        move.w  d0,d3
++.v1:    cmp.w   M_E(a1),d2                  ; e > s0: caduca antes de morir
++        bge.s   .vln
++        move.w  M_B(a1),d0
++        add.w   d2,d0                       ; s0 + b
++        cmp.w   d0,d4
++        ble.s   .vln
++        move.w  d0,d4
++        bra.s   .vln
++.vde:   cmp.w   M_E(a1),d2                  ; muerta: si e > s0, al volver
++        blt.s   .vd1                        ; revive invalida hasta lo
++        move.w  M_A(a1),d0
++        add.w   d2,d0                       ; si no, vale desde s0 + a
++.vd1:   cmp.w   d0,d3
++        bge.s   .vln
++        move.w  d0,d3
++        bra.s   .vln
++.cel:   move.w  M_X(a1),d0                  ; tarde: su celda de la rejilla,
++        sub.w   d6,d0                       ; s en (c0, c0 + 8] con
++        addq.w  #8,d0                       ; c0 = x - ((x - s + 8) & ~7)
++        and.w   #$fff8,d0
++        neg.w   d0
++        add.w   M_X(a1),d0
++        addq.w  #1,d0
++        cmp.w   d0,d3
++        bge.s   .c1
++        move.w  d0,d3
++.c1:    addq.w  #8,d0
++        cmp.w   d0,d4
++        ble.s   .vln
++        move.w  d0,d4
++.vln:   move.w  M_LON(a1),d0                ; muerta, molesta desde lonext
++        cmp.w   d0,d4
+         ble.s   .k2
+-        move.w  -2(a1),d4
+-.k2:    cmp.l   a0,a1
+-        bne.s   .ld
+-        add.w   d6,d3
+-        add.w   d6,d4
+-        bra.s   .jump
+-.ch:    addq.l  #2,a1                       ; (x: no hace falta)
+-        subq.w  #2,d1                       ; 1: MOVE detras del anterior
+-        bmi.s   .mv
++        move.w  d0,d4
++.k2:    lea     MLDR(a1),a1
++        cmp.l   a0,a1
++        bne     .ld
++        bra.s   .jmp
++.ch:    subq.w  #2,d1                       ; 1: MOVE detras del anterior
++        bmi     .mv
+         beq.s   .f1                         ; 2: un relleno; 3: dos
+         move.l  #$01fe0000,(a3)+
+ .f1:    move.l  #$01fe0000,(a3)+
+-        bra.s   .mv
+-.jump:  move.l  18(a4),(a3)+                ; el salto al segmento siguiente
++        bra     .mv
++.jump:  move.l  (a4),a3                     ; nada escrito: solo el salto
++.jmp:   move.l  18(a4),(a3)+                ; el salto al segmento siguiente
+         move.l  22(a4),(a3)+
+         move.l  26(a4),(a3)+
+-        cmp.w   d6,d3                       ; si no vale ni en s (una carga
+-        bgt.s   .late                       ; que ya llega tarde o temprano),
+-        cmp.w   d6,d4                       ; vl = s y vu = s + 1: se
+-        bgt.s   .j2                         ; reescribe en cada frame, vaya
+-.late:  move.w  d6,d3                       ; hacia donde vaya la camara (si
+-        move.w  d6,d4                       ; solo se corrigiera vu, al
+-        addq.w  #1,d4                       ; volver valdria lo escrito antes
+-.j2:    move.w  d3,12(a4)                   ; y la ida y la vuelta darian
+-        move.w  d4,14(a4)                   ; imagenes distintas: P50)
++        cmp.w   d6,d3                       ; si no vale ni en s (no deberia),
++        bgt.s   .late                       ; vl = s y vu = s + 1: se
++        cmp.w   d6,d4                       ; reescribe en cada frame (P50)
++        bgt.s   .j2
++.late:  move.w  d6,d3
++        move.w  d6,d4
++        addq.w  #1,d4
++.j2:    move.w  d3,12(a4)
++        move.w  d4,14(a4)
+         bra     .line
+ .done:  movem.l (sp)+,d2-d7/a2-a6
+         rts
+@@ -1199,6 +1324,7 @@ linetab_a: ds.b 32*LINES                    ; ver init_lines
+ linetab_b: ds.b 32*LINES
+ ldoff:  ds.w    LINES                       ; build_copper: inicio de las cargas
+ htab:   ds.b    LASTX+1                     ; byte bajo del WAIT por x
++mdir:   ds.b    1                           ; build_mid: 1 = la camara va a la izquierda
+         even
+ alllines:                                   ; build_mid despues de un salto
+ N       set     0
