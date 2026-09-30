@@ -982,14 +982,24 @@ build_copper:                               ; a0 = lista
 .line:  move.l  a0,d5                       ; d5 = principio del segmento
         move.w  d2,d0
         add.w   #$2c-1,d0                   ; el borrado, en el borde derecho
-        move.w  d0,d3                       ; de la linea anterior (medido: con
-        lsl.w   #8,d3                       ; 7-9 MOVE termina antes de x = 0;
-        or.w    #BLANKH|1,d3                ; en la 255, $FFE3 tambien cruza
-        move.w  d3,(a0)+                    ; a la 256)
+        cmp.w   #$ff,d0                     ; de la linea anterior (medido: con
+        beq.s   .w255                       ; 7-9 MOVE termina antes de x = 0)
+        move.w  d0,d3
+        lsl.w   #8,d3
+        or.w    #BLANKH|1,d3
+        move.w  d3,(a0)+
         move.w  #$fffe,(a0)+
         move.w  d3,(a0)+
         move.w  #$fffe,(a0)+
-        move.w  #$0182,d0                   ; COLOR01..07: capa 1
+        bra.s   .wd
+.w255:  move.l  #$ffdffffe,(a0)+            ; en la 255: WAIT ($FF,$DE) y uno
+        move.l  #$01fe0000,(a0)+            ; solo (+ un MOVE nulo). El copper
+                                            ; ve ($FF,$E2) con V ya en $00
+                                            ; (256): no llegaba nunca y las
+                                            ; lineas 212-223 se quedaban sin
+                                            ; segmento; un 2.o WAIT ($FF,$DE)
+                                            ; tambien cae despues (P59)
+.wd:    move.w  #$0182,d0                   ; COLOR01..07: capa 1
         moveq   #7-1,d1
 .c1:    move.w  d0,(a0)+
         move.w  (a1)+,(a0)+
