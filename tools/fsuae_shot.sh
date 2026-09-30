@@ -9,12 +9,15 @@
 #   sh tools/fsuae_shot.sh work/logicbench.adf work/logicbench.png [segundos]
 #   python3 tools/logicbench_read.py --shot work/logicbench.png --auto
 #
+# Varias corridas a la vez: FSUAE_BASE=/tmp/fsuae-X y FSUAE_DISPLAY=:9N
+# distintos en cada una (si no, comparten el directorio y la pantalla).
+#
 # Instala (una vez): apt-get install -y fs-uae xvfb x11-apps netpbm
 set -e
 ADF=$(realpath "$1"); OUT=$2; SECS=${3:-30}
 BASE=${FSUAE_BASE:-/tmp/fsuae}
 mkdir -p "$BASE"
-DISP=:$((90 + $$ % 9))
+DISP=${FSUAE_DISPLAY:-:$((90 + $$ % 9))}
 Xvfb $DISP -screen 0 1024x768x24 >/dev/null 2>&1 &
 XPID=$!
 sleep 2
