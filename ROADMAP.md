@@ -17,13 +17,13 @@
 
 1. Leer en este orden: §1 (handoff) → §2 (presupuesto) → la etapa que toca
    (§5) → §8 (scripts de comprobación) → `AGENTS.md` §2 (reglas), §7
-   (convenciones), §8 (pitfalls P1-P41) y §11 (definición de "hecho"). Si
+   (convenciones), §8 (pitfalls P1-P76) y §11 (definición de "hecho"). Si
    la etapa es de optimización, también §9.
 2. Trabajar **un paso por vez**. Cada paso dice dónde corre, qué hacer y
    cuándo está hecho. No se empieza el siguiente con el anterior en rojo.
 3. Al cerrar un paso: commit `Etapa N.x: <qué>` y actualizar §1.2. Si aparece
    una trampa nueva, se agrega como `Pnn` en `AGENTS.md` §8 (la próxima es
-   **P50**).
+   **P77**).
 4. Al cerrar la sesión: handoff con la plantilla de §7, que reemplaza a §1.
 
 **Reglas del proceso (no negociables, vienen de lo que ya costó caro):**
@@ -40,26 +40,20 @@
 
 ---
 
-## 1. Handoff (estado al 2026-09-27)
+## 1. Handoff (estado al 2026-09-30)
 
 ### 1.1 Ramas
 
-| rama | commit | contenido |
-|---|---|---|
-| `master` | la cabeza | **base de trabajo**. Desde el 2026-09-26 contiene todo: la sesión cloud del 24/09, el plan, los scripts de §8 y las decisiones de §3 |
-| `claude/agents-md-x4v1di` | `e66cfc0` | la sesión cloud del 24/09 (etapas 5, 6, 8 y parte de la 9); ya incluida en `master` |
-| `claude/agents-future-plan-hsy1gm` | = `master` | donde se escribió este plan; mergeada a `master` por avance rápido |
-| `etapa0-cierre` | `ec34980` | Etapa 0 cerrada (PC, 2026-09-27); ya incluida en `etapa6-8` |
-| `etapa6-8` | = `master` | PC, 2026-09-27: Etapa 0, 6.1, 8.2, 6.2, 6.3 y 6b hasta el **primer ADF jugable**; mergeada a `master` por avance rápido el mismo día (pedido del usuario) |
+| rama | contenido |
+|---|---|
+| `master` | base hasta el 2026-09-27: primer ADF jugable (etapas 0, 6.1-6.3, 8.2, 6b) |
+| `claude/brave-ritchie-mm5o6r` | sesión cloud del 2026-09-30, sobre `master`: oráculos sin usuario (snesorc), Etapa 9.1 (6 sprites más, `game` sin resincronizaciones), entrada y modo diagnóstico (6b.7), tres bugs arreglados (cámara vertical, copper de la línea 255, `mario_sprite` mal compilado) y herramientas de la 6.4. **Sin mergear a `master`**: lo decide el usuario |
 
-- **Base de trabajo: `master`.** Cada sesión nueva trabaja en su propia rama
-  a partir de `master` (desde el 2026-09-27 incluye el primer ADF jugable).
-- Los dos últimos commits de código de la otra sesión (`45e3857`,
-  `e66cfc0`) eran **WIP sin revisar**: optimizaciones de dos subagentes y
-  cambios en `scroll.s`. El 2026-09-26 se verificó en cloud casi toda la
-  **Etapa 0** con los scripts nuevos de §8: la optimización del C es
-  correcta y más rápida, y la imagen del scroll no cambió. Lo que falta
-  está en la Etapa 0.
+- Trabajo en paralelo con 4 subagentes, cada uno en su worktree; el
+  coordinador integró, arregló lo que quedó flojo y verificó todo junto.
+- Lo único a medias está fuera del build: `tools/wip64/` (el diseño de la
+  6.4, sin ensamblar; lo que falta está en la cabecera de
+  `build_mid_incremental.s`).
 
 ### 1.2 Estado por etapa
 
@@ -67,167 +61,112 @@
 |---|---|---|---|
 | 1-2b | Assets, paletas, nivel, capa 1 1:1 | **hecho** (6111/6111 bloques) | `tools/smw2amiga.py`, `palette.py`, `mklvl.py`, `m16diff.py` |
 | 3-4 | Esqueleto Amiga y viabilidad | **hecho**; D1, D8 y D9 cerrados | `player/boot.s`, `bench*.s`, `copbench.s` |
-| 5 | Conversor del nivel al formato (d) | **hecho en cloud**; falta compararlo contra la referencia en la PC (→ 7) | `tools/mkbg.py`, `mkd8in.py`, `mkleveld.py` → `work/yi1_d.dat`, `render_d.py` |
-| 0 | Consolidar el WIP | **hecha** (2026-09-27, en la PC): 0.3 pico explicado (estructural, se arregla en 6.4); 0.4 explicado y arreglado (P42-P45) | §5, Etapa 0 |
-| 6 | Scroll del nivel real | **6.1, 6.2 y 6.3 hechas** (2026-09-27): 256 px, cámara en las dos direcciones, lo mueve la cámara del port. Coste (Musashi, CPU sin DMA, 2 px/frame): media **9,9 %**, peor **54,1 %** (s = 4580); **172 de 2432 frames pasan del 25 %** (s ≈ 1700-2000 y 4100-4800). **6.4 (≤ 25 %) pendiente**; 6.5 pendiente | `tools/mkscroll.py` → `work/yi1_s.dat`, `player/scroll.s`; `tools/scrollprof.py`, `tools/scrollsim.py` |
+| 5 | Conversor del nivel al formato (d) | **hecho en cloud**; falta compararlo contra la referencia en la PC (→ 7) | `tools/mkbg.py`, `mkd8in.py`, `mkleveld.py`, `render_d.py` |
+| 6.1-6.3 | Scroll a 256 px, ida y vuelta, lo mueve la cámara del port | **hecho** (2026-09-27). El 2026-09-30: el copper no corría las líneas 212-223 (P59), arreglado | `player/scroll.s`, `tools/mkscroll.py` |
+| 6.4 | Scroll ≤ 25 % en el peor frame | **NO hecha**. Ida: Musashi máx. 54,1 % (2 px/frame), FS-UAE máx. 78,8 % (4 px/frame, s = 4584). **Vuelta: Musashi media 36,6 %, máx. 94,8 %** (P72, no estaba medida). Perfil por zonas (`scrollprof.py --zones`), ida/vuelta simulada (`scrollsim.py --ret`); diseño incremental en `tools/wip64/` | Etapa 6.4 |
 | 7 | Capa 2 contra la referencia | pendiente (solo PC) | — |
-| 8a/8b | Física y colisión de Mario | **hecho**: `full` 6510/6547; los 37 que fallan son contactos con sprites | `player/mario.c`, `mcoll.c`, `manim.c` |
-| 8 (gfx, cámara) | Gráficos (OAM) y cámara | **hecho**: `gfx` 6869/6869; lazo cerrado solo con el joypad | `player/mgfx.c`, `mcam.c` |
-| 8c | Pendientes | las de la partida salen exactas; **falta la grabación de las colinas** | — |
-| 8.2 | Optimizar la lógica | **hecha** (2026-09-27): peor frame con sprites **40,1 % medido** en WinUAE KS 1.2 a 256 px (~39,7 % sin el propio banco); era ~50 %. Musashi 52 816 → 40 956. Sin sprites 20,2 / 20,5 % | `player/logic68k.s`, `NOOAM`, `logicbench -DWORST` |
-| 8d | Coste en la Amiga | **medido**: 26,5 % corriendo y 26,9 % saltando (FS-UAE, DPF encendido, sin sprites), después de la optimización de los subagentes; antes, 31,6 % y 32,9 % | `player/logicbench.s` |
-| 9 | Sprites: lógica | cargador (20/20), motor mínimo, **Rex**, bloque `?` volador (`$83`) y caja de mensaje (`$B9`). Falta el resto de D3 | `player/msprite.c` |
-| 9 | Sprites: dibujo en la Amiga | **Mario hecho** (6b.4: 2 parejas de sprites adosados, 1:1 con la referencia); los del nivel no empezados (hoy se simulan pero no se ven) | `player/mspr.c`, `mspr68k.s` |
+| 8a/8b | Física y colisión de Mario | **hecho**: `full` 6510/6547 en `oracle_yi1`; en las grabaciones nuevas, 99,6-99,8 % (los fallos son contactos con sprites) | `player/mario.c`, `mcoll.c`, `manim.c` |
+| 8 (gfx, cámara) | Gráficos y cámara | **hecho**; `gfx` 100 % en los 5 oráculos. Cámara vertical hacia arriba arreglada (P69) | `player/mgfx.c`, `mcam.c` |
+| 8c | Pendientes | **casi cerrada**: `oracle_hills` (colinas 1-4 a toda carrera en los dos sentidos, parado, deslizándose y saltando) da las pendientes 2154/2154 exactas. Falta la colina grande de x = `$AE0` (pendiente hacia el otro lado, 5 Rex encima) | `work/oracle_hills.txt` |
+| 8.1 | Grabaciones | **oráculos sin usuario**: `work/snesorc` corre la ROM (U) en el emulador de snesrev/smw con entrada guionizada (`tools/snesorc/*.orc`) y reproduce `oracle_yi1` línea a línea (6871/6871). Grabadas: `normal`, `diagpipe`, `hills`, `banzai` | `tools/snesorc/`, `snesorc_setup.sh`, `snesorc_make.sh` |
+| 8.2 | Optimizar la lógica | **hecha** el 2026-09-27 (peor frame con sprites 40,1 % en WinUAE). Con los sprites nuevos, peor frame en Musashi 43 116 → **45 896** (frame 9715: 2 pirañas, 1 Rex, `$8E`, `$C7`), **~45 % estimado** en la A500 (por encima del 40 %) | `player/logic68k.s` |
+| 9.1 | Sprites: lógica | Rex, `$83`, `$B9`, **`$BD` Koopa deslizante, `$02` Koopa sin caparazón, `$9F` Banzai Bill, `$4F` piraña, `$8E` warp, `$C7` seta invisible**. `game`: **0 resincronizaciones** de Mario en los 5 oráculos; sprites exactos por tipo en `regress.py`. Faltan Chuck `$95`, caparazón rojo `$DB`, cinta de meta `$7B` y lo de D12 (la seta `$74` del bloque volador ya aparece en `oracle_yi1`) | `player/msprite.c` |
+| 9.2 | Sprites: dibujo | Mario hecho; los del nivel sin empezar (se simulan, no se ven) | `player/mspr.c`, `mspr68k.s` |
+| 6b | Integración | primer ADF jugable (2026-09-27) + **6b.7** (2026-09-30): entrada como `ControllerUpdate` (P60) y **modo diagnóstico** (P58) con historial del joypad y reproducción en el PC desde una captura. Faltan 6b.1 (vlink, compresión) y **6b.6 (compuerta D1)** | `player/game.s`, `tools/diag_read.py`, `gamesim.py`, `inputtest.py` |
 | 10-12 | HUD, audio, pulido | no empezados | — |
-| — | **Integración** (un binario que junte scroll + lógica + Mario + joystick) | **primer ADF jugable** (2026-09-27, `work/live/game.adf`): el usuario lo jugó en WinUAE ("an amazing proof of concept"). Bugs de esa prueba en §1.7. Falta 6b.1 (mapa de memoria medido en `AGENTS.md` §4, sin compresión) y 6b.6 (compuerta D1) | `player/game.s`, `mspr.c`, `mspr68k.s`, `tools/game_build.sh`, `gamecheck.py`, `game_check.py` |
 
-### 1.3 Números de regresión (la red de seguridad)
+### 1.3 Números de regresión (2026-09-30, cloud)
 
-**La fuente de verdad es `tools/baseline.json`**, que genera y compara
-`tools/regress.py` (§8). Resumen de la base del 2026-09-26, sobre el código
-del WIP ya verificado:
+La fuente de verdad es `tools/baseline.json` (cloud: vbcc de cloud y
+FS-UAE); la PC usa `tools/baseline_pc.json`. El 2026-09-27 la PC había
+escrito sus ciclos en `baseline.json` (otro vbcc): el 2026-09-30 se volvió a
+medir todo en cloud y se guardó con `--update --force`.
 
-| qué | valor | antes del WIP (`bb66d2c`) |
+| qué | valor | antes (2026-09-27) |
 |---|---|---|
-| `marioverify` 8a (TODOS los campos) | 2989/3497 aire, 2962/3050 suelo | igual |
-| `marioverify full` | 3557/3573 aire, 2953/2974 suelo (6510/6547) | igual |
-| `marioverify gfx` | 6869/6869 | igual |
-| `marioverify loop` | 37 resincronizaciones, tramo 1240 | igual |
-| `marioverify sprload` / `sprloop` | 20/20 · 2593/2594 Rex-frames | igual |
-| `marioverify game` | 1 resincronización (frame 5322, Koopa `$02`), tramo 3824; Rex 3192/3194 | igual |
-| 68000 (`m68kverify`, Musashi) `full` | 6510 = PC | igual |
-| 68000 `loop`: resincronizaciones / ciclos media / máx. | 37 / **25 909** / 48 194 | 37 / 31 124 / 53 260 |
-| 68000 `loop --sprites` | 4 / **35 779** / 53 002 | 4 / 44 364 / 64 752 |
-| `logicbench`, FS-UAE | **26,5 %** corriendo, **26,9 %** saltando | 31,6 % / 32,9 % |
-| `scroll.s -DBENCH -DSPEED=4`, FS-UAE | media 25,2 %; **máx. 307,5 % en s = 4504** | sin/con columna 33,9 % / 42,5 % (otra forma de contar: ver Etapa 0.3) |
-| `scroll.s -DBENCH -DSPEED=4`, **WinUAE KS 1.2** (2026-09-27) | media **27,3 %**; máx. 320,6 % en s = 4504 (antes de P42-P45: 25,4 % / 309,9 %) | el +1,9 es el precio de P44-P45 (más cargas con WAIT); Musashi: código −7 %, datos +14 % |
-| `scroll_check --mid --sc 2`, **WinUAE** ×2, fallos que no explica un vecino (2026-09-27) | 500: 0, 846: 0, 1000: 0, 1700: 0, 1936: 0, 2500: 0, 3500: 72, 4346: 34, 4500: 54 | antes (`WOFS` = 8): 0, manchado, 0, 9, manchado, 3, 72, —, 58 |
-| `scrollsim.py --speed 2` (color de la capa 1 en cada frame, simulado) | **19 586 px** en todo el recorrido; peor frame 194 px | antes: 298 060; peor 5409 (s = 844) |
-| `logicbench`, **WinUAE KS 1.2** (8d) | 28,3 % corriendo, 28,8 % saltando | FS-UAE: 26,5 / 26,9 %; binario con el vbcc de la PC (2022), ver §1.4 |
-| `scroll_check --mid`, fallos que no explica un vecino | x = 500: 74, 1000: 31, 1700: 91-94, 2500: 46, 3500: 72, 4500: 125-127 (±5 px entre builds, ver 0.4) | en `f21a2e3`: 1000: 31, 1700: 91, 2500: 46, 4500: 127 (500 y 3500 no se midieron) |
-| `render_d.py` | 0 px contra la imagen ideal; 3966 px (0,018 %) moviendo la cámara | igual |
-
-**Números del 2026-09-27 (PC, rama `etapa6-8`)** — la base de `regress.py`
-se actualizó con `--accept-last` (commit `56532ec`):
-
-| qué | valor | antes |
-|---|---|---|
-| 68000 `loop --sprites` (Musashi): ciclos media / p99 / máx. | **30 893 / 42 652 / 43 280** | 35 779 / 52 180 / 53 002 (antes de 8.2); al final de 8.2, 28 598 / — / 40 956: los +2 300 son `mario_oam` (6b.4) |
-| 68000 `loop`: media / p99 / máx. | 22 779 / 24 818 / 38 502 | 25 909 / 28 172 / 48 194 |
-| `scrollsim.py --speed 2` (nuevo `build_mid`) | **9282 px** mal en todo el recorrido; ida = vuelta en los 2431 frames | 14 868 (6.1, 256 px) |
-| `scrollprof.py` (Musashi, sin DMA) 2 / 4 px/frame | media 9,9 % / 13,4 %; peor 54,1 % / 59,2 % | 6.1 en WinUAE: 22,1 % / 278 % |
-| `scroll_check --mid --sc 2`, WinUAE, ida (6.2) | 500: 0, 1000: 0, 1700: 43, 2500: 0, 3500: 72, 4500: 45 | — |
-| `gamecheck.py` (replay de `game.bin`, Unicorn) | 0 diferencias en 6177 frames RUN | — |
-| `gamecheck.py --spr` | `mario_sprite` (vbcc) y `mspr_draw` (asm) = referencia en 6184/6184 (el asm fue al C 1 vez) | — |
-| `marioverify mspr` (PC, `-DNOOAM`) | OAM de Mario = oráculo 6869/6869; sprites = referencia 6869/6869 | — |
-| capturas del replay (6.3), fallos que no explica un vecino | frames 6000 / 7000 / 8000 / 9000 / 10000 / 11000: 0 / 0 / 0 / 0 / 0 / 6 | — |
-| `game_check.py` con Mario (frame 6000) | fondo 0, Mario 0 de 241 px | — |
-| coste por frame en el juego (Musashi) | lógica media 20,9 %, peor 29,3 %; Mario (`mspr_draw`) 7,3 % | — |
+| `marioverify full` / `gfx` / `loop` (`oracle_yi1`) | 6510/6547 · 6869/6869 · 37 resincronizaciones | igual |
+| `marioverify game` (`oracle_yi1`) | **0 resincronizaciones**, tramo 3824; sprites exactos por tipo: 02 252, 4F 2599, 83 340, 8E 2518, 9F 454, AB 2635, B9 309, BD 322, C7 3178 (ninguno distinto) | 1 (Koopa `$02`, frame 5322) |
+| `marioverify sprloop` / `sprload` | 2684/2684 · 20/20 | 2593/2594 · 20/20 |
+| oráculos snesorc (`orc.*` en `regress.py`): `full` / `loop` / `game` | normal 1249/1254 · 5 · 0; diagpipe 2693/2699 · 6 · 0; hills 2147/2154 · 7 · 0; banzai 1078/1080 · 2 · 0 (las resincronizaciones de `loop` son pisotones: sprites) | — |
+| 68000 `loop --sprites` (Musashi): resincronizaciones / media / p99 / máx. | **0** / 32 730 / 43 234 / 45 896 | 4 / 30 893 / 42 652 / 43 280 (base de la PC) |
+| cruces PC = 68000 | `full`, `loop` y **RAM entera** tras cada `level_frame` (`--cross`): 0 diferencias en 6547 y 6549 llamadas | los dos primeros |
+| `gamecheck.py` / `--spr` | 0 diferencias en 6181 RUN; `mario_sprite` vbcc = asm = referencia 6184/6184 | 6177 RUN; `--spr` se colgaba en cloud (P62) |
+| capturas del replay (FS-UAE), fallos que no explica un vecino | frame 6000: fondo 30, Mario 0; frame 7000: fondo 16, Mario 0 (reescalado ×2,125) | WinUAE: 0 / 0 |
+| `inputtest.py` / `diag_read.py --sim` | 35/35 · TODO OK | — |
+| FS-UAE (`regress.py --emu`) | se está midiendo (se completa en el próximo commit) | — |
 
 ### 1.4 Qué se puede hacer en cada entorno
+
+Igual que antes, con dos cambios: **en cloud ya se pueden grabar partidas**
+(snesorc, con guion; no hace falta el usuario) y el juego arma en cloud
+(`mkmario.py` usa `work/smw.sfc` si no está la ROM de la PC).
 
 | tarea | Claude cloud | PC local (Windows) |
 |---|---|---|
 | compilar (vasm, vbcc, gcc) | sí (`setup_cloud.sh`) | sí |
-| ROM | ensamblada desde el fuente (`work/smw.sfc`, CRC32 `B19ED489`) | la del usuario |
-| verificar contra el oráculo (`marioverify`, `m68kverify`) | sí | sí (`m68kverify` necesita `unicorn` y `machine68k`) |
-| medir en cycle-exact | FS-UAE + AROS (`fsuae_shot.sh`) | WinUAE + KS 1.2 (`shot.ps1 -Exact`) |
-| probar el arranque en **KS 1.2** | **no** | sí |
-| comparar contra `SuperMarioWorldMap02.png` | **no** (la imagen no está en el repo) | sí (`cmp_ref.py`, `m16diff.py`) |
-| grabar partidas (`smwrecomp` + `oamrec.py`) | **no** | sí, con el usuario jugando |
-| numpy / scipy | sí | **no** en el Python de §6: instalarlo o correr esas herramientas en cloud |
+| verificar contra el oráculo | sí | sí |
+| **grabar oráculos** | **sí, con guion** (`snesorc_setup.sh`, `snesorc_make.sh`) | sí, jugando (`smwrecomp` + `oamrec.py`) |
+| medir en cycle-exact | FS-UAE + AROS; varias capturas, de a una (P76) | WinUAE + KS 1.2 |
+| probar el arranque en KS 1.2 y el teclado | **no** | sí |
+| comparar contra `SuperMarioWorldMap02.png` | **no** | sí |
 
-**PC, 2026-09-27** (lo que hizo falta para correr todo en la PC):
-- `regress.py` desde Python: poner `C:\msys64\ucrt64\bin` **primero** en el
-  PATH (`export PATH=/c/msys64/ucrt64/bin:$PATH`); si no, `cc1` de gcc 16
-  muere sin mensaje.
-- ROM: `../smwre/smw.sfc` (CRC32 `B19ED489`) → `work/smw.sfc`; después
-  `smwgen.py --rom work/smw.sfc`, `smwtabx.py`, `oracle2bin.py`,
-  `mkmapbin.py` (como `setup_cloud.sh`).
-- `machine68k` (Musashi) no compila con pip en Windows: bajar el sdist y
-  cambiar en `setup.py` el `cmd = [gen_tool, ...]` por la ruta absoluta con
-  `.exe`; después `pip install .`.
-- El **vbcc de la PC (2022) no es el de cloud**: pliega `rom00 - $C000` en
-  una referencia absoluta con un puntero leído de `ram[]` (se arregló con
-  `T8V`, `smwmac.h`) y da ~+0,8 % de ciclos en Musashi. Por eso la PC usa
-  su propia base: `regress.py --baseline tools/baseline_pc.json`.
-- WinUAE ×2 sin reescalar: `scroll_check.py --sc 2`, `scroll_read.py` sin
-  `--auto`, `tools/shots6.ps1 -Dir DIR` (espera 25 + x/100 s: KS 1.2 tarda
-  más en arrancar de lo que se creía).
+Notas de la PC del 2026-09-27 (gcc de msys64 primero en el PATH, el sdist de
+`machine68k`, el vbcc de 2022, `scroll_check.py --sc 2`): siguen valiendo,
+ver el historial de este fichero.
 
 ### 1.5 Arranque rápido en cloud
 
 ```bash
-sh tools/setup_cloud.sh               # ~2 min la primera vez (compila WLA-DX y ensambla la ROM), ~15 s con caché
-export VBCC=~/vbcc
-python3 tools/lint_port.py            # 1 s
-python3 tools/regress.py              # 4 s: compila y verifica PC + 68000 contra tools/baseline.json
-python3 tools/regress.py --level      # + la cadena del nivel: deja work/yi1_d.dat y work/yi1_s.dat
+sh tools/setup_cloud.sh               # ~2 min la primera vez, ~15 s con caché
+export VBCC=~/vbcc PY=python3
+python3 tools/lint_port.py && python3 tools/regress.py        # ~1 min: PC + 68000 + 5 oráculos
+sh tools/snesorc_setup.sh             # opcional: el generador de oráculos (work/snesorc)
+sh tools/game_build.sh && python3 tools/gamecheck.py --spr    # el juego (replay) en Unicorn
+GDEFS=" " OUT=work/live sh tools/game_build.sh                # el de jugar
 ```
 
-Si `apt-get` no puede instalar FS-UAE, todo lo demás sigue sirviendo; solo
-se pierde la medida cycle-exact.
+### 1.6 Pendiente del usuario o de la PC
 
-### 1.6 Pendiente del usuario o de la PC (juntarlo en una sola sesión)
-
-1. ~~**PC:** confirmar la 8d en WinUAE con KS 1.2~~ **hecho el
-   2026-09-27:** 28,3 % / 28,8 % (FS-UAE daba 26,5 / 26,9 %) y el ADF
-   arranca en KS 1.2. Diferencia sin explicar: puede ser el emulador o el
-   vbcc de la PC (2022, distinto del de cloud; ver §1.4).
+1. **Jugar `work/live/game.adf` en WinUAE con teclado** (KS 1.2, 512 KB
+   chip + 512 KB slow, `work/play.uae`). Nunca se probó con teclas: el
+   modo diagnóstico (ESPACIO cambia de página; RETURN, Z, A o el botón
+   vuelven a empezar), el handshake del teclado y los dobles saltos (P55).
+   Si se congela: captura de la **página 2** y
+   `python3 tools/diag_read.py --shot X.png --repro --bin work/live/game.bin`
+   (el `game.bin` del ADF que se usó) dice en qué frame y por qué.
 2. **PC:** Etapa 7 (`cmp_ref.py` del blob de la etapa 5 contra la referencia).
-3. **Usuario: probar `work/live/game.adf` en una A500 real** (512 KB chip
-   + 512 KB A501, KS 1.2/1.3; Gotek o disco escrito con Greaseweazle/
-   ADF-Copy). Nunca corrió en hardware real: lo más sensible es el
-   handshake del teclado y la temporización del copper (calibrada en
-   WinUAE). Colores del borde al arrancar: azul = bootblock, verde =
-   programa cargado, rojo = fallo (p. ej. sin la expansión: el binario no
-   entra en chip).
-4. **PC + usuario, una única sesión de grabación** (Etapa 8.1). Se agrupa
-   todo lo que hace falta grabar para no pedirle al usuario que juegue varias
-   veces: colinas (8c), cobertura de sprites (9), power-ups (D12), contadores
-   del HUD (10) y audio de referencia (11).
+3. **Usuario, opcional:** probar en una A500 real.
+4. Las grabaciones de la 8.1 ya no necesitan al usuario (snesorc). Solo el
+   audio de referencia de la 11 quedaría para la PC, si snesrev no lo da.
+5. **[usuario] Mergear `claude/brave-ritchie-mm5o6r` a `master`.**
 
-Las decisiones D5 y D10-D14 están cerradas (§3), y la rama está mergeada a
-`master`. Solo queda abierta la compuerta D1.
+### Lo último que se hizo y lo siguiente
 
-### 1.7 Primer ADF jugable: lo que encontró el usuario y los próximos pasos (2026-09-27)
-
-**Cómo se juega.** `sh tools/game_build.sh` arma `work/game.adf` (replay);
-`GDEFS=" " OUT=work/live sh tools/game_build.sh` arma el de jugar
-(`work/live/game.adf`). En WinUAE: A500 PAL, 512 KB chip + 512 KB slow,
-KS 1.2 (config en `work/play.uae`, la misma de `shot.ps1` con
-`joyport1=kbd1`). Teclado (D14): flechas, Z = salto, X = giro, A/S =
-correr, Return = Start, Shift derecho = Select. Joystick en el puerto 2.
-
-**Lo que vio el usuario jugando** (primera prueba en vivo):
-1. **Reinicios forzados** al entrar en algunas zonas: es el parche de
-   `game.s` (lo que el port no tiene pone `mario_unsupported` y el nivel
-   vuelve a empezar a los 1,5 s). No se sabe todavía QUÉ caso fue en cada
-   zona (P58).
-2. **Dobles saltos raros.** Sospecha (sin confirmar): `game.s` calcula
-   `$16/$18` (recién apretado) contra `$15/$17` de la RAM del juego, que
-   SMW a veces borra (`no_buttons()`); con Z apretada, el frame siguiente
-   ve un "apretón" nuevo (P55).
-3. **Reinicios caminando por los tubos diagonales**: seguramente pendientes
-   empinadas o tiles especiales sin portar en la colisión (la partida
-   grabada nunca pasó por ahí, así que ninguna verificación lo cubría).
-
-**Próximos pasos, en orden** (propuestos al usuario):
-1. **Bugs de la prueba** (corto): el doble salto (copia propia del joypad
-   del frame anterior en `game.s`); un **modo diagnóstico** en vez del
-   reinicio a ciegas (congelar y mostrar en pantalla el código de
-   `mario_unsupported` y la posición de Mario); portar los casos que el
-   nivel necesita, empezando por los tubos diagonales, contra la recomp.
-2. **Medir el presupuesto real (6b.6, compuerta D1)**: el frame completo
-   (lógica + scroll + Mario) en el peor tramo, con el timer en la propia
-   Amiga (WinUAE y, si se puede, la A500 real).
-3. **6.4: bajar el scroll a ≤ 25 %** (ver el estado en la Etapa 6.4).
-4. **Etapa 9: dibujar los sprites del nivel** (los Rex se simulan pero no
-   se ven). Mario usa 4 de los 8 sprites; el resto, con las 2 columnas
-   adosadas que quedan, reutilización con el copper y bobs.
-5. HUD (10), audio (11), power-ups (D12), animaciones reales de muerte,
-   crecer, meta y tuberías en vez del reinicio.
-6. En paralelo: Etapa 7 (capa 2 contra la referencia, PC) y P51.
+- **Hecho el 2026-09-30:** los oráculos en cloud, la 9.1 sin
+  resincronizaciones en `game`, la 6b.7 y tres bugs que ningún verificador
+  veía (P59, P62, P69). La 6.4 no se cerró: se midió y se entendió (P71,
+  P72) y el diseño quedó en `tools/wip64/`.
+- **Siguiente, en orden:**
+  1. **6b.6, compuerta D1 [usuario]:** medir el peor frame del juego
+     integrado en FS-UAE. Con lo medido por partes (lógica con sprites
+     ~45 %, scroll hasta 79 % a la ida y 95 % a la vuelta en Musashi, Mario
+     7 %) el peor caso **pasa del 100 %**: preparar las opciones de §2 con
+     números y preguntar.
+  2. **6.4:** terminar `tools/wip64/build_mid_incremental.s` (rebase en el
+     sitio, append y truncado por la derecha; clasificación "tarde" fija),
+     medir **ida y vuelta** con `scrollprof.py` y verificar con
+     `scrollsim.py --ret` (9282 px, ida = vuelta).
+  3. **9.1:** Chuck `$95` (x `$12A0`), caparazón rojo `$DB` (x `$D10`), cinta
+     de meta `$7B` (x `$12E0`), seta `$74` y el resto de D12; cada uno con su
+     grabación de snesorc (un guion `.orc` que llegue hasta ahí).
+  4. **9.2:** dibujar los sprites del nivel (hoy hay Rex invisibles que
+     Mario pisa: parece un doble salto).
+  5. Sueltos, **sin comprobar**: en las 4 grabaciones de snesorc, el Koopa
+     deslizante `$BD` difiere 1 frame justo al empezar el nivel (frame
+     1455, ranura 7, `$AA` = SpeedY: port 0, ROM 3); en `diagpipe`,
+     `sprload` da 31/33 (la ROM mete la piraña `$4F` en la ranura que un Rex
+     deja libre en el mismo frame; el port no).
+- Para retomar: `sh tools/setup_cloud.sh && python3 tools/regress.py`.
 
 ---
 
@@ -238,20 +177,23 @@ salvo donde se indica:
 
 | componente | medido | objetivo propuesto (peor frame) | fuente |
 |---|---|---|---|
-| scroll: `build_mid` + columna nueva + lista del copper | media 25,2 % (320 px, 4 px/frame); **un frame de 307 % en s = 4504** | **≤ 25 %** en el peor frame | `scroll.s -DBENCH` |
-| lógica `level_frame` sin sprites | 26,5 % / 26,9 % | — | `logicbench` |
-| lógica de sprites | +9 900 ciclos de media ≈ +7 % **en Musashi, sin DMA**; peor frame 53 002 ciclos = 37,4 % en total | lógica total **≤ 40 %** | `m68kverify --sprites` |
-| dibujo de sprites (sprites de hardware + copper) | sin medir | ≤ 10 % | — |
+| scroll: `build_mid` + columna nueva + lista del copper | ida, 4 px/frame, FS-UAE: media 14,9 %, **máx. 78,8 %** (s = 4584). **Vuelta**, 2 px/frame, Musashi (cota inferior, ×~1,3 en la Amiga): media 36,6 %, **máx. 94,8 %** (s = 2832) (2026-09-30, P72) | **≤ 25 %** en el peor frame, en los dos sentidos | `scroll.s -DBENCH`, `scrollprof.py` |
+| lógica `level_frame` sin sprites | 20,2 % / 20,5 % (WinUAE, 256 px, tras la 8.2) | — | `logicbench` |
+| lógica con sprites | peor frame 40,1 % (WinUAE, 2026-09-27); con los sprites de la 9.1, Musashi 43 116 → 45 896 ciclos: **~45 % estimado** | lógica total **≤ 40 %** | `logicbench -DWORST`, `m68kverify --sprites` |
+| Mario en sprites de hardware (`mspr_draw`) | ~10 400 ciclos ≈ 7,3 % (Musashi) | — | `gamecheck.py --engine musashi` |
+| dibujo de los sprites del nivel (sprites de hardware + copper) | sin medir | ≤ 10 % | — |
 | bobs en PF1 (solo si un objeto pasa a bob) | 22,7-33,8 % (Banzai + 4 Rex, `bench2.s` W3) | caso raro, ver 9.2 | `bench2.s` |
 | HUD | sin medir | ≤ 2 % | — |
 | audio | sin medir | ≤ 3 % (D5) | — |
 | **margen** | — | **≥ 10 %** | — |
 
-**Hoy no entra a 50 Hz con margen.** De media, scroll (25 %) + lógica
-(27 % + ~7-10 % de sprites) ya rondan el 60 %, sin dibujar los sprites, sin
-HUD y sin audio. El pico del scroll (307 %) rompe cualquier frame en el que
-caiga. Por eso la optimización (Etapas 6.4 y 8.2) va **antes** que las
-etapas que suman coste (9.2, 10 y 11).
+**Hoy no entra a 50 Hz en el peor caso.** Por partes, el peor frame suma
+scroll (79 % a la ida, ~95 % o más a la vuelta) + lógica con sprites (~45 %)
++ Mario (7 %): bastante más del 100 %, sin dibujar los sprites del nivel,
+sin HUD y sin audio. De media: scroll ~15 % a la ida (~37 % a la vuelta) +
+lógica ~23-30 % + Mario 7 %. Por eso la 6.4 va **antes** que las etapas que
+suman coste (9.2, 10 y 11), y la compuerta D1 se prepara ya con estos
+números (6b.6).
 
 **Compuerta D1 [usuario]:** después de las Etapas 6.4, 8.2 y la 6b se mide el
 **peor frame del juego integrado**. Si pasa del 100 %, se le presentan al
@@ -629,6 +571,30 @@ pasan del 25 %, en s ≈ 900, 1700-2000, 2600-2700 y 4100-4800.
   reescribir desde la primera carga que deja de valer (y desde su WAIT);
   WAIT propio para las cargas de la cola (P51, arregla también 1 px).
 
+**Estado al 2026-09-30 (cloud): sigue sin hacer, con el problema medido.**
+- Herramientas: `scrollprof.py --zones` (ciclos por etiqueta de un frame,
+  el perfil que se había perdido) y `scrollsim.py --ret` (ida y vuelta,
+  compara la imagen simulada en cada s).
+- Peor frame de la ida (s = 4580, 76 850 ciclos en Musashi): `build_mid`
+  ~95 %, 55 líneas reescritas y 276 cargas (~124 ciclos por carga, ~520 por
+  línea, ~7,8 k para recorrer las 108 líneas de LNS). Por qué se reescriben:
+  24 líneas por una carga "tarde" (en **todos** los frames, P50; 34 cargas
+  tarde en x ≈ 4817-4861, los postes de la meta), 25 porque entra una carga
+  por la derecha y 6 porque caduca una.
+- **La vuelta es peor que la ida** (P72): media 36,6 %, máx. 94,8 %.
+- Probado y descartado: reescrituras completas con validez por ventana
+  (modelo: ida máx. 48,6 %, vuelta 78,8 %). En la Amiga salió **peor**
+  (máx. 97,6 %: ~330 ciclos por carga) y la ida y la vuelta diferían en
+  s = 4684-4780 (P71).
+- Siguiente: `tools/wip64/build_mid_incremental.s` (rebase de la h de cada
+  WAIT en el sitio, append y truncado por la derecha; en el modelo, ida 38 %
+  y vuelta 56 %); para los eventos en bordes verticales, repartirlos entre
+  frames (holgura b + 6 px) y neutralizar las cargas muertas en el sitio
+  (MOVE a `$1FE`); el recorrido de LNS por grupos de 16 líneas. Modelos en
+  `tools/wip64/midsim*.py`.
+- FS-UAE: `scroll_check.py` buscaba el origen solo hasta x = 200 (320 px);
+  a 256 px daba ~30 % de fallos falsos. Arreglado.
+
 6.5 **PC:** capturas de WinUAE `-Exact` **sin reescalar** en los 6 puntos
 contra el esperado del PC, y arranque en KS 1.2.
 
@@ -666,6 +632,19 @@ Pasos: probar el grabador (`oamrec.py --test 10`); grabar con `python
 tools/oamrec.py --out work/oracle_<nombre>.txt`, **nunca** encima de
 `oracle_yi1`; después `oracle2bin.py --inp ... --out ...` y `marioverify
 <bin> full` / `loop`. Commitear los `.txt` (V4).
+
+**Desde el 2026-09-30 se graba en cloud, sin el usuario** (P67, P68):
+`sh tools/snesorc_setup.sh` clona snesrev/smw (commit fijo) fuera del repo
+y compila `work/snesorc`, que corre la ROM (U) en su emulador con los
+parches de snesrev deshechos. Un guion `.orc` (`tools/snesorc/`: `N
+RIGHT+Y`, `until w$0094>=07B0 max 600 RIGHT+Y`, `assert`, `include`...)
+arranca desde el encendido (`boot_yi1.orc` llega a YI1 en el frame 1452) y
+vuelca el mismo formato que `oamrec.py`. `sh tools/snesorc_make.sh`
+regenera los `.txt` y corre `marioverify`; `--replay` valida el generador
+contra `oracle_yi1` (6871/6871 líneas idénticas). Limitaciones: sin
+guardar/cargar estado (4000 frames tardan < 1 s), y cambiar una línea de un
+guion mueve el RNG y los tiempos de lo que sigue (los `assert` lo detectan).
+Lo único que sigue pidiendo la PC es el audio de referencia (11).
 
 **Hecho cuando** las grabaciones están en git y la 8c da 100 % en los frames
 de pendiente, o los fallos quedan listados por causa.
@@ -910,6 +889,17 @@ presentado al usuario.
 
 **Hecho cuando** `game` da 0 resincronizaciones, o solo por eventos
 documentados como fuera de alcance.
+
+**Estado al 2026-09-30:** portados y verificados `$BD`, `$02` (sin la
+parte de caparazones), `$9F`, `$4F`, `$8E` y `$C7`, más el contacto por
+defecto con Mario (pisotón, salto con giro, daño), los estados 2-4,
+`GetDrawInfoBnk1`, `FlipSpriteDir`, las pendientes empinadas y la carga de
+los sprites al empezar el nivel (P65). `game` da 0 resincronizaciones en
+`oracle_yi1` y en las 4 grabaciones de snesorc; `regress.py` cuenta los
+frames exactos por tipo de sprite (`pc.game.spr_XX.*`). Sin verificar:
+Banzai pisado, `$02` con caparazones, salto con giro sobre el Koopa, tocar
+el `$C7`. Sin portar: Chuck (`$95`, nunca aparece en `oracle_yi1`: grabarlo
+con snesorc), caparazón rojo, cinta de meta y los power-ups.
 
 9.2 **Dibujo en la Amiga** (cloud; diseño de D8 (d), `AGENTS.md` §9 puntos 9
 y 10).

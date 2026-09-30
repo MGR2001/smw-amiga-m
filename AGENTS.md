@@ -5,7 +5,7 @@
 > Para el *porqué* de cada decisión, lee primero **`PLAN.md`**.
 >
 > **Qué hacer ahora y en qué orden: `ROADMAP.md`** (plan a futuro por etapas
-> y handoff vigente, 2026-09-26). Las secciones "Dónde quedó el trabajo" y
+> y handoff vigente, 2026-09-30). Las secciones "Dónde quedó el trabajo" y
 > "Handoff cloud → sesión local" de abajo son el detalle histórico del
 > 2026-09-24.
 
@@ -187,8 +187,9 @@ PF1 y las dos listas no entran en 512 KB de chip.
 | chip | PF1: buffer circular (`BUF1`) | 59 136 |
 | chip | 2 listas del copper con `-DSPRITES` (`CL_SIZE` = 216 + 220 × 224 + 4) | 2 × 49 500 |
 | chip | sprites de Mario: 2 buffers × 4 sprites × 84 palabras + nulo | 1 352 |
-| chip | **total del juego** | **≈ 383 KB** |
-| slow | el binario (se copia solo desde la chip de `boot.s`, que se libera) | 178 944 |
+| chip | pantallas del modo diagnóstico (`DG_SIZE`, P58) + 64 B por lista | 11 528 |
+| chip | **total del juego** | **≈ 395 KB** |
+| slow | el binario (se copia solo desde la chip de `boot.s`, que se libera); en vivo, con el historial del joypad del diagnóstico | 187 188 (replay: 181 916) |
 | slow | copia de los datos del C y del mapa (reinicio del nivel, en vivo) | 11 748 + 17 280 |
 
 Dentro del binario (`work/live/game.lst`): cabecera `A5PL` → datos del C
@@ -197,7 +198,7 @@ menos de 32 KB de `binstart`**, P36) → código del C, `logic68k.s`,
 `mspr68k.s` → `scroll.s` (`SCROLL_LIB`) → código del juego (`entry` en
 `$1101C`) → `map16` (17 280), `spr.lv`, `mario_pal.bin` (256),
 `gfx32.bin` y `gfx32f.bin` (2 × 23 808), `yi1_replay.bin` (42 058). El ADF
-ocupa 403 KB de 880 KB (45 %).
+ocupa 412 KB de 880 KB (46 %), medido el 2026-09-30.
 
 ---
 
@@ -1146,12 +1147,13 @@ los planos 0-1 en la palabra 2r y los 2-3 en 16 + 2r, y `movep.w d,0(a)` /
 palabras DATA/DATB de los sprites sin convertir nada (~10 400 ciclos,
 7,3 %). Volteo horizontal: `gfx32f.bin` (bytes al revés) y L/R cambiados.
 
-**P55 — "Recién apretado" contra la RAM del juego (sospecha, sin
-confirmar).** `game.s` (en vivo) calcula `$16 = $15 nuevo & ~$15 viejo`
-leyendo el `$15` viejo de `ram[]`. SMW borra los botones en algunos casos
-(`no_buttons()`); si pasa con una tecla apretada, el frame siguiente la ve
-"recién apretada": explicaría los dobles saltos que vio el usuario. Arreglo
-previsto: guardar el joypad del frame anterior en una variable propia.
+**P55 — "Recién apretado" contra la RAM del juego (RESUELTO 2026-09-30).**
+`game.s` en vivo calculaba `$16 = $15 nuevo & ~$15 viejo` con el `$15` de
+`ram[]`. Ahora `pad_convert` hace lo mismo que `ControllerUpdate` de SMW
+(P60). Ojo: en el port solo `no_buttons()` borra `$15-$18`, y solo al
+morir, así que esto **no** explica los dobles saltos que vio el usuario.
+Sospechas, sin confirmar: el joystick de un botón (arreglado, P60) y los
+rebotes sobre Rex que se simulan pero no se dibujan.
 
 **P56 — La herramienta Bash rompe las barras invertidas en los heredoc.**
 `\1` de los macros de vasm, `\n` de las cadenas de C y `\x01` de Python
@@ -1167,15 +1169,135 @@ Amiga es (131 + 2x, 70 + 2y). Tomando la esquina (130 + 2x) salen miles de
 "fallos" en todos los bordes (`game_check.py` dio 7566 así; 0 al
 arreglarlo).
 
-**P58 — En vivo, lo no portado reinicia el nivel (parche provisorio).**
+**P58 — En vivo, lo no portado congela el juego y lo explica (2026-09-30).**
 `level_frame` pone `mario_unsupported` y no sigue cuando Mario entra en algo
 que el port no tiene (animaciones, meta, tuberías, capa 2, tiles
-especiales...); en el replay eso lo tapan las resincronizaciones, en vivo
-no. `game.s` cuenta esos frames y a los 75 (1,5 s) restaura los datos del C
-y el mapa guardados al cargar y vuelve al primer estado. El daño (`MEV_HURT`)
-se resuelve sin animación: grande → chico con `wm_PlayerHurtTimer = $7F`;
-chico → reinicio. **No dice qué pasó**: próximo paso, un modo diagnóstico
-que lo muestre en pantalla.
+especiales...). En el replay eso lo tapan las resincronizaciones; en vivo,
+`game.s` entra en el **modo diagnóstico**: congela la imagen, muestra el
+motivo, el frame, la X/Y, `$71` y el Map16 bajo los pies en una franja
+debajo de la pantalla, y con ESPACIO pasa a una página con el historial
+del joypad desde el principio del nivel en una rejilla de bits. Desde una
+captura de esa página, `tools/diag_read.py --shot X.png --repro` reproduce
+la partida en el PC (Unicorn) y dice en qué frame y por qué se paró.
+RETURN, Z, A o el botón vuelven a empezar. El daño con Mario grande sigue
+sin animación: grande → chico con `wm_PlayerHurtTimer = $7F`.
+
+**P59 — Un WAIT del copper en la línea 255 con h ≥ ~`$E0` no llega nunca.**
+El copper evalúa esa h con V ya en `$00` (línea 256) y se queda parado
+hasta el frame siguiente, sin ningún error visible. `scroll.s` perdía así
+las líneas 212-223 (el borrado del segmento 212 esperaba en (`$FF`, `$E2`)).
+Usar **un solo** `WAIT $FFDF`: un segundo `$FFDF` detrás también cae después
+de la vuelta. Arreglo: `WAIT $FFDF` + `MOVE $1FE,0`, mismo tamaño de
+segmento. `scrollsim.py` no lo ve porque supone que corren todos los
+segmentos. Para ver hasta dónde llega el copper: un `MOVE COLOR00` con otro
+color en cada segmento y mirar el borde.
+
+**P60 — `ControllerUpdate` de SMW (`game.s:708`).** "Recién apretado" =
+nuevo AND NOT anterior, contra copias **propias** (`wm_JoyDisP1L/H`), no
+contra `$15/$17`. Además `$15 = (JOY1L & $C0) | JOY1H`: el bit 7 es B|A y
+el 6 es Y|X, así que A suma a B y X suma a Y. Para reconstruir el mando
+crudo con A o X apretados hacen falta `$16/$18` y el frame siguiente. Un
+joystick de un botón que cambia A↔B según arriba tiene que fijar el botón
+mientras no se suelta: si no, soltar arriba da un B nuevo (otro salto).
+
+**P61 — `build_sign` se calcula en `entry` ANTES de escribir los punteros
+del C** (`_map16_lo`...). Un arnés que los escriba primero (`gamesim.py`)
+saca otra firma del binario.
+
+**P62 — El vbcc de cloud también compila mal código que esquiva P38.**
+(1) Con `u8 *p = &RX8(wm_SpriteXLo, x)` y `p[t - wm_SpriteXLo]`, vbcc cargó
+la base de otra tabla y todas las lecturas salieron mal; en
+`m68kverify --sprites` pasaba de 0 a 1 resincronización, casi por
+casualidad. (2) En `mario_sprite`, `u8 *o = mario_oam + 4 * e; prop = o[3]`
+dejó `o + 3` en el registro y leyó `o[0..2]` desde ahí: `put8` escribía
+fuera de `cv`, encima del código de `mcoll` (el asm cae a ese C en 1 frame
+del replay: en la Amiga ese frame pisaba código). El vbcc de la PC (2022)
+no falla en los mismos sitios. Los que lo ven: `m68kverify --cross` (la RAM
+entera contra el C del PC, lo corre `regress.py`) y `gamecheck.py --spr`.
+Arreglo: leer los bytes a variables locales.
+
+**P63 — `Scc` después de un `MOVE` lee un C ya borrado.** `MOVE` pone C a 0
+(X no). El acarreo de un `add` hay que tomarlo con `scs` inmediatamente
+después. Era el fallo de `spr_pos_axis_asm` (Mario sobre el bloque `?`
+volador se corría 1 px cada 4 frames en la Amiga); lo encontró `--cross`.
+
+**P64 — El máximo de ciclos de `m68kverify` era una inicialización.** El
+primer `level_frame` de cada corrida pagaba `probe_init` (~21 000 ciclos) y
+ese era el "peor frame" (4438). Ahora lo paga `level_start_sprites`. Mirar
+siempre en qué frame cae el máximo.
+
+**P65 — Los sprites que ya están al empezar un tramo los crea la carga del
+nivel.** `CODE_02A751` (`CODE_02ABF2` + `CODE_02ACA1` + una pasada de
+`CODE_01808C`) corre antes del primer frame grabado. Marcarlos como
+"cargados" hacía que no existieran nunca (el Koopa deslizante). En el port:
+`sprite_level_start` + `level_start_sprites`; en `game.s`, el op LEVEL (4)
+del replay y `live_start`.
+
+**P66 — Congelamientos que pone un sprite.** Cuando un sprite congela el
+juego (HurtMario pone `SpritesLocked = $2F`), en ese frame los sprites de
+ranuras anteriores ya corrieron y los de las posteriores no; en el frame
+en que se descongela vuelven a correr todos. Saltarse esos frames en el
+verificador desfasa un frame a los sprites.
+
+**P67 — La ROM que emula snesrev/smw NO es la original.** Fuerza el acarreo
+en 46 ADC/SBC y aplica ~20 arreglos de bugs (`$00E3FB` pone a cero
+`$0C/$0D` en los gráficos de Mario). Para un oráculo hay que deshacer esos
+parches: `work/snesorc` lo hace por defecto (`--mode rom`) y así reproduce
+`oracle_yi1` (smwrecomp) línea a línea, 6871/6871.
+
+**P68 — El oráculo se toma antes del NMI y el mando se lee en el NMI.** La
+entrada del frame k de un guion `.orc` aparece en los `$15-$18` del registro
+k+1. Además `_NoButtons` borra `$15-$18` en el frame en que empieza una
+animación (entrar en una tubería): la grabación pierde el botón real, y en
+`oracle_yi1` (frame 11425) hubo que deducirlo.
+
+**P69 — Lo que el oráculo no recorre puede estar mal aunque todo dé 100 %.**
+`f7f4` (`CODE_00F82A`) hacía `return` donde el ROM hace
+`STX wm_EnableVertScroll` y sigue con el scroll vertical (con X != 0: pared,
+planeo, trepar, globo, nube, Yoshi con alas, nadar volando); además
+`CODE_00F875` corre también con el scroll vertical ya habilitado.
+`oracle_yi1` nunca movió la cámara en vertical; lo mostraron las
+grabaciones de snesorc (4 resincronizaciones por `Bg1VOfs` en `normal` y
+`diagpipe`). Antes de dar un camino por verificado, comprobar que el
+oráculo pasa por él; si no, grabarlo con snesorc.
+
+**P70 — Las "colinas" de YI1 son cornisas.** Solo son sólidos los 3 bloques
+de pendiente; la cima `$0A1` y el lado derecho `$0A6` no lo son, y por
+dentro se pasa.
+
+**P71 — Una carga "tarde" que vale con la base desplazada rompe la
+ida = vuelta.** Si "válida o canónica" depende de qué cargas se
+escribieron, y eso depende de la dirección o de la historia, la imagen de
+una misma s cambia (línea 178, x = 4828, a = −11, b = −5: 41 frames
+distintos). Regla: "tarde" (a > 0 o b ≤ 0) es una clasificación fija, y una
+línea con una tarde viva es canónica (s0 = s).
+
+**P72 — La base de `build_mid` hace el scroll asimétrico.** El plan pone las
+cargas lo antes posible (a ≈ 0): valen b px hacia la derecha y casi 0 hacia
+la izquierda, así que yendo a la izquierda cada línea con cargas visibles
+se reescribe en cada paso. Musashi, 2 px/frame: ida media 9,9 % y máx.
+54,1 %; **vuelta media 36,6 % y máx. 94,8 %** (s = 2832), con 1400 de 2432
+frames por encima del 25 %. `scroll.s -DBENCH` solo mide la ida: medir las
+dos (`scrollprof.py -D RETURN=4864 --stopx 0`).
+
+**P73 — `tst` con `(pc)` no existe en el 68000.** vasm lo rechaza con
+`-m68000`: leer con `move.b x(pc),d0`. Tampoco `eor` con origen en memoria
+(`eor.w (a0)+,d0` no ensambla): `EOR` solo acepta `Dn` como origen.
+
+**P74 — Tablas grandes dentro de `scroll.s` rompen `game.s`.** `scroll.s`
+va en medio del binario del juego: 64 KB de `ds.b` dejan `bsr scroll_init`
+y los `lea (pc)` fuera de ±32 KB (P52). Pedirlas con `AllocMem` en
+`scroll_init`, que corre con el SO vivo en los dos programas.
+
+**P75 — `-DSTOPF` cuenta desde el primer frame del replay, no es el frame
+del oráculo.** El replay empieza en 5145: para capturar el frame F del
+oráculo, `-DSTOPF=F-5145` (como `shots63.ps1`). Con `STOPF=6000` la
+captura se toma antes de llegar y `game_check` da miles de fallos.
+
+**P76 — `fsuae_shot.sh` en paralelo.** Varias corridas a la vez necesitan
+`FSUAE_BASE` y `FSUAE_DISPLAY` distintos, y aun así Xvfb puede no estar
+listo en los 2 s que espera el script ("unable to open display"). Correrlas
+de a una.
 
 **P44 — Los "derrames" de la etapa 5 alargan el tramo anterior.**
 `mkleveld.py` asigna los píxeles que quedan fuera de todo tramo al registro
