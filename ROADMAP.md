@@ -167,7 +167,23 @@ unas horas. Detalle de cada punto en §10; tarjetas en `SUBAGENTES.md`.
 | 10 | Pulido: muerte, punto medio, meta, tiempo, fundidos, prioridad del poste; replay hasta la meta | 1-2 | 4 |
 | 11 | Segunda ronda de optimización con todo junto (sprites dibujados + HUD + audio suman coste) | 1 | 5, 7, 8 |
 | 12 | Cierre: pruebas en WinUAE KS 1.2/1.3, arreglos de lo que encuentre el usuario, ADF final | 1 | todo |
-| | **total** | **16-20** (≈ 15 si todo sale a la primera) | |
+| | **total, bloque tras bloque** | **16-20** | |
+
+Los bloques se solapan: repartidos en **olas** con 3-5 subagentes a la vez
+(`SUBAGENTES.md` §3, donde está cada ola descrita con sus tarjetas y su
+criterio de cierre) salen **12-15 sesiones**:
+
+| ola | qué | sesiones |
+|---|---|---|
+| 1 | medir el frame entero y grabar todo lo que falta; primeras bajas del scroll | 1 |
+| 2 | 50 Hz (1): lo más caro según la medida; Chuck; descriptor de nivel | 1-2 |
+| 3 | 50 Hz (2): lógica ≤ 40 %, EDF del scroll; diseños del dibujo y del audio | 2 |
+| 4 | motores: copper definitivo + cámara vertical, vlink, conversores, resto de la lógica de sprites, zona de la tubería en datos | 2-3 |
+| 5 | integraciones: enemigos en pantalla, loader, HUD con números, música | 2 |
+| 6 | el juego completo: bobs, barra, efectos, muerte, punto medio, meta, zona de la tubería, replay hasta la meta | 2-3 |
+| 7 | segunda ronda de 50 Hz con todo junto | 1 |
+| 8 | cierre: KS 1.2/1.3, arreglos, ADF final | 1 |
+| | **total** | **12-15** (16-20 si hay que serializar) |
 
 En paralelo, del lado del usuario (PC): jugar cada ADF nuevo en WinUAE
 (U1), la Etapa 7 contra la referencia (U2) y, si quiere, una A500 real.
@@ -1701,8 +1717,8 @@ los pasos originales de cada etapa, en §5.
 - **Decisión [usuario] (D16):** entra en el alcance si "Yoshi's Island 1"
   quiere decir el nivel entero (criterio 1:1: sí). Si no, la tubería se
   queda cerrada.
-- **Tarjetas:** a crear cuando se decida (conversión M, transición M,
-  lógica de tubería M, grabación C).
+- **Tarjetas:** R9 (grabación), I2 (descriptor de nivel), T1 (conversión),
+  T2 (lógica de tubería), T3 (transición en la Amiga).
 
 ### 10.11 Pulido y final del nivel (12)
 
@@ -1773,19 +1789,24 @@ los pasos originales de cada etapa, en §5.
 
 ### 10.15 Orden global
 
-1. **Ola 1 (ya, sin esperar a D1):** 10.1 (medir), las grabaciones (R0-R6),
-   las cargas "tarde" y LNS (S1a+S2), `f7f4` en asm (L1a), un fichero por
-   sprite (I1).
-2. **Decisiones [usuario]:** D1 (con los números de 10.1), D15 (velocidad)
-   y D16 (zona de la tubería).
-3. **Ola 2-3:** el resto de 10.2, **10.2b** (la cámara vertical de YI1)
-   y 10.3 hasta que el peor frame entre; la 9.1 que congela el juego en
-   vivo; el diseño de la 9.2 y del audio.
-4. **Ola 4-5:** dibujo de sprites, carga y memoria (antes de que el audio
-   pida la chip), HUD, audio.
-5. **Ola 6:** pulido, meta, zona de la tubería si entra, replay hasta la
-   meta.
-6. **Final:** hardware real y el ADF de entrega.
+Las decisiones están tomadas (D1 = 50 Hz haciendo todo lo posible, D15 =
+velocidad PAL, D16 = la zona de la tubería entra). El orden va en **8 olas**,
+descritas una por una en `SUBAGENTES.md` §3 (tarjetas, entrega, criterio de
+cierre, sesiones) y resumidas en §1.8:
+
+1. medir el frame entero y grabar todo lo que falta;
+2. y 3. 50 Hz: el scroll y la lógica, y los diseños del dibujo y del audio;
+4. motores: copper definitivo + cámara vertical (10.2b), vlink,
+   conversores, el resto de la lógica de sprites, la zona de la tubería en
+   datos;
+5. integraciones: enemigos en pantalla, loader, HUD, música;
+6. el juego completo: muerte, punto medio, meta, zona de la tubería,
+   replay hasta la meta;
+7. segunda ronda de 50 Hz con todo junto;
+8. cierre: KS 1.2/1.3, arreglos, ADF final.
+
+Total: 12-15 sesiones con las olas en paralelo; 16-20 si hay que
+serializar.
 
 Cómo repartirlo entre subagentes (niveles, tarjetas, protocolo):
 `SUBAGENTES.md`.

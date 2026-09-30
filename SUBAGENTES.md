@@ -116,15 +116,16 @@ Dos tarjetas de la misma ola no pueden tocar el mismo fichero. Las zonas:
 
 | zona | ficheros | tarjetas |
 |---|---|---|
-| juego | `player/game.s`, `tools/game_build.sh` | O1, MA1, H3, Z1-Z6, C4 |
+| juego | `player/game.s`, `tools/game_build.sh` | O1, MA1, H3, Z1-Z6, C4, T3 |
 | modelo del copper | `tools/scrollsim.py`, `copcal.s`/`copcal.py` | E1, E2, S3 |
 | scroll | `player/scroll.s`, `tools/mkscroll.py`, `mkleveld.py` | S*, G5, H3 |
-| lógica de Mario | `player/mario.c`, `mcoll.c`, `manim.c`, `mgfx.c`, `mcam.c` | L1a, L1c, L3, P8, Z1-Z4 |
+| lógica de Mario | `player/mario.c`, `mcoll.c`, `manim.c`, `mgfx.c`, `mcam.c` | L1a, L1c, L3, P8, T2, Z1-Z4 |
 | sprites | `player/msprite.c` (o `player/spr_*.c`, I1) | P*, L1b, L1d, L2 |
 | asm de la lógica | `player/logic68k.s` | L1*, L2, G4 |
 | Mario en sprites | `player/mspr.c`, `mspr68k.s`, `tools/mkmario.py` | MA*, G4 |
 | verificadores | `tools/marioverify.c`, `m68kverify.py`, `regress.py` | O3, P* (contadores), H4 |
 | grabaciones | `tools/snesorc/*.orc`, `work/oracle_*.txt` | R* (cada una su fichero: se pueden paralelizar) |
+| cadena del nivel | `tools/mklvl.py`, `mkbg.py`, `mkd8in.py`, `mkleveld.py`, `mkmapbin.py` | I2, T1, S7 |
 | audio | `tools/brr2pcm.py`, `player/audio*.s` (nuevos) | A* |
 
 `regress.py` y `marioverify.c` los tocan muchas tarjetas: que cada una
@@ -133,33 +134,140 @@ y el coordinador resuelve los conflictos al integrar.
 
 ---
 
-## 3. Olas (orden y dependencias)
+## 3. Olas (orden, contenido y sesiones)
+
+Una **ola** es un grupo de tarjetas que se pueden hacer a la vez (no tocan
+los mismos ficheros y sus dependencias ya están cerradas). Una **sesión** es
+como la del 2026-09-30: un coordinador + 3-5 subagentes a la vez, unas horas,
+y la integración al final. Una ola grande ocupa varias sesiones.
 
 ```
-Ola 1 (ya)   I1 · O1 · R0 → R1…R6 · S1a+S2 · L1a
-Ola 2        O3 · O4 · P1+P2 · P3 · MA1 · S4 (F) · L1c
-Ola 3        S5 (F) · L1b+L1d+L2 · G1 · G2 (F) · C1 · H1 · A1 · A2 (F) · R7
-Ola 4        S3 → S8 → S6 (F) · G3 · G4 · G6 · C2 (F) · C3 · H2 · A3 · R8 · P4…P10
-Ola 5        G5 (F) · C4 · H4 · A4 · MA2 · E1 · E2 · E3
-Ola 6        G7 · H3 · H5 · A5 · A6 · A7 · C5 · Z1…Z6 → Z8
-Final        U1…U4 · Z7 (usuario / PC)
+Ola 1   Medir y preparar            I1 · O1 · R0 → R1…R6, R9 · S1a+S2 · L1a            1 sesión
+Ola 2   50 Hz (1): lo más caro       O3 · O4 · S4 (F) · L1c · MA1 · P1+P2 · P3 · I2      1-2
+Ola 3   50 Hz (2) + diseños          S5 (F) · L1b+L1d+L2 · G1 · G2 (F) · C1 · H1 · A1 · A2 (F) · R7   2
+Ola 4   Motores y estructura         S3 → S8 → S6 (F) · G3 · G4 · G6 · C2 (F) · C3 · H2 · A3 · R8 · P4…P10 · T1   2-3
+Ola 5   Integraciones                G5 (F) · C4 · H4 · A4 · MA2 · T2 · E1 · E2 · E3     2
+Ola 6   El juego completo            G7 · H3 · H5 · A5 · A6 · A7 · C5 · Z1…Z6 → T3 → Z8  2-3
+Ola 7   Segunda ronda de 50 Hz       O1 otra vez + lo que diga (§9 de ROADMAP)          1
+Ola 8   Cierre                       U1…U4 · Z7 · arreglos                             1
+                                                                        total: 12-15
 ```
 
 `a → b`: el mismo agente, en serie (comparten ficheros o una depende de la
-otra). `a+b`: una sola tarjeta. R0 es corta: primero ella y después R1-R6
-en paralelo (cada guion es su fichero). P4…P10 van en paralelo gracias a
-I1 (cada sprite en su `player/spr_*.c`), salvo P8, que toca la lógica de
-Mario y va sola. Z1…Z6 tocan todos `game.s`: un agente, en serie.
+otra). `a+b`: una sola tarjeta. **12-15 sesiones** si las olas salen como
+están; **16-20** (lo de `ROADMAP.md` §1.8, que suma los bloques uno detrás
+de otro) si hay que serializar, sobre todo por el scroll.
 
+### Ola 1 — Medir y preparar (1 sesión, ya se puede lanzar)
+- **Objetivo:** saber dónde está el peor frame del juego entero y tener
+  grabado todo lo que falta portar, para no volver a necesitar al usuario
+  para eso.
+- **Tarjetas:** I1 (un fichero por sprite), O1 (`game.s -DBENCH`), R0
+  (`orc_has.py`) y después R1-R6 y R9 en paralelo (colina grande, Chuck,
+  caparazones, meta, power-ups, estrés con `stress_vert.orc`, zona de la
+  tubería), S1a+S2 (las cargas "tarde" y LNS por grupos), L1a (`f7f4` hacia
+  arriba en asm).
+- **Entrega:** la tabla del peor frame integrado por parte; ~15 grabaciones
+  nuevas en git; el primer bajón del peor frame del scroll (los postes de la
+  meta).
+- **Cerrada cuando:** `game_read.py` da la tabla, `orc_has.py` muestra cada
+  objeto en su grabación y el máximo del scroll bajó sin cambiar la imagen.
+
+### Ola 2 — 50 Hz, primera parte (1-2 sesiones)
+- **Objetivo:** atacar lo más caro según O1, y empezar la 9.1 con lo que
+  ya está grabado.
+- **Tarjetas:** O3 (el peor frame por parte en `regress.py`, las dos
+  direcciones del scroll), O4 (el informe: qué optimizar primero), S4 (F:
+  `build_mid` editando en el sitio), L1c (`mario_E2BD` en asm), MA1 (no
+  redibujar a Mario si la pose no cambió), P1+P2 (las dos diferencias
+  chicas de sprites), P3 (el Chuck), I2 (el descriptor de nivel, para la
+  zona de la tubería).
+- **Entrega:** el scroll y la lógica más baratos, medidos; el Chuck exacto.
+- **Cerrada cuando:** `regress.py` guarda el peor frame por parte y bajó
+  respecto de la ola 1.
+
+### Ola 3 — 50 Hz, segunda parte, y los diseños (2 sesiones)
+- **Objetivo:** cerrar la lógica en ≤ 40 % y el scroll con el EDF; diseñar
+  lo que viene (dibujo de sprites, audio) antes de programarlo.
+- **Tarjetas:** S5 (F: EDF con presupuesto), L1b+L1d+L2 (`sprite_run`, las
+  interacciones y los descartes rápidos: un agente), G1 (los estudios de
+  columnas re-corridos) → G2 (F: diseño del dibujo), C1 (`memmap.py`), H1
+  (medir el HUD), A1 (`brr2pcm.py`), A2 (F: cómo capturar el DSP), R7 (los
+  contadores del HUD en el volcado).
+- **Entrega:** lógica ≤ 40 % en el peor frame; el scroll cerca del 25 %;
+  los documentos de diseño de la 9.2 y del audio en `ROADMAP.md`.
+- **Cerrada cuando:** `logicbench -DWORST` ≤ 40 % y los diseños están
+  revisados por el coordinador.
+
+### Ola 4 — Motores y estructura (2-3 sesiones; la más grande)
+- **Objetivo:** las piezas grandes que no dependen unas de otras: el copper
+  del scroll definitivo (con la cámara vertical), el enlazado absoluto, los
+  conversores y el resto de la lógica de sprites.
+- **Tarjetas:** S3 → S8 → S6 (F, un agente: segmentos compartidos, cámara
+  vertical de YI1, un plan por sentido), G3 (conversor de gráficos de
+  sprites), G4 (asignador de columnas), G6 (`sprcop_verify.py`), C2 (F:
+  vlink), C3 (compresor), H2 (gráficos del HUD), A3 (eventos desde la
+  captura del DSP), R8 (el WAV de referencia), P4-P10 (caparazones, meta,
+  power-ups, bolas de fuego, animaciones de Mario, monedas, reserva; cada uno
+  en su fichero), T1 (la zona de la tubería convertida).
+- **Entrega:** el scroll a ≤ 25 % en los dos sentidos y con la cámara
+  vertical; la lógica de todos los sprites del nivel; el binario enlazado en
+  absoluto; la zona de la tubería en datos.
+- **Cerrada cuando:** los escenarios de estrés dan el scroll ≤ 25 %, `game`
+  da 0 resincronizaciones en todas las grabaciones y V1 pasa sobre el
+  binario enlazado en absoluto.
+
+### Ola 5 — Integraciones (2 sesiones)
+- **Objetivo:** que lo construido aparezca en la Amiga: enemigos en
+  pantalla, el loader nuevo, el HUD con sus números, la música.
+- **Tarjetas:** G5 (F: sprites del nivel en el copper), C4 (loader), H4 (la
+  lógica de la barra + `marioverify hud`), A4 (el secuenciador del 68000),
+  MA2 (`mspr_draw` más barato), T2 (entrar y salir por tubería, la carga de
+  la subzona), E1-E3 (el copper después de `DDFSTOP`, la comprobación de fin
+  de lista, las herramientas con la carga en dirección fija).
+- **Entrega:** los enemigos se ven; el ADF carga con el loader nuevo; suena
+  el tema del nivel.
+- **Cerrada cuando:** capturas del replay con enemigos = la OAM grabada;
+  el ADF arranca y el replay coincide; la música suena en FS-UAE.
+
+### Ola 6 — El juego completo (2-3 sesiones)
+- **Objetivo:** todo lo que hace falta para jugar el nivel de punta a punta
+  como en la SNES.
+- **Tarjetas:** G7 (bobs en PF1), H3 + H5 (la barra en pantalla, solo lo
+  que cambia) y las cajas de mensaje, A5-A7 (efectos, comparación, coste),
+  C5 (tiempo de carga), Z1-Z6 → T3 → Z8 (un agente, en serie: muerte,
+  punto medio, meta, tiempo, fundidos, prioridad del poste, la transición a
+  la zona de la tubería y el replay completo hasta la meta).
+- **Entrega:** el nivel entero jugable, con la zona de la tubería, HUD,
+  música y efectos.
+- **Cerrada cuando:** Z8 (el replay termina en la meta en el mismo frame
+  que el oráculo) y el usuario lo juega entero en WinUAE.
+
+### Ola 7 — Segunda ronda de 50 Hz (1 sesión)
+- **Objetivo:** con todo junto (sprites dibujados, HUD, audio) el frame
+  vuelve a subir. Medir otra vez con O1 y los escenarios de estrés, y aplicar
+  lo que quede de `ROADMAP.md` §9 (L3 estado nativo, S7 menos cargas...).
+- **Cerrada cuando:** el peor frame entra en 50 Hz con ≥ 10 % de margen, o
+  se le llevan los números al usuario (D1: "si no se puede, no se puede").
+
+### Ola 8 — Cierre (1 sesión + el usuario)
+- **Objetivo:** el ADF final. Pruebas en WinUAE con KS 1.2 y 1.3 (U4, Z7),
+  arreglos de lo que encuentre el usuario (U1), y opcionalmente una A500
+  real (U3).
+- **Cerrada cuando:** `AGENTS.md` §10 queda cerrado (ROADMAP Etapa 12).
+
+### Reglas de las olas
+- R0 es corta: primero ella y después las R en paralelo (cada guion es su
+  fichero). P4-P10 van en paralelo gracias a I1, salvo P8 (la lógica de
+  Mario), que va sola, y T2, que también toca `$71`: P8 → T2 en serie.
 - D1, D15 y D16 están decididas (2026-09-30: 50 Hz haciendo todo lo
-  posible, velocidad PAL aceptada, la zona de la tubería entra). O4 ya no
-  espera una decisión: es el informe que dice qué optimizar primero. Solo
-  se vuelve al usuario si, agotadas las ideas de §9, el peor frame no
-  entra.
-- Después de cada ola: integración completa (§2.4) y handoff en
-  `ROADMAP.md` §1.
-- Tamaño de ola razonable: **3-5 subagentes a la vez**. Más, y la revisión
-  del coordinador se vuelve el cuello de botella.
+  posible, velocidad PAL aceptada, la zona de la tubería entra). O4 es un
+  informe; solo se vuelve al usuario si, agotadas las ideas de `ROADMAP.md`
+  §9, el peor frame no entra.
+- Después de cada ola: integración completa (§2.4), un ADF nuevo para el
+  usuario y el handoff en `ROADMAP.md` §1.
+- **3-5 subagentes a la vez** por sesión. Más, y la revisión del
+  coordinador se vuelve el cuello de botella.
 
 ---
 
@@ -182,6 +290,14 @@ que no esté explicado.
 - Puerta: regresión OK **idéntica** (ninguna métrica cambia, ni los
   ciclos: `abcheck.py HEAD~1 --sprites` IGUAL).
 - Por qué: con un fichero por sprite, las tarjetas P* se paralelizan.
+
+#### I2 — Descriptor de nivel
+**M · — · `tools/*.py` de la cadena del nivel, `levels/*.json` (nuevo)** ·
+ROADMAP §11.2 paso 1: un JSON por nivel (rutas de `obj*.lv`/`spr.lv`,
+cabecera, ventana de cámara, nombres de salida) que lean `mklvl`, `mkbg`,
+`mkd8in`, `mkleveld`, `mkscroll`, `mkmapbin` y `mkmario`. Puerta: con el
+descriptor de YI1, **todo sale igual byte a byte** (`regress.py --level`).
+Lo necesita la zona de la tubería (T1) y cualquier nivel futuro.
 
 ### O — Medir el frame entero (ROADMAP §9.1; es la 6b.6)
 
@@ -290,6 +406,12 @@ la cámara (`$1A`) recorre esos tramos.
 - Puerta: el WAV de `normal.orc` suena (tema del nivel + saltos) y dura lo
   que el guion a 60 frames por segundo (la SNES NTSC). Documentar cómo se
   alinea con los frames de la Amiga, que van a 50.
+
+#### R9 — La zona de la tubería
+**C · R0** · `pipe.orc`: el camino de `oracle_yi1` hasta la tubería del
+frame 11425, entrar, recorrer las 2 pantallas de `obj-1.lv` (monedas
+incluidas) y volver a salir. Puerta: `orc_has.py` muestra el cambio de
+subnivel y la vuelta.
 
 ### S — Scroll ≤ 25 % (ROADMAP Etapa 6.4 y §9.2)
 
@@ -546,6 +668,14 @@ prioridad sobre la voz de música que comparte canal.
 
 #### A7 — Coste
 **C · A4** · ≤ 3 % medido con el método de `bench2.s` / O1.
+
+### T — La zona de la tubería (`obj-1.lv`, D16; ROADMAP §10.10)
+
+| tarjeta | nivel | depende de | qué | puerta |
+|---|---|---|---|---|
+| **T1** | M | I2, R9 | la zona convertida: capa 1 (tileset 3), capa 2, formato (d), `yi1b_s.dat` | `m16diff` contra el mapa de referencia de la zona (PC) o la imagen ideal; `render_d` 0 px |
+| **T2** | M | P8, R9 | la lógica: animaciones de tubería (`$71`), la carga de la subzona (cabecera, posición de entrada) y la vuelta | `marioverify <oracle_pipe> game` sin resincronizaciones en la entrada y la salida |
+| **T3** | M (F revisa) | T1, T2, G5 | en la Amiga: fundido, cambiar los punteros del scroll, la paleta y la cámara, y volver | capturas del replay de `oracle_pipe` dentro de la zona |
 
 ### Z — Pulido y entrega (ROADMAP Etapa 12)
 
